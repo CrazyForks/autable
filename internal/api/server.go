@@ -603,6 +603,9 @@ func (server *Server) handleSaveWorkflow(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if workflow.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, workflow.DatabaseName) {
+		return
+	}
 	if workflow.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeWorkflow, workflow.ID) {
 		return
 	}
@@ -727,6 +730,9 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if workflow.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, dbName) {
+			return
+		}
 		if workflow.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeWorkflow, workflow.ID) {
 			return
 		}
@@ -750,6 +756,9 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 		var form systemdb.FormDefinition
 		if err := readJSON(r, &form); err != nil {
 			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if form.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, dbName) {
 			return
 		}
 		if form.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, form.ID) {
@@ -941,6 +950,9 @@ func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
 	var form systemdb.FormDefinition
 	if err := readJSON(r, &form); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if form.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, form.DatabaseName) {
 		return
 	}
 	if form.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, form.ID) {
@@ -1167,6 +1179,33 @@ func (server *Server) requireDatabaseWrite(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 	return true
+}
+
+func (server *Server) requireDatabaseOrTableWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {
+	if dbName == "" {
+		writeError(w, http.StatusBadRequest, errors.New("database_name is required"))
+		return false
+	}
+	dbMeta, ok := server.catalogSnapshot().Database(dbName)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("database %q not found", dbName))
+		return false
+	}
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return false
+	}
+	if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) >= permission.Write {
+		return true
+	}
+	for _, tableMeta := range dbMeta.Tables {
+		if perms.ResourceLevel(actorID, permission.ScopeTable, dbName+"."+tableMeta.Name) >= permission.Write {
+			return true
+		}
+	}
+	writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
+	return false
 }
 
 func (server *Server) requireResourceWrite(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {

@@ -790,6 +790,14 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	server, system := newTestServer(t)
 	codeRoot := t.TempDir()
 	server.SetCodeFileStore(codefiles.NewStore(codeRoot))
+	if err := system.SaveGrant(context.Background(), permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
@@ -935,8 +943,70 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	}
 }
 
+func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+
+	deniedWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"denied",
+		"script":"function run() { return {}; }"
+	}`))
+	deniedWorkflow.AddCookie(testSessionCookie(t, system, "viewer"))
+	deniedWorkflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(deniedWorkflowRecorder, deniedWorkflow)
+	if deniedWorkflowRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected workflow create 403, got %d: %s", deniedWorkflowRecorder.Code, deniedWorkflowRecorder.Body.String())
+	}
+
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "table-owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tableOwnerWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"allowed-by-table",
+		"script":"function run() { return {}; }"
+	}`))
+	tableOwnerWorkflow.AddCookie(testSessionCookie(t, system, "table-owner"))
+	tableOwnerWorkflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(tableOwnerWorkflowRecorder, tableOwnerWorkflow)
+	if tableOwnerWorkflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected table owner workflow create 201, got %d: %s", tableOwnerWorkflowRecorder.Code, tableOwnerWorkflowRecorder.Body.String())
+	}
+
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "db-owner",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dbOwnerForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
+		"name":"allowed-by-db",
+		"script":"root.append(api.input({ name: 'email' }))"
+	}`))
+	dbOwnerForm.AddCookie(testSessionCookie(t, system, "db-owner"))
+	dbOwnerFormRecorder := httptest.NewRecorder()
+	server.ServeHTTP(dbOwnerFormRecorder, dbOwnerForm)
+	if dbOwnerFormRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected db owner form create 201, got %d: %s", dbOwnerFormRecorder.Code, dbOwnerFormRecorder.Body.String())
+	}
+}
+
 func TestWorkflowRunAPI(t *testing.T) {
 	server, system := newTestServer(t)
+	if err := system.SaveGrant(context.Background(), permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"welcome",
@@ -1012,6 +1082,14 @@ func TestWorkflowNodesAPI(t *testing.T) {
 func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	historyKey, err := history.SaveRowChange(ctx, server.history, history.RowChange{
 		Database: "db",
 		Table:    "contacts",
@@ -1055,6 +1133,14 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 
 func TestWorkflowAndFormPermissions(t *testing.T) {
 	server, system := newTestServer(t)
+	if err := system.SaveGrant(context.Background(), permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"restricted",
