@@ -1,48 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
 import { ArrowClockwiseRegular } from "@fluentui/react-icons";
-import {
-  type EditableGridCell,
-  type GridCell,
-  GridCellKind,
-  type Item
-} from "@glideapps/glide-data-grid";
 import { AuthDialog } from "./components/AuthDialog";
-import { rowDraftFromRecord } from "./appState";
 import { FormWorkspace } from "./components/FormWorkspace";
 import { PermissionPanel } from "./components/PermissionPanel";
 import { TableWorkspace } from "./components/TableWorkspace";
 import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
 import { WorkspaceNavigation, type WorkspaceView } from "./components/WorkspaceNavigation";
 import { usePermissionWorkspace } from "./hooks/usePermissionWorkspace";
+import { useTableWorkspace } from "./hooks/useTableWorkspace";
 import { useWorkflowFormWorkspace } from "./hooks/useWorkflowFormWorkspace";
-import { buildTableColumns, rowRecordToValues } from "./tableGrid";
-import { applyTableView } from "./tableViews";
 import {
   createDatabase,
-  createRow,
   createTable,
-  deleteRow,
   listOIDCProviders,
-  listRowHistory,
-  listRows,
   loadCurrentUser,
   loadMetadata,
   login,
   logout,
   oidcStartURL,
   register,
-  updateTableMetadata,
-  updateRow,
   type AuthUser,
   type Catalog,
   type DatabaseMetadata,
   type OIDCProvider,
-  type RowChange,
   type TableMetadata,
-  type TableViewFilter,
-  type TableView,
-  type TableViewSort
 } from "./api";
 
 type View = WorkspaceView;
@@ -53,8 +35,6 @@ const emptyCatalog: Catalog = { databases: [] };
 
 export function App() {
   const [catalog, setCatalog] = useState<Catalog>(emptyCatalog);
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
-  const [rowsViewName, setRowsViewName] = useState("all");
   const [view, setView] = useState<View>("table");
   const [selectedDatabaseName, setSelectedDatabaseName] = useState("");
   const [selectedTable, setSelectedTable] = useState("");
@@ -64,41 +44,32 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
-  const [selectedRecordID, setSelectedRecordID] = useState(0);
-  const [rowHistory, setRowHistory] = useState<RowChange[]>([]);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [newDatabaseName, setNewDatabaseName] = useState("");
   const [newTableName, setNewTableName] = useState("");
-  const [newFieldName, setNewFieldName] = useState("");
-  const [newFieldType, setNewFieldType] = useState("text");
-  const [newFieldRequired, setNewFieldRequired] = useState(false);
-  const [newViewName, setNewViewName] = useState("");
-  const [newViewBase, setNewViewBase] = useState("all");
-  const [newViewFilterField, setNewViewFilterField] = useState("");
-  const [newViewFilterOp, setNewViewFilterOp] = useState<TableViewFilter["op"]>("eq");
-  const [newViewFilterValue, setNewViewFilterValue] = useState("");
-  const [newViewSortField, setNewViewSortField] = useState("");
-  const [newViewSortDirection, setNewViewSortDirection] = useState<TableViewSort["direction"]>("asc");
   const [status, setStatus] = useState("Ready");
 
   const database =
     catalog.databases.find((item) => item.name === selectedDatabaseName) ?? catalog.databases[0] ?? emptyDatabase;
   const table = database.tables.find((item) => item.name === selectedTable) ?? database.tables[0] ?? emptyTable;
-  const activeFields = table.fields.filter((field) => !field.deleted);
-  const activeFieldNames = useMemo(() => activeFields.map((field) => field.name), [table.fields]);
+  const tableWorkspace = useTableWorkspace({
+    currentUserID: currentUser?.id,
+    databaseName: database.name,
+    selectedTableView,
+    table,
+    onCatalogChanged: (nextCatalog, tableName, viewName) => {
+      setCatalog(nextCatalog);
+      setSelectedTable(tableName);
+      setSelectedTableView(viewName);
+    },
+    onStatus: setStatus
+  });
   const workflowFormWorkspace = useWorkflowFormWorkspace({
     currentUserID: currentUser?.id,
     databaseName: database.name,
     tableName: table.name,
     onStatus: setStatus,
-    onSubmittedRow: (targetTableName, row) => {
-      if (targetTableName === table.name) {
-        setRows((current) => [...current, row]);
-        setRowsViewName("local");
-        setSelectedRecordID(Number(row.record_id));
-        setRowHistory([]);
-      }
-    }
+    onSubmittedRow: tableWorkspace.addSubmittedRow
   });
   const {
     forms,
@@ -129,23 +100,6 @@ export function App() {
     roles,
     selectedRole
   } = permissionWorkspace;
-  const displayedRows = useMemo(
-    () => (rowsViewName === selectedTableView ? rows : applyTableView(rows, table.views ?? [], selectedTableView)),
-    [rows, rowsViewName, table.views, selectedTableView]
-  );
-  const displayedRecordIDs = useMemo(
-    () => displayedRows.map((row) => Number(row.record_id)).filter((recordID) => Number.isFinite(recordID)),
-    [displayedRows]
-  );
-  const selectedRow = useMemo(
-    () => displayedRows.find((row) => Number(row.record_id) === selectedRecordID) ?? null,
-    [displayedRows, selectedRecordID]
-  );
-  const [selectedRowDraft, setSelectedRowDraft] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    setSelectedRowDraft(rowDraftFromRecord(selectedRow, activeFieldNames));
-  }, [activeFieldNames, selectedRow]);
 
   useEffect(() => {
     if (!catalog.databases.some((item) => item.name === selectedDatabaseName)) {
@@ -157,18 +111,6 @@ export function App() {
       setSelectedTableView("all");
     }
   }, [catalog.databases, database.tables, selectedDatabaseName, selectedTable]);
-
-  useEffect(() => {
-    if (displayedRecordIDs.length === 0) {
-      setSelectedRecordID(0);
-      setRowHistory([]);
-      return;
-    }
-    if (!displayedRecordIDs.includes(selectedRecordID)) {
-      setSelectedRecordID(displayedRecordIDs[0]);
-      setRowHistory([]);
-    }
-  }, [displayedRecordIDs, selectedRecordID]);
 
   useEffect(() => {
     let cancelled = false;
@@ -235,74 +177,6 @@ export function App() {
     };
   }, [authReady, currentUser?.id]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!currentUser || !database.name || !table.name) {
-      setRows([]);
-      setRowsViewName(selectedTableView);
-      return () => {
-        cancelled = true;
-      };
-    }
-    void listRows(database.name, table.name, selectedTableView)
-      .then((nextRows) => {
-        if (cancelled) {
-          return;
-        }
-        setRows(nextRows.map(rowRecordToValues));
-        setRowsViewName(selectedTableView);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser?.id, database.name, table.name, selectedTableView]);
-
-  const columns = useMemo(
-    () => buildTableColumns(activeFields),
-    [activeFields]
-  );
-
-  const getCellContent = ([columnIndex, rowIndex]: Item): GridCell => {
-    const column = columns[columnIndex];
-    const row = displayedRows[rowIndex];
-    const value = row?.[String(column.id)] ?? "";
-    return {
-      kind: GridCellKind.Text,
-      allowOverlay: true,
-      displayData: String(value),
-      data: String(value)
-    };
-  };
-
-  async function editCell([columnIndex, rowIndex]: Item, newValue: EditableGridCell) {
-    const column = columns[columnIndex];
-    const field = String(column.id);
-    const row = displayedRows[rowIndex];
-    if (!row || field === "record_id" || newValue.kind !== GridCellKind.Text) {
-      return;
-    }
-    const recordID = Number(row.record_id);
-    const nextValue = newValue.data;
-    setRows((current) =>
-      current.map((item) => (Number(item.record_id) === recordID ? { ...item, [field]: nextValue } : item))
-    );
-    try {
-      const saved = await updateRow(database.name, table.name, recordID, { [field]: nextValue });
-      setRows((current) =>
-        current.map((item) =>
-          Number(item.record_id) === saved.record_id ? rowRecordToValues(saved) : item
-        )
-      );
-      setRowsViewName("local");
-      setSelectedRecordID(saved.record_id);
-      setRowHistory([]);
-      setStatus(`Updated record ${saved.record_id}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Row update failed");
-    }
-  }
-
   async function refreshMetadata() {
     if (!currentUser) {
       setStatus("Login before refreshing workspace metadata");
@@ -332,9 +206,7 @@ export function App() {
     setSelectedDatabaseName(dbName);
     setSelectedTable(nextDatabase?.tables[0]?.name ?? "");
     setSelectedTableView("all");
-    setRows([]);
-    setRowsViewName("all");
-    setRowHistory([]);
+    tableWorkspace.resetRows("all");
     return dbName;
   }
 
@@ -356,8 +228,7 @@ export function App() {
       setSelectedDatabaseName(saved.name);
       setSelectedTable(saved.tables[0]?.name ?? "");
       setSelectedTableView("all");
-      setRows([]);
-      setRowsViewName("all");
+      tableWorkspace.resetRows("all");
       setNewDatabaseName("");
       setStatus(`Created database ${saved.name}`);
     } catch (error) {
@@ -389,161 +260,11 @@ export function App() {
       setCatalog(nextCatalog);
       setSelectedTable(saved.name);
       setSelectedTableView("all");
-      setRows([]);
-      setRowsViewName("all");
+      tableWorkspace.resetRows("all");
       setNewTableName("");
       setStatus(`Created table ${database.name}.${saved.name}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Table creation failed");
-    }
-  }
-
-  async function persistTableMetadata(nextTable: TableMetadata, successMessage: string, nextViewName = selectedTableView) {
-    if (!database.name || !table.name) {
-      setStatus("Select a table before updating metadata");
-      return;
-    }
-    try {
-      await updateTableMetadata(database.name, table.name, nextTable);
-      const nextCatalog = await loadMetadata();
-      setCatalog(nextCatalog);
-      setSelectedTable(nextTable.name);
-      setSelectedTableView(nextViewName);
-      setRows([]);
-      setRowsViewName(nextViewName);
-      setRowHistory([]);
-      setStatus(successMessage);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Table metadata update failed");
-    }
-  }
-
-  async function addFieldFromCanvas() {
-    const name = newFieldName.trim();
-    if (!name) {
-      setStatus("Field name is required");
-      return;
-    }
-    if (name === "record_id" || table.fields.some((field) => field.name === name && !field.deleted)) {
-      setStatus(`Field ${name} already exists`);
-      return;
-    }
-    const nextTable = {
-      ...table,
-      fields: [...table.fields, { name, type: newFieldType, required: newFieldRequired, deleted: false }]
-    };
-    await persistTableMetadata(nextTable, `Added field ${name}`);
-    setNewFieldName("");
-    setNewFieldType("text");
-    setNewFieldRequired(false);
-  }
-
-  async function deleteFieldFromCanvas(fieldName: string) {
-    const nextTable = {
-      ...table,
-      fields: table.fields.map((field) => (field.name === fieldName ? { ...field, deleted: true } : field))
-    };
-    await persistTableMetadata(nextTable, `Deleted field ${fieldName}`);
-  }
-
-  async function createViewFromCanvas() {
-    const name = newViewName.trim();
-    if (!name) {
-      setStatus("View name is required");
-      return;
-    }
-    if (name === "all" || table.views.some((viewDef) => viewDef.name === name)) {
-      setStatus(`View ${name} already exists`);
-      return;
-    }
-    const filters: TableViewFilter[] = newViewFilterField
-      ? [
-          {
-            field: newViewFilterField,
-            op: newViewFilterOp,
-            value: newViewFilterOp === "not_empty" ? undefined : newViewFilterValue
-          }
-        ]
-      : [];
-    const sorts: TableViewSort[] = newViewSortField
-      ? [{ field: newViewSortField, direction: newViewSortDirection }]
-      : [];
-    const nextView: TableView = {
-      name,
-      display_name: name,
-      base_view: newViewBase === "all" ? undefined : newViewBase,
-      filters,
-      sorts
-    };
-    const nextTable = { ...table, views: [...(table.views ?? []), nextView] };
-    await persistTableMetadata(nextTable, `Created view ${name}`, name);
-    setNewViewName("");
-    setNewViewBase("all");
-    setNewViewFilterField("");
-    setNewViewFilterOp("eq");
-    setNewViewFilterValue("");
-    setNewViewSortField("");
-    setNewViewSortDirection("asc");
-  }
-
-  async function addDraftRow() {
-    if (!database.name || !table.name) {
-      setStatus("Create a table before adding rows");
-      return;
-    }
-    const values = Object.fromEntries(activeFields.map((field) => [field.name, field.name === "status" ? "Review" : ""]));
-    values.name = `New record ${rows.length + 1}`;
-    try {
-      const saved = await createRow(database.name, table.name, values);
-      setRows((current) => [...current, rowRecordToValues(saved)]);
-      setRowsViewName("local");
-      setSelectedRecordID(saved.record_id);
-      setRowHistory([]);
-      setStatus(`Created record ${saved.record_id}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Row creation failed");
-    }
-  }
-
-  function updateSelectedRowDraft(fieldName: string, value: string) {
-    setSelectedRowDraft((current) => ({ ...current, [fieldName]: value }));
-  }
-
-  async function updateSelectedRowFromEditor() {
-    if (!selectedRecordID) {
-      setStatus("Select a row before saving changes");
-      return;
-    }
-    try {
-      const saved = await updateRow(database.name, table.name, selectedRecordID, selectedRowDraft);
-      setRows((current) =>
-        current.map((item) =>
-          Number(item.record_id) === saved.record_id ? rowRecordToValues(saved) : item
-        )
-      );
-      setRowsViewName("local");
-      setSelectedRecordID(saved.record_id);
-      setRowHistory([]);
-      setStatus(`Updated record ${saved.record_id}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Row update failed");
-    }
-  }
-
-  async function deleteSelectedRow() {
-    if (!selectedRecordID) {
-      setStatus("Select a row before deleting");
-      return;
-    }
-    try {
-      const deleted = await deleteRow(database.name, table.name, selectedRecordID);
-      setRows((current) => current.filter((item) => Number(item.record_id) !== deleted.record_id));
-      setRowsViewName("local");
-      setSelectedRecordID(0);
-      setRowHistory([]);
-      setStatus(`Deleted record ${deleted.record_id}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Row deletion failed");
     }
   }
 
@@ -585,21 +306,6 @@ export function App() {
 
   function loginWithOIDC(providerName: string) {
     window.location.assign(oidcStartURL(providerName));
-  }
-
-  async function loadSelectedRowHistory() {
-    if (!selectedRecordID) {
-      setStatus("Select a row before loading history");
-      return;
-    }
-    try {
-      const changes = await listRowHistory(database.name, table.name, selectedRecordID);
-      setRowHistory(changes);
-      setStatus(`Loaded ${changes.length} history entries for record ${selectedRecordID}`);
-    } catch (error) {
-      setRowHistory([]);
-      setStatus(error instanceof Error ? error.message : "Row history failed");
-    }
   }
 
   function selectDatabaseSection(databaseName: string, nextView: View) {
@@ -666,7 +372,7 @@ export function App() {
               {view === "permission" ? " / permissions" : ""}
             </Text>
             <Text size={200}>
-              {view === "table" && `${displayedRows.length} of ${rows.length} records`}
+              {view === "table" && `${tableWorkspace.displayedRows.length} of ${tableWorkspace.rows.length} records`}
               {view === "workflow" && `${workflows.length} workflows`}
               {view === "form" && `${forms.length} forms`}
               {view === "permission" && `${roles.length} roles`}
@@ -687,45 +393,45 @@ export function App() {
         <section className="content-band">
           {view === "table" && (
             <TableWorkspace
-              columns={columns}
-              displayedRecordIDs={displayedRecordIDs}
-              displayedRows={displayedRows}
-              getCellContent={getCellContent}
-              newFieldName={newFieldName}
-              newFieldRequired={newFieldRequired}
-              newFieldType={newFieldType}
-              newViewBase={newViewBase}
-              newViewFilterField={newViewFilterField}
-              newViewFilterOp={newViewFilterOp}
-              newViewFilterValue={newViewFilterValue}
-              newViewName={newViewName}
-              newViewSortDirection={newViewSortDirection}
-              newViewSortField={newViewSortField}
-              onAddRow={addDraftRow}
-              onAddField={addFieldFromCanvas}
-              onCellEdited={editCell}
-              onCreateView={createViewFromCanvas}
-              onDeleteField={deleteFieldFromCanvas}
-              onDeleteSelectedRow={deleteSelectedRow}
-              onLoadHistory={loadSelectedRowHistory}
-              onNewFieldNameChange={setNewFieldName}
-              onNewFieldRequiredChange={setNewFieldRequired}
-              onNewFieldTypeChange={setNewFieldType}
-              onNewViewBaseChange={setNewViewBase}
-              onNewViewFilterFieldChange={setNewViewFilterField}
-              onNewViewFilterOpChange={setNewViewFilterOp}
-              onNewViewFilterValueChange={setNewViewFilterValue}
-              onNewViewNameChange={setNewViewName}
-              onNewViewSortDirectionChange={setNewViewSortDirection}
-              onNewViewSortFieldChange={setNewViewSortField}
-              onSelectRecordID={setSelectedRecordID}
+              columns={tableWorkspace.columns}
+              displayedRecordIDs={tableWorkspace.displayedRecordIDs}
+              displayedRows={tableWorkspace.displayedRows}
+              getCellContent={tableWorkspace.getCellContent}
+              newFieldName={tableWorkspace.newFieldName}
+              newFieldRequired={tableWorkspace.newFieldRequired}
+              newFieldType={tableWorkspace.newFieldType}
+              newViewBase={tableWorkspace.newViewBase}
+              newViewFilterField={tableWorkspace.newViewFilterField}
+              newViewFilterOp={tableWorkspace.newViewFilterOp}
+              newViewFilterValue={tableWorkspace.newViewFilterValue}
+              newViewName={tableWorkspace.newViewName}
+              newViewSortDirection={tableWorkspace.newViewSortDirection}
+              newViewSortField={tableWorkspace.newViewSortField}
+              onAddRow={tableWorkspace.addDraftRow}
+              onAddField={tableWorkspace.addFieldFromCanvas}
+              onCellEdited={tableWorkspace.editCell}
+              onCreateView={tableWorkspace.createViewFromCanvas}
+              onDeleteField={tableWorkspace.deleteFieldFromCanvas}
+              onDeleteSelectedRow={tableWorkspace.deleteSelectedRow}
+              onLoadHistory={tableWorkspace.loadSelectedRowHistory}
+              onNewFieldNameChange={tableWorkspace.setNewFieldName}
+              onNewFieldRequiredChange={tableWorkspace.setNewFieldRequired}
+              onNewFieldTypeChange={tableWorkspace.setNewFieldType}
+              onNewViewBaseChange={tableWorkspace.setNewViewBase}
+              onNewViewFilterFieldChange={tableWorkspace.setNewViewFilterField}
+              onNewViewFilterOpChange={tableWorkspace.setNewViewFilterOp}
+              onNewViewFilterValueChange={tableWorkspace.setNewViewFilterValue}
+              onNewViewNameChange={tableWorkspace.setNewViewName}
+              onNewViewSortDirectionChange={tableWorkspace.setNewViewSortDirection}
+              onNewViewSortFieldChange={tableWorkspace.setNewViewSortField}
+              onSelectRecordID={tableWorkspace.setSelectedRecordID}
               onSelectTableView={setSelectedTableView}
-              onSelectedRowValueChange={updateSelectedRowDraft}
-              onUpdateSelectedRow={updateSelectedRowFromEditor}
-              rowHistory={rowHistory}
-              rows={rows}
-              selectedRecordID={selectedRecordID}
-              selectedRowDraft={selectedRowDraft}
+              onSelectedRowValueChange={tableWorkspace.updateSelectedRowDraft}
+              onUpdateSelectedRow={tableWorkspace.updateSelectedRowFromEditor}
+              rowHistory={tableWorkspace.rowHistory}
+              rows={tableWorkspace.rows}
+              selectedRecordID={tableWorkspace.selectedRecordID}
+              selectedRowDraft={tableWorkspace.selectedRowDraft}
               selectedTableView={selectedTableView}
               table={table}
             />
