@@ -19,3 +19,8 @@ data/
 
 # Frontend dependencies, when the UI package is added.
 node_modules/
+
+# Playwright artifacts.
+web/test-results/
+web/playwright-report/
+web/e2e/.runtime/

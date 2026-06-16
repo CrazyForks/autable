@@ -92,6 +92,10 @@ type roleGrantsRequest struct {
 	Grants []permission.Grant `json:"grants"`
 }
 
+type roleMembersRequest struct {
+	Members []string `json:"members"`
+}
+
 const (
 	sessionCookieName   = "codetable_session"
 	oidcStateCookieName = "codetable_oidc_state"
@@ -440,7 +444,7 @@ func (server *Server) handleCreateRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -478,7 +482,7 @@ func (server *Server) handleUpdateRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -513,7 +517,7 @@ func (server *Server) handleListRows(w http.ResponseWriter, r *http.Request, dbN
 		writeError(w, http.StatusUnauthorized, errors.New("authentication is required"))
 		return
 	}
-	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -649,13 +653,7 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 	}
 	switch resource {
 	case "tables":
-		perms, err := server.system.GrantsForSubject(r.Context(), actorID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) < permission.Write {
-			writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
+		if !server.requireDatabaseWrite(w, r, actorID, dbName) {
 			return
 		}
 		var tableMeta metadata.Table
@@ -741,7 +739,7 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 }
 
 func (server *Server) handlePutDatabaseResource(w http.ResponseWriter, r *http.Request) {
-	dbName, roleName, ok := parseRoleGrantsPath(r.URL.Path)
+	dbName, roleName, action, ok := parseRoleActionPath(r.URL.Path)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -753,12 +751,27 @@ func (server *Server) handlePutDatabaseResource(w http.ResponseWriter, r *http.R
 	if !server.requireDatabaseWrite(w, r, actorID, dbName) {
 		return
 	}
-	var request roleGrantsRequest
-	if err := readJSON(r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	var role systemdb.RoleDefinition
+	var err error
+	switch action {
+	case "grants":
+		var request roleGrantsRequest
+		if err := readJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		role, err = server.system.ReplaceRoleGrants(r.Context(), dbName, roleName, request.Grants)
+	case "members":
+		var request roleMembersRequest
+		if err := readJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		role, err = server.system.ReplaceRoleMembers(r.Context(), dbName, roleName, request.Members)
+	default:
+		http.NotFound(w, r)
 		return
 	}
-	role, err := server.system.ReplaceRoleGrants(r.Context(), dbName, roleName, request.Grants)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -958,16 +971,19 @@ func parseDatabaseResourcePath(path string) (string, string, bool) {
 	return parts[2], parts[3], true
 }
 
-func parseRoleGrantsPath(path string) (string, string, bool) {
+func parseRoleActionPath(path string) (string, string, string, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 6 || parts[0] != "api" || parts[1] != "databases" || parts[3] != "roles" || parts[5] != "grants" {
-		return "", "", false
+	if len(parts) != 6 || parts[0] != "api" || parts[1] != "databases" || parts[3] != "roles" {
+		return "", "", "", false
+	}
+	if parts[5] != "grants" && parts[5] != "members" {
+		return "", "", "", false
 	}
 	roleName, err := url.PathUnescape(parts[4])
 	if err != nil || roleName == "" {
-		return "", "", false
+		return "", "", "", false
 	}
-	return parts[2], roleName, true
+	return parts[2], roleName, parts[5], true
 }
 
 func parseWorkflowRunsPath(path string) (int64, bool) {
@@ -1068,7 +1084,7 @@ func (server *Server) requireResourceRead(w http.ResponseWriter, r *http.Request
 }
 
 func (server *Server) requireDatabaseWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {
-	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return false
@@ -1085,7 +1101,7 @@ func (server *Server) requireResourceWrite(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) requireResourceLevel(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64, level permission.Level) bool {
-	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return false
@@ -1098,7 +1114,7 @@ func (server *Server) requireResourceLevel(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) filterReadableWorkflows(ctx context.Context, actorID string, workflows []systemdb.WorkflowDefinition) ([]systemdb.WorkflowDefinition, error) {
-	perms, err := server.system.GrantsForSubject(ctx, actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(ctx, actorID)
 	if err != nil {
 		return nil, err
 	}
@@ -1112,7 +1128,7 @@ func (server *Server) filterReadableWorkflows(ctx context.Context, actorID strin
 }
 
 func (server *Server) filterReadableForms(ctx context.Context, actorID string, forms []systemdb.FormDefinition) ([]systemdb.FormDefinition, error) {
-	perms, err := server.system.GrantsForSubject(ctx, actorID)
+	perms, err := server.system.EffectiveGrantsForSubject(ctx, actorID)
 	if err != nil {
 		return nil, err
 	}

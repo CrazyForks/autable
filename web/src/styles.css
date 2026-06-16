@@ -372,7 +372,7 @@ select {
 
 .permission-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(220px, 0.75fr) repeat(3, minmax(0, 1fr));
   gap: 12px;
   min-height: 0;
 }
@@ -415,6 +415,14 @@ select {
 
 .permission-row span:first-child {
   font-weight: 600;
+}
+
+.member-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 
 .empty-state {

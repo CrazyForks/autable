@@ -8,7 +8,6 @@ import {
   type GridColumn,
   type Item
 } from "@glideapps/glide-data-grid";
-import { demoCatalog, initialForms, initialRows, initialWorkflowNodes, initialWorkflows } from "./demoData";
 import { AuthDialog } from "./components/AuthDialog";
 import { FormWorkspace } from "./components/FormWorkspace";
 import { compactRoleGrants, PermissionPanel } from "./components/PermissionPanel";
@@ -38,6 +37,7 @@ import {
   runWorkflow,
   saveForm,
   saveRoleGrants,
+  saveRoleMembers,
   saveWorkflow,
   updateRow,
   type AuthUser,
@@ -60,21 +60,22 @@ type View = WorkspaceView;
 
 const emptyDatabase: DatabaseMetadata = { name: "", sqlite_path: "", tables: [] };
 const emptyTable: TableMetadata = { name: "", display_name: "", fields: [], views: [] };
+const emptyCatalog: Catalog = { databases: [] };
 
 export function App() {
-  const [catalog, setCatalog] = useState<Catalog>(demoCatalog);
-  const [rows, setRows] = useState(initialRows);
+  const [catalog, setCatalog] = useState<Catalog>(emptyCatalog);
+  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
   const [rowsViewName, setRowsViewName] = useState("all");
   const [view, setView] = useState<View>("table");
-  const [selectedDatabaseName, setSelectedDatabaseName] = useState(demoCatalog.databases[0]?.name ?? "");
-  const [selectedTable, setSelectedTable] = useState("contacts");
+  const [selectedDatabaseName, setSelectedDatabaseName] = useState("");
+  const [selectedTable, setSelectedTable] = useState("");
   const [selectedTableView, setSelectedTableView] = useState("all");
-  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>(initialWorkflows);
-  const [workflowNodes, setWorkflowNodes] = useState<WorkflowNodeInfo[]>(initialWorkflowNodes);
-  const [forms, setForms] = useState<FormDefinition[]>(initialForms);
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
+  const [workflowNodes, setWorkflowNodes] = useState<WorkflowNodeInfo[]>([]);
+  const [forms, setForms] = useState<FormDefinition[]>([]);
   const [roles, setRoles] = useState<RoleDefinition[]>([]);
-  const [selectedWorkflowID, setSelectedWorkflowID] = useState(initialWorkflows[0]?.id ?? 0);
-  const [selectedFormID, setSelectedFormID] = useState(initialForms[0]?.id ?? 0);
+  const [selectedWorkflowID, setSelectedWorkflowID] = useState(0);
+  const [selectedFormID, setSelectedFormID] = useState(0);
   const [selectedRoleName, setSelectedRoleName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -92,6 +93,8 @@ export function App() {
   const [newTableName, setNewTableName] = useState("");
   const [newRoleName, setNewRoleName] = useState("");
   const [roleDraftGrants, setRoleDraftGrants] = useState<PermissionGrant[]>([]);
+  const [roleDraftMembers, setRoleDraftMembers] = useState<string[]>([]);
+  const [newRoleMemberID, setNewRoleMemberID] = useState("");
   const [status, setStatus] = useState("Ready");
 
   const database =
@@ -119,6 +122,8 @@ export function App() {
 
   useEffect(() => {
     setRoleDraftGrants(selectedRole?.grants ?? []);
+    setRoleDraftMembers(selectedRole?.members ?? []);
+    setNewRoleMemberID("");
   }, [selectedRole?.subject_id]);
 
   useEffect(() => {
@@ -142,11 +147,10 @@ export function App() {
         cancelled = true;
       };
     }
-    const userID = currentUser ? undefined : "demo-user";
     void Promise.all([
-      listWorkflows(database.name, userID),
-      listForms(database.name, userID),
-      listRoles(database.name, userID).catch(() => []),
+      listWorkflows(database.name),
+      listForms(database.name),
+      listRoles(database.name).catch(() => []),
       loadWorkflowNodes()
     ])
       .then(([nextWorkflows, nextForms, nextRoles, nextWorkflowNodes]) => {
@@ -190,6 +194,21 @@ export function App() {
         setStatus(`Signed in as ${user.email}`);
       })
       .catch(() => undefined);
+    void loadMetadata()
+      .then((nextCatalog) => {
+        if (cancelled) {
+          return;
+        }
+        setCatalog(nextCatalog);
+        setSelectedDatabaseName(nextCatalog.databases[0]?.name ?? "");
+        setSelectedTable(nextCatalog.databases[0]?.tables[0]?.name ?? "");
+        setSelectedTableView("all");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "Metadata load failed");
+        }
+      });
     void listOIDCProviders()
       .then((providers) => {
         if (!cancelled) {
@@ -211,8 +230,7 @@ export function App() {
         cancelled = true;
       };
     }
-    const userID = currentUser ? undefined : "demo-user";
-    void listRows(database.name, table.name, selectedTableView, userID)
+    void listRows(database.name, table.name, selectedTableView)
       .then((nextRows) => {
         if (cancelled) {
           return;
@@ -240,8 +258,7 @@ export function App() {
         cancelled = true;
       };
     }
-    const userID = currentUser ? undefined : "demo-user";
-    void listWorkflowRuns(selectedWorkflow.id, userID)
+    void listWorkflowRuns(selectedWorkflow.id)
       .then((runs) => {
         if (cancelled) {
           return;
@@ -303,7 +320,7 @@ export function App() {
         table.name,
         recordID,
         { [field]: nextValue },
-        currentUser ? undefined : "demo-user"
+        undefined
       );
       setRows((current) =>
         current.map((item) =>
@@ -315,7 +332,7 @@ export function App() {
       setRowHistory([]);
       setStatus(`Updated record ${saved.record_id}`);
     } catch (error) {
-      setStatus(error instanceof Error ? `Local edit: ${error.message}` : "Local edit saved");
+      setStatus(error instanceof Error ? error.message : "Row update failed");
     }
   }
 
@@ -328,11 +345,10 @@ export function App() {
         : nextCatalog.databases[0]?.name;
       if (dbName) {
         setSelectedDatabaseName(dbName);
-        const userID = currentUser ? undefined : "demo-user";
         const [nextWorkflows, nextForms, nextRoles, nextWorkflowNodes] = await Promise.all([
-          listWorkflows(dbName, userID),
-          listForms(dbName, userID),
-          listRoles(dbName, userID).catch(() => []),
+          listWorkflows(dbName),
+          listForms(dbName),
+          listRoles(dbName).catch(() => []),
           loadWorkflowNodes()
         ]);
         setWorkflows(nextWorkflows);
@@ -356,8 +372,7 @@ export function App() {
       return;
     }
     try {
-      const userID = currentUser ? undefined : "demo-user";
-      const saved = await createDatabase({ name, sqlite_path: `./data/${name}.sqlite` }, userID);
+      const saved = await createDatabase({ name, sqlite_path: `./data/${name}.sqlite` });
       const nextCatalog = await loadMetadata();
       setCatalog(nextCatalog);
       setSelectedDatabaseName(saved.name);
@@ -383,7 +398,6 @@ export function App() {
       return;
     }
     try {
-      const userID = currentUser ? undefined : "demo-user";
       const saved = await createTable(
         database.name,
         {
@@ -391,8 +405,7 @@ export function App() {
           display_name: name,
           fields: [{ name: "name", type: "text", required: true, deleted: false }],
           views: []
-        },
-        userID
+        }
       );
       const nextCatalog = await loadMetadata();
       setCatalog(nextCatalog);
@@ -418,8 +431,7 @@ export function App() {
       return;
     }
     try {
-      const userID = currentUser ? undefined : "demo-user";
-      const saved = await createRole(database.name, name, userID);
+      const saved = await createRole(database.name, name);
       setRoles((current) => replaceRole(current, saved));
       setSelectedRoleName(saved.name);
       setNewRoleName("");
@@ -435,13 +447,14 @@ export function App() {
       return;
     }
     try {
-      const userID = currentUser ? undefined : "demo-user";
-      const saved = await saveRoleGrants(database.name, selectedRole.name, compactRoleGrants(roleDraftGrants), userID);
+      await saveRoleGrants(database.name, selectedRole.name, compactRoleGrants(roleDraftGrants));
+      const saved = await saveRoleMembers(database.name, selectedRole.name, compactMembers(roleDraftMembers));
       setRoles((current) => replaceRole(current, saved));
       setSelectedRoleName(saved.name);
-      setStatus(`Saved permissions for ${saved.name}`);
+      setRoleDraftMembers(saved.members ?? []);
+      setStatus(`Saved role ${saved.name}`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Permission save failed");
+      setStatus(error instanceof Error ? error.message : "Role save failed");
     }
   }
 
@@ -453,19 +466,14 @@ export function App() {
     const values = Object.fromEntries(activeFields.map((field) => [field.name, field.name === "status" ? "Review" : ""]));
     values.name = `New record ${rows.length + 1}`;
     try {
-      const saved = await createRow(database.name, table.name, values, currentUser ? undefined : "demo-user");
+      const saved = await createRow(database.name, table.name, values);
       setRows((current) => [...current, rowRecordToValues(saved)]);
       setRowsViewName("local");
       setSelectedRecordID(saved.record_id);
       setRowHistory([]);
       setStatus(`Created record ${saved.record_id}`);
     } catch (error) {
-      const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
-      setRows((current) => [...current, { record_id: localID, ...values }]);
-      setRowsViewName("local");
-      setSelectedRecordID(localID);
-      setRowHistory([]);
-      setStatus(error instanceof Error ? `Local draft: ${error.message}` : "Local draft added");
+      setStatus(error instanceof Error ? error.message : "Row creation failed");
     }
   }
 
@@ -474,7 +482,7 @@ export function App() {
       return;
     }
     try {
-      const saved = await saveWorkflow(database.name, selectedWorkflow, currentUser ? undefined : "demo-user");
+      const saved = await saveWorkflow(database.name, selectedWorkflow);
       setWorkflows((current) => replaceResource(current, saved));
       setSelectedWorkflowID(saved.id ?? 0);
       setStatus(`Workflow saved as #${saved.id}`);
@@ -493,7 +501,7 @@ export function App() {
       const response = await runWorkflow(selectedWorkflow.id, {
         ...sampleRow,
         record_id: Number(sampleRow.record_id ?? 1)
-      }, currentUser ? undefined : "demo-user");
+      });
       setWorkflowRuns((current) => [response, ...current.filter((run) => run.history_key !== response.history_key)]);
       setSelectedWorkflowRunKey(response.history_key);
       if (response.run.error) {
@@ -511,7 +519,7 @@ export function App() {
       return;
     }
     try {
-      const saved = await saveForm(database.name, selectedForm, currentUser ? undefined : "demo-user");
+      const saved = await saveForm(database.name, selectedForm);
       setForms((current) => replaceResource(current, saved));
       setSelectedFormID(saved.id ?? 0);
       setStatus(`Form saved as #${saved.id}`);
@@ -533,15 +541,6 @@ export function App() {
         return [];
       })
     );
-    if (!currentUser) {
-      const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
-      setRows((current) => [...current, { record_id: localID, ...values }]);
-      setRowsViewName("local");
-      setSelectedRecordID(localID);
-      setRowHistory([]);
-      setStatus("Local form submitted");
-      return;
-    }
     try {
       const saved = await createRow(database.name, table.name, values);
       setRows((current) => [...current, rowRecordToValues(saved)]);
@@ -550,12 +549,7 @@ export function App() {
       setRowHistory([]);
       setStatus(`Form created record ${saved.record_id}`);
     } catch (error) {
-      const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
-      setRows((current) => [...current, { record_id: localID, ...values }]);
-      setRowsViewName("local");
-      setSelectedRecordID(localID);
-      setRowHistory([]);
-      setStatus(error instanceof Error ? `Local form: ${error.message}` : "Local form submitted");
+      setStatus(error instanceof Error ? error.message : "Form submit failed");
     }
   }
 
@@ -599,8 +593,7 @@ export function App() {
       return;
     }
     try {
-      const userID = currentUser ? undefined : "demo-user";
-      const changes = await listRowHistory(database.name, table.name, selectedRecordID, userID);
+      const changes = await listRowHistory(database.name, table.name, selectedRecordID);
       setRowHistory(changes);
       setStatus(`Loaded ${changes.length} history entries for record ${selectedRecordID}`);
     } catch (error) {
@@ -660,6 +653,20 @@ export function App() {
         }
       ];
     });
+  }
+
+  function addRoleMember() {
+    const memberID = newRoleMemberID.trim();
+    if (!memberID) {
+      setStatus("Role member user id is required");
+      return;
+    }
+    setRoleDraftMembers((current) => compactMembers([...current, memberID]));
+    setNewRoleMemberID("");
+  }
+
+  function removeRoleMember(memberID: string) {
+    setRoleDraftMembers((current) => current.filter((item) => item !== memberID));
   }
 
   function selectDatabaseSection(databaseName: string, nextView: View) {
@@ -789,7 +796,12 @@ export function App() {
               database={database}
               forms={forms}
               grants={roleDraftGrants}
+              members={roleDraftMembers}
+              newMemberID={newRoleMemberID}
+              onAddMember={addRoleMember}
               onGrantChange={updateRoleGrant}
+              onMemberRemove={removeRoleMember}
+              onNewMemberIDChange={setNewRoleMemberID}
               onSave={persistRoleGrants}
               role={selectedRole}
               workflows={workflows}
@@ -831,6 +843,10 @@ function replaceRole(items: RoleDefinition[], saved: RoleDefinition): RoleDefini
     return [...items, saved];
   }
   return items.map((item) => (item.name === saved.name ? saved : item));
+}
+
+function compactMembers(members: string[]): string[] {
+  return [...new Set(members.map((member) => member.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
 }
 
 function rowRecordToValues(row: RowRecord): Record<string, unknown> {

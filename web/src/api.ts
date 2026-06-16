@@ -119,6 +119,7 @@ export type RoleDefinition = {
   name: string;
   subject_id: string;
   grants: PermissionGrant[];
+  members: string[];
 };
 
 export type AuthUser = {
@@ -438,6 +439,24 @@ export async function saveRoleGrants(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error ?? "role grant save failed");
+  }
+  return response.json() as Promise<RoleDefinition>;
+}
+
+export async function saveRoleMembers(
+  dbName: string,
+  roleName: string,
+  members: string[],
+  userID?: string
+): Promise<RoleDefinition> {
+  const response = await fetch(`/api/databases/${dbName}/roles/${encodeURIComponent(roleName)}/members`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...userHeaders(userID) },
+    body: JSON.stringify({ members })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "role member save failed");
   }
   return response.json() as Promise<RoleDefinition>;
 }

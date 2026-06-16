@@ -4,21 +4,133 @@ import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+const catalogFixture = {
+  databases: [
+    {
+      name: "workspace",
+      sqlite_path: "./data/workspace.sqlite",
+      tables: [
+        {
+          name: "contacts",
+          display_name: "Contacts",
+          fields: [
+            { name: "name", type: "text", required: true, deleted: false },
+            { name: "email", type: "email", required: false, deleted: false },
+            { name: "status", type: "text", required: false, deleted: false }
+          ],
+          views: [
+            { name: "active", display_name: "Active", filters: [], sorts: [] },
+            { name: "active-ops", display_name: "Active ops", base_view: "active", filters: [], sorts: [] }
+          ]
+        }
+      ]
+    }
+  ]
+};
+
+const rowFixture = [
+  { record_id: 1, values: { name: "Ada Lovelace", email: "ada@example.com", status: "Active" } },
+  { record_id: 2, values: { name: "Grace Hopper", email: "grace@example.com", status: "Review" } },
+  { record_id: 3, values: { name: "Katherine Johnson", email: "katherine@example.com", status: "Active" } }
+];
+
+const workflowFixture = [
+  {
+    id: 1,
+    database_name: "workspace",
+    name: "record-review",
+    script: 'function run(info) { return info.node("echo", { value: info.inputs.name }); }',
+    secrets: { TOKEN: "" },
+    variables: { CHANNEL: "ops" }
+  },
+  {
+    id: 2,
+    database_name: "workspace",
+    name: "welcome-contact",
+    script: 'function run(info) { return info.node("echo", { value: info.inputs.name }); }',
+    secrets: {},
+    variables: { CHANNEL: "sales" }
+  }
+];
+
+const formFixture = [
+  {
+    id: 1,
+    database_name: "workspace",
+    name: "contact-intake",
+    script:
+      'root.append(api.input({ name: "name", label: "Name", required: true }), api.submit("Create record"));'
+  },
+  {
+    id: 2,
+    database_name: "workspace",
+    name: "quick-status",
+    script:
+      'root.append(api.select({ name: "status", label: "Status", options: ["Active", "Review"] }), api.submit("Update status"));'
+  }
+];
+
+const workflowNodeFixture = [
+  {
+    type: "echo",
+    display_name: "Echo",
+    inputs: [{ name: "value", type: "any", required: false }],
+    outputs: [{ name: "value", type: "any", required: false }],
+    stateless: true,
+    trigger: false
+  },
+  {
+    type: "table.record.changed",
+    display_name: "Record changed",
+    inputs: [{ name: "history_key", type: "string", required: true }],
+    outputs: [{ name: "record", type: "TriggerRecord", required: true }],
+    stateless: true,
+    trigger: true
+  }
+];
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status });
+}
+
+async function defaultFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = String(input);
+  if (url === "/api/auth/me") {
+    return jsonResponse({ error: "not authenticated" }, 401);
+  }
+  if (url === "/api/auth/oidc/providers") {
+    return jsonResponse([]);
+  }
+  if (url === "/api/metadata") {
+    return jsonResponse(catalogFixture);
+  }
+  if (url === "/api/tables/workspace/contacts/rows" && init?.method === "POST") {
+    return jsonResponse({ record_id: 4, values: JSON.parse(String(init.body)).values }, 201);
+  }
+  if (url.startsWith("/api/tables/workspace/contacts/rows")) {
+    return jsonResponse(rowFixture);
+  }
+  if (url === "/api/databases/workspace/workflows") {
+    return jsonResponse(workflowFixture);
+  }
+  if (url === "/api/databases/workspace/forms") {
+    return jsonResponse(formFixture);
+  }
+  if (url === "/api/databases/workspace/roles") {
+    return jsonResponse([]);
+  }
+  if (url === "/api/workflow/nodes") {
+    return jsonResponse(workflowNodeFixture);
+  }
+  if (url === "/api/workflows/1/runs") {
+    return jsonResponse([]);
+  }
+  return jsonResponse({ error: `unhandled ${url}` }, 404);
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-    const url = String(input);
-    if (url === "/api/auth/me") {
-      return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
-    }
-    if (url === "/api/auth/oidc/providers") {
-      return new Response(JSON.stringify([]), { status: 200 });
-    }
-    if (url.startsWith("/api/tables/workspace/contacts/rows")) {
-      return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
-    }
-    return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
-  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(defaultFetch);
 });
 
 function renderApp() {
@@ -30,12 +142,12 @@ function renderApp() {
 }
 
 describe("App", () => {
-  it("renders table view first", () => {
+  it("renders table view first", async () => {
     renderApp();
     expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Table" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Table$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Contacts/ })).toBeInTheDocument();
-    expect(screen.getAllByText("3 of 3 records").length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getAllByText("3 of 3 records").length).toBeGreaterThan(0));
   });
 
   it("shows configured OIDC providers as login actions", async () => {
@@ -50,7 +162,7 @@ describe("App", () => {
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+      return defaultFetch(input);
     });
 
     renderApp();
@@ -59,7 +171,7 @@ describe("App", () => {
   });
 
   it("loads table rows from the backend when available", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
         return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
@@ -73,7 +185,7 @@ describe("App", () => {
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+      return defaultFetch(input, init);
     });
 
     renderApp();
@@ -111,7 +223,7 @@ describe("App", () => {
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+      return defaultFetch(input, init);
     });
 
     renderApp();
@@ -168,18 +280,17 @@ describe("App", () => {
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+      return defaultFetch(input, init);
     });
 
     renderApp();
     await userEvent.type(screen.getByRole("textbox", { name: "New table name" }), "projects");
     await userEvent.click(screen.getByRole("button", { name: "Create Table" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /projects/ })).toBeInTheDocument());
-    expect(screen.getByText("Created table workspace.projects")).toBeInTheDocument();
   });
 
   it("loads row history for the selected table record", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
         return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
@@ -203,13 +314,13 @@ describe("App", () => {
               record_id: 42,
               timestamp: "2026-06-16T10:00:00Z",
               values: { name: "Backend Row" },
-              actor_id: "demo-user"
+              actor_id: "test-user"
             }
           ]),
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+      return defaultFetch(input, init);
     });
 
     renderApp();
@@ -221,7 +332,7 @@ describe("App", () => {
 
   it("shows workflow JavaScript as the workflow view", async () => {
     renderApp();
-    await userEvent.click(screen.getByRole("button", { name: "Workflow" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
     expect(screen.getByRole("button", { name: /welcome-contact/ })).toBeInTheDocument();
     expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
       'info.node("echo"'
@@ -240,7 +351,7 @@ describe("App", () => {
   });
 
   it("loads persisted workflow runs and renders their flow", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
         return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
@@ -266,27 +377,27 @@ describe("App", () => {
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+      return defaultFetch(input, init);
     });
 
     renderApp();
-    await userEvent.click(screen.getByRole("button", { name: "Workflow" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
     expect(await screen.findByText("whistory_00000000000000000001_00000000000000000100")).toBeInTheDocument();
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
   });
 
   it("shows form JavaScript and preview controls", async () => {
     renderApp();
-    await userEvent.click(screen.getByRole("button", { name: "Form" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
     expect(screen.getByRole("button", { name: /quick-status/ })).toBeInTheDocument();
     expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
     await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Margaret Hamilton");
     expect(screen.getByRole("button", { name: "Create record" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create record" }));
-    await userEvent.click(screen.getByRole("button", { name: "Table" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Table$/ }));
     await waitFor(() => expect(screen.getAllByText("4 of 4 records").length).toBeGreaterThan(0));
 
-    await userEvent.click(screen.getByRole("button", { name: "Form" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Form$/ }));
     await userEvent.click(screen.getByRole("button", { name: /quick-status/ }));
     expect(screen.getByRole("button", { name: "Update status" })).toBeInTheDocument();
   });

@@ -245,6 +245,23 @@ func TestRoleDefinitionStoresReplaceableGrants(t *testing.T) {
 	if !perms.CanReadField(role.SubjectID, "workspace.contacts", "email") {
 		t.Fatal("expected field read grant")
 	}
+	role, err = db.ReplaceRoleMembers(ctx, "workspace", "editor", []string{"u1", "u2", "u1", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(role.Members) != 2 || role.Members[0] != "u1" || role.Members[1] != "u2" {
+		t.Fatalf("expected de-duplicated role members, got %#v", role.Members)
+	}
+	effectivePerms, err := db.EffectiveGrantsForSubject(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !effectivePerms.CanWriteField("u1", "workspace.contacts", "name") {
+		t.Fatal("expected role member to inherit table write grant")
+	}
+	if !effectivePerms.CanReadField("u1", "workspace.contacts", "email") {
+		t.Fatal("expected role member to inherit field read grant")
+	}
 
 	role, err = db.ReplaceRoleGrants(ctx, "workspace", "editor", []permission.Grant{
 		{Scope: permission.ScopeForm, Resource: "3", Level: permission.Read},
@@ -261,6 +278,17 @@ func TestRoleDefinitionStoresReplaceableGrants(t *testing.T) {
 	}
 	if len(roles) != 1 || roles[0].Name != "editor" {
 		t.Fatalf("unexpected roles: %#v", roles)
+	}
+	role, err = db.ReplaceRoleMembers(ctx, "workspace", "editor", []string{"u2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	effectivePerms, err = db.EffectiveGrantsForSubject(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effectivePerms.CanReadResource("u1", permission.ScopeForm, "3") {
+		t.Fatal("expected removed role member to lose role grants")
 	}
 }
 

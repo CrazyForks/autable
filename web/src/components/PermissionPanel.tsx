@@ -1,5 +1,5 @@
-import { Button, Select, Text } from "@fluentui/react-components";
-import { SaveRegular } from "@fluentui/react-icons";
+import { Button, Input, List, ListItem, Select, Text } from "@fluentui/react-components";
+import { AddRegular, DismissRegular, SaveRegular } from "@fluentui/react-icons";
 import {
   type DatabaseMetadata,
   type FormDefinition,
@@ -18,12 +18,17 @@ type PermissionPanelProps = {
   database: DatabaseMetadata;
   forms: FormDefinition[];
   grants: PermissionGrant[];
+  members: string[];
+  newMemberID: string;
+  onAddMember: () => void;
   onGrantChange: (
     scope: PermissionGrant["scope"],
     resource: string,
     field: string,
     level: PermissionGrant["level"]
   ) => void;
+  onMemberRemove: (memberID: string) => void;
+  onNewMemberIDChange: (value: string) => void;
   onSave: () => void;
   role?: RoleDefinition;
   workflows: WorkflowDefinition[];
@@ -33,7 +38,12 @@ export function PermissionPanel({
   database,
   forms,
   grants,
+  members,
+  newMemberID,
+  onAddMember,
   onGrantChange,
+  onMemberRemove,
+  onNewMemberIDChange,
   onSave,
   role,
   workflows
@@ -51,6 +61,37 @@ export function PermissionPanel({
       </div>
       {role ? (
         <div className="permission-grid">
+          <div className="permission-card">
+            <Text weight="semibold">Members</Text>
+            <div className="create-rowline">
+              <Input
+                aria-label="Role member user id"
+                placeholder="user id"
+                value={newMemberID}
+                onChange={(_, data) => onNewMemberIDChange(data.value)}
+              />
+              <Button icon={<AddRegular />} aria-label="Add role member" onClick={onAddMember} />
+            </div>
+            {members.length === 0 ? (
+              <Text size={200}>No members</Text>
+            ) : (
+              <List navigationMode="items" aria-label="Role members">
+                {members.map((member) => (
+                  <ListItem key={member}>
+                    <div className="member-list-item">
+                      <Text truncate>{member}</Text>
+                      <Button
+                        appearance="subtle"
+                        icon={<DismissRegular />}
+                        aria-label={`Remove ${member}`}
+                        onClick={() => onMemberRemove(member)}
+                      />
+                    </div>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </div>
           <div className="permission-card">
             <Text weight="semibold">Tables</Text>
             {database.tables.map((table) => (

@@ -524,6 +524,16 @@ func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 		t.Fatalf("expected role grants update 200, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 
+	updateMembers := httptest.NewRequest(http.MethodPut, "/api/databases/workspace/roles/editor/members", bytes.NewBufferString(`{
+		"members":["u1","u2","u1"]
+	}`))
+	updateMembers.Header.Set("X-Codetable-User", "owner")
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, updateMembers)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected role members update 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
 	rolesRequest := httptest.NewRequest(http.MethodGet, "/api/databases/workspace/roles", nil)
 	rolesRequest.Header.Set("X-Codetable-User", "owner")
 	recorder = httptest.NewRecorder()
@@ -535,8 +545,34 @@ func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &roles); err != nil {
 		t.Fatal(err)
 	}
-	if len(roles) != 1 || roles[0].SubjectID != "role:workspace:editor" || len(roles[0].Grants) != 2 {
+	if len(roles) != 1 || roles[0].SubjectID != "role:workspace:editor" || len(roles[0].Grants) != 2 || len(roles[0].Members) != 2 {
 		t.Fatalf("unexpected roles response: %#v", roles)
+	}
+}
+
+func TestRoleMembershipGrantsEffectiveTableAccess(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if _, err := system.SaveRole(ctx, systemdb.RoleDefinition{DatabaseName: "db", Name: "editor"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := system.ReplaceRoleGrants(ctx, "db", "editor", []permission.Grant{
+		{Scope: permission.ScopeTable, Resource: "db.contacts", Level: permission.Write},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := system.ReplaceRoleMembers(ctx, "db", "editor", []string{"u1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{
+		"values":{"name":"Ada","email":"ada@example.com"}
+	}`))
+	request.Header.Set("X-Codetable-User", "u1")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected role member create 201, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 

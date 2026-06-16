@@ -46,6 +46,7 @@ type RoleDefinition struct {
 	Name         string             `json:"name"`
 	SubjectID    string             `json:"subject_id"`
 	Grants       []permission.Grant `json:"grants"`
+	Members      []string           `json:"members"`
 	CreatedAt    time.Time          `json:"created_at"`
 	UpdatedAt    time.Time          `json:"updated_at"`
 }
@@ -106,6 +107,15 @@ type roleModel struct {
 	UpdatedAt    time.Time
 }
 
+type roleMemberModel struct {
+	ID           int64  `gorm:"primaryKey;autoIncrement"`
+	DatabaseName string `gorm:"uniqueIndex:idx_role_member;not null"`
+	RoleName     string `gorm:"uniqueIndex:idx_role_member;not null"`
+	UserID       string `gorm:"uniqueIndex:idx_role_member;not null"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 func Open(ctx context.Context, path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
@@ -138,6 +148,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 		&workflowModel{},
 		&formModel{},
 		&roleModel{},
+		&roleMemberModel{},
 	)
 }
 
@@ -252,6 +263,28 @@ func (db *DB) GrantsForSubject(ctx context.Context, subjectID string) (permissio
 	grants, err := db.GrantListForSubject(ctx, subjectID)
 	if err != nil {
 		return permission.Set{}, err
+	}
+	return permission.New(grants...), nil
+}
+
+func (db *DB) EffectiveGrantsForSubject(ctx context.Context, subjectID string) (permission.Set, error) {
+	grants, err := db.GrantListForSubject(ctx, subjectID)
+	if err != nil {
+		return permission.Set{}, err
+	}
+	memberships, err := db.RoleMemberships(ctx, subjectID)
+	if err != nil {
+		return permission.Set{}, err
+	}
+	for _, membership := range memberships {
+		roleGrants, err := db.GrantListForSubject(ctx, RoleSubjectID(membership.DatabaseName, membership.RoleName))
+		if err != nil {
+			return permission.Set{}, err
+		}
+		for _, grant := range roleGrants {
+			grant.SubjectID = subjectID
+			grants = append(grants, grant)
+		}
 	}
 	return permission.New(grants...), nil
 }
@@ -444,6 +477,65 @@ func (db *DB) ReplaceRoleGrants(ctx context.Context, databaseName, roleName stri
 	return db.Role(ctx, role.DatabaseName, role.Name)
 }
 
+type RoleMembership struct {
+	DatabaseName string `json:"database_name"`
+	RoleName     string `json:"role_name"`
+	UserID       string `json:"user_id"`
+}
+
+func (db *DB) ReplaceRoleMembers(ctx context.Context, databaseName, roleName string, members []string) (RoleDefinition, error) {
+	role, err := db.Role(ctx, databaseName, roleName)
+	if err != nil {
+		return RoleDefinition{}, err
+	}
+	err = db.orm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where(&roleMemberModel{DatabaseName: databaseName, RoleName: roleName}).Delete(&roleMemberModel{}).Error; err != nil {
+			return err
+		}
+		seen := map[string]struct{}{}
+		for _, member := range members {
+			if member == "" {
+				continue
+			}
+			if _, ok := seen[member]; ok {
+				continue
+			}
+			seen[member] = struct{}{}
+			model := roleMemberModel{DatabaseName: databaseName, RoleName: roleName, UserID: member}
+			if err := tx.Create(&model).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return RoleDefinition{}, err
+	}
+	return db.Role(ctx, role.DatabaseName, role.Name)
+}
+
+func (db *DB) RoleMemberships(ctx context.Context, userID string) ([]RoleMembership, error) {
+	var models []roleMemberModel
+	err := db.orm.WithContext(ctx).
+		Where(&roleMemberModel{UserID: userID}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "database_name"}}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "role_name"}}).
+		Find(&models).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	memberships := make([]RoleMembership, 0, len(models))
+	for _, model := range models {
+		memberships = append(memberships, RoleMembership{
+			DatabaseName: model.DatabaseName,
+			RoleName:     model.RoleName,
+			UserID:       model.UserID,
+		})
+	}
+	return memberships, nil
+}
+
 func RoleSubjectID(databaseName, roleName string) string {
 	return "role:" + databaseName + ":" + roleName
 }
@@ -567,15 +659,37 @@ func (db *DB) roleDefinition(ctx context.Context, model roleModel) (RoleDefiniti
 	if err != nil {
 		return RoleDefinition{}, err
 	}
+	members, err := db.roleMembers(ctx, model.DatabaseName, model.Name)
+	if err != nil {
+		return RoleDefinition{}, err
+	}
 	return RoleDefinition{
 		ID:           model.ID,
 		DatabaseName: model.DatabaseName,
 		Name:         model.Name,
 		SubjectID:    subjectID,
 		Grants:       grants,
+		Members:      members,
 		CreatedAt:    model.CreatedAt,
 		UpdatedAt:    model.UpdatedAt,
 	}, nil
+}
+
+func (db *DB) roleMembers(ctx context.Context, databaseName, roleName string) ([]string, error) {
+	var models []roleMemberModel
+	err := db.orm.WithContext(ctx).
+		Where(&roleMemberModel{DatabaseName: databaseName, RoleName: roleName}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "user_id"}}).
+		Find(&models).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	members := make([]string, 0, len(models))
+	for _, model := range models {
+		members = append(members, model.UserID)
+	}
+	return members, nil
 }
 
 func emptyStringMap(values map[string]string) map[string]string {
