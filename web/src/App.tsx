@@ -8,24 +8,23 @@ import {
   type Item
 } from "@glideapps/glide-data-grid";
 import { AuthDialog } from "./components/AuthDialog";
-import { compactMembers, replaceRole, rowDraftFromRecord } from "./appState";
+import { rowDraftFromRecord } from "./appState";
 import { FormWorkspace } from "./components/FormWorkspace";
-import { compactRoleGrants, PermissionPanel } from "./components/PermissionPanel";
+import { PermissionPanel } from "./components/PermissionPanel";
 import { TableWorkspace } from "./components/TableWorkspace";
 import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
 import { WorkspaceNavigation, type WorkspaceView } from "./components/WorkspaceNavigation";
+import { usePermissionWorkspace } from "./hooks/usePermissionWorkspace";
 import { useWorkflowFormWorkspace } from "./hooks/useWorkflowFormWorkspace";
 import { buildTableColumns, rowRecordToValues } from "./tableGrid";
 import { applyTableView } from "./tableViews";
 import {
   createDatabase,
-  createRole,
   createRow,
   createTable,
   deleteRow,
   listOIDCProviders,
   listRowHistory,
-  listRoles,
   listRows,
   loadCurrentUser,
   loadMetadata,
@@ -33,17 +32,13 @@ import {
   logout,
   oidcStartURL,
   register,
-  saveRoleGrants,
-  saveRoleMembers,
   updateTableMetadata,
   updateRow,
   type AuthUser,
   type Catalog,
   type DatabaseMetadata,
   type OIDCProvider,
-  type PermissionGrant,
   type RowChange,
-  type RoleDefinition,
   type TableMetadata,
   type TableViewFilter,
   type TableView,
@@ -64,8 +59,6 @@ export function App() {
   const [selectedDatabaseName, setSelectedDatabaseName] = useState("");
   const [selectedTable, setSelectedTable] = useState("");
   const [selectedTableView, setSelectedTableView] = useState("all");
-  const [roles, setRoles] = useState<RoleDefinition[]>([]);
-  const [selectedRoleName, setSelectedRoleName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -86,10 +79,6 @@ export function App() {
   const [newViewFilterValue, setNewViewFilterValue] = useState("");
   const [newViewSortField, setNewViewSortField] = useState("");
   const [newViewSortDirection, setNewViewSortDirection] = useState<TableViewSort["direction"]>("asc");
-  const [newRoleName, setNewRoleName] = useState("");
-  const [roleDraftGrants, setRoleDraftGrants] = useState<PermissionGrant[]>([]);
-  const [roleDraftMembers, setRoleDraftMembers] = useState<string[]>([]);
-  const [newRoleMemberID, setNewRoleMemberID] = useState("");
   const [status, setStatus] = useState("Ready");
 
   const database =
@@ -127,7 +116,19 @@ export function App() {
     workflows,
     workflowVariablesText
   } = workflowFormWorkspace;
-  const selectedRole = roles.find((item) => item.name === selectedRoleName) ?? roles[0];
+  const permissionWorkspace = usePermissionWorkspace({
+    currentUserID: currentUser?.id,
+    database,
+    onStatus: setStatus
+  });
+  const {
+    newRoleMemberID,
+    newRoleName,
+    roleDraftGrants,
+    roleDraftMembers,
+    roles,
+    selectedRole
+  } = permissionWorkspace;
   const displayedRows = useMemo(
     () => (rowsViewName === selectedTableView ? rows : applyTableView(rows, table.views ?? [], selectedTableView)),
     [rows, rowsViewName, table.views, selectedTableView]
@@ -147,12 +148,6 @@ export function App() {
   }, [activeFieldNames, selectedRow]);
 
   useEffect(() => {
-    setRoleDraftGrants(selectedRole?.grants ?? []);
-    setRoleDraftMembers(selectedRole?.members ?? []);
-    setNewRoleMemberID("");
-  }, [selectedRole?.subject_id]);
-
-  useEffect(() => {
     if (!catalog.databases.some((item) => item.name === selectedDatabaseName)) {
       setSelectedDatabaseName(catalog.databases[0]?.name ?? "");
       return;
@@ -162,34 +157,6 @@ export function App() {
       setSelectedTableView("all");
     }
   }, [catalog.databases, database.tables, selectedDatabaseName, selectedTable]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!database.name || !currentUser) {
-      setRoles([]);
-      setSelectedRoleName("");
-      return () => {
-        cancelled = true;
-      };
-    }
-    void listRoles(database.name)
-      .then((nextRoles) => {
-        if (cancelled) {
-          return;
-        }
-        setRoles(nextRoles);
-        setSelectedRoleName(nextRoles[0]?.name ?? "");
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRoles([]);
-          setSelectedRoleName("");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser?.id, database.name]);
 
   useEffect(() => {
     if (displayedRecordIDs.length === 0) {
@@ -246,7 +213,7 @@ export function App() {
     }
     if (!currentUser) {
       applyCatalogSelection(emptyCatalog, "");
-      setRoles([]);
+      permissionWorkspace.clearRoles();
       workflowFormWorkspace.clearResources();
       return () => {
         cancelled = true;
@@ -345,12 +312,10 @@ export function App() {
       const nextCatalog = await loadMetadata();
       const dbName = applyCatalogSelection(nextCatalog, selectedDatabaseName);
       if (dbName) {
-        const [nextRoles] = await Promise.all([
-          listRoles(dbName).catch(() => []),
+        await Promise.all([
+          permissionWorkspace.refreshRoles(dbName),
           workflowFormWorkspace.refreshResources(dbName)
         ]);
-        setRoles(nextRoles);
-        setSelectedRoleName(nextRoles[0]?.name ?? "");
       }
       setStatus("Metadata and db-level resources refreshed");
     } catch (error) {
@@ -521,44 +486,6 @@ export function App() {
     setNewViewSortDirection("asc");
   }
 
-  async function createRoleFromSidebar() {
-    if (!database.name) {
-      setStatus("Select a database before creating a role");
-      return;
-    }
-    const name = newRoleName.trim();
-    if (!name) {
-      setStatus("Role name is required");
-      return;
-    }
-    try {
-      const saved = await createRole(database.name, name);
-      setRoles((current) => replaceRole(current, saved));
-      setSelectedRoleName(saved.name);
-      setNewRoleName("");
-      setStatus(`Created role ${saved.name}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Role creation failed");
-    }
-  }
-
-  async function persistRoleGrants() {
-    if (!database.name || !selectedRole) {
-      setStatus("Select a role before saving permissions");
-      return;
-    }
-    try {
-      await saveRoleGrants(database.name, selectedRole.name, compactRoleGrants(roleDraftGrants, database));
-      const saved = await saveRoleMembers(database.name, selectedRole.name, compactMembers(roleDraftMembers));
-      setRoles((current) => replaceRole(current, saved));
-      setSelectedRoleName(saved.name);
-      setRoleDraftMembers(saved.members ?? []);
-      setStatus(`Saved role ${saved.name}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Role save failed");
-    }
-  }
-
   async function addDraftRow() {
     if (!database.name || !table.name) {
       setStatus("Create a table before adding rows");
@@ -675,42 +602,6 @@ export function App() {
     }
   }
 
-  function updateRoleGrant(scope: PermissionGrant["scope"], resource: string, field: string, level: PermissionGrant["level"]) {
-    if (!selectedRole) {
-      return;
-    }
-    setRoleDraftGrants((current) => {
-      const next = current.filter((grant) => grant.scope !== scope || grant.resource !== resource || grant.field !== field);
-      if (level === 0) {
-        return next;
-      }
-      return [
-        ...next,
-        {
-          subject_id: selectedRole.subject_id,
-          scope,
-          resource,
-          field,
-          level
-        }
-      ];
-    });
-  }
-
-  function addRoleMember() {
-    const memberID = newRoleMemberID.trim();
-    if (!memberID) {
-      setStatus("Role member user id is required");
-      return;
-    }
-    setRoleDraftMembers((current) => compactMembers([...current, memberID]));
-    setNewRoleMemberID("");
-  }
-
-  function removeRoleMember(memberID: string) {
-    setRoleDraftMembers((current) => current.filter((item) => item !== memberID));
-  }
-
   function selectDatabaseSection(databaseName: string, nextView: View) {
     const nextDatabase = catalog.databases.find((item) => item.name === databaseName);
     if (!nextDatabase) {
@@ -738,19 +629,19 @@ export function App() {
         newWorkflowName={newWorkflowName}
         onCreateDatabase={createDatabaseFromSidebar}
         onCreateForm={workflowFormWorkspace.createForm}
-        onCreateRole={createRoleFromSidebar}
+        onCreateRole={permissionWorkspace.createRoleFromSidebar}
         onCreateTable={createTableFromSidebar}
         onCreateWorkflow={workflowFormWorkspace.createWorkflow}
         onLogout={logoutUser}
         onNewDatabaseNameChange={setNewDatabaseName}
         onNewFormNameChange={workflowFormWorkspace.setNewFormName}
-        onNewRoleNameChange={setNewRoleName}
+        onNewRoleNameChange={permissionWorkspace.setNewRoleName}
         onNewTableNameChange={setNewTableName}
         onNewWorkflowNameChange={workflowFormWorkspace.setNewWorkflowName}
         onOpenLogin={() => setAuthDialogOpen(true)}
         onSelectDatabaseSection={selectDatabaseSection}
         onSelectFormID={workflowFormWorkspace.setSelectedFormID}
-        onSelectRoleName={setSelectedRoleName}
+        onSelectRoleName={permissionWorkspace.setSelectedRoleName}
         onSelectTable={setSelectedTable}
         onSelectTableView={setSelectedTableView}
         onSelectWorkflowID={workflowFormWorkspace.setSelectedWorkflowID}
@@ -879,11 +770,11 @@ export function App() {
               grants={roleDraftGrants}
               members={roleDraftMembers}
               newMemberID={newRoleMemberID}
-              onAddMember={addRoleMember}
-              onGrantChange={updateRoleGrant}
-              onMemberRemove={removeRoleMember}
-              onNewMemberIDChange={setNewRoleMemberID}
-              onSave={persistRoleGrants}
+              onAddMember={permissionWorkspace.addRoleMember}
+              onGrantChange={permissionWorkspace.updateRoleGrant}
+              onMemberRemove={permissionWorkspace.removeRoleMember}
+              onNewMemberIDChange={permissionWorkspace.setNewRoleMemberID}
+              onSave={permissionWorkspace.persistRoleGrants}
               role={selectedRole}
               workflows={workflows}
             />
