@@ -409,6 +409,8 @@ describe("App", () => {
               run: {
                 workflow_id: 1,
                 timestamp: "2026-06-16T10:00:00Z",
+                inputs: { name: "Ada" },
+                outputs: { message: "Ada" },
                 steps: [{ node_id: "echo", input: { value: "Ada" }, output: { value: "Ada" } }]
               }
             }
@@ -423,6 +425,10 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
     expect(await screen.findByText("whistory_00000000000000000001_00000000000000000100")).toBeInTheDocument();
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
+    expect(screen.getByText("Run input")).toBeInTheDocument();
+    expect(screen.getByText("Run output")).toBeInTheDocument();
+    expect(screen.getByText(/"name": "Ada"/)).toBeInTheDocument();
+    expect(screen.getAllByText(/"value": "Ada"/).length).toBeGreaterThan(0);
   });
 
   it("renders read-only workflow and form resources as non-editable", async () => {

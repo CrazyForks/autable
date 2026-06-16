@@ -127,11 +127,23 @@ export function WorkflowWorkspace({
         )}
         <div className="flow-line" aria-label="Workflow run flow">
           {selectedRun && selectedRun.run.steps.length > 0 ? (
-            selectedRun.run.steps.map((step, index) => (
-              <span key={`${step.node_id}-${index}`} className={step.error ? "flow-step error" : "flow-step"}>
-                {step.error ? `${step.node_id}: ${step.error}` : step.node_id}
-              </span>
-            ))
+            <>
+              <RunPayload title="Run input" value={selectedRun.run.inputs ?? {}} />
+              {selectedRun.run.steps.map((step, index) => (
+                <div key={`${step.node_id}-${index}`} className={step.error ? "flow-step error" : "flow-step"}>
+                  <div className="flow-step-title">
+                    <Text weight="semibold">{step.node_id}</Text>
+                    {step.error && <Text size={200}>{step.error}</Text>}
+                  </div>
+                  <div className="flow-step-payloads">
+                    <RunPayload title="Input" value={step.input ?? {}} />
+                    <RunPayload title="Output" value={step.output ?? {}} />
+                  </div>
+                </div>
+              ))}
+              <RunPayload title="Run output" value={selectedRun.run.outputs ?? {}} />
+              {selectedRun.run.error && <div className="flow-step error">{selectedRun.run.error}</div>}
+            </>
           ) : (
             <span className="flow-empty">No runs yet</span>
           )}
@@ -149,4 +161,15 @@ function formatPorts(ports: Array<{ name: string; type: string }>): string {
     return "none";
   }
   return ports.map((port) => `${port.name}:${port.type}`).join(", ");
+}
+
+function RunPayload({ title, value }: { title: string; value: Record<string, unknown> }) {
+  return (
+    <div className="flow-payload">
+      <Text size={200} weight="semibold">
+        {title}
+      </Text>
+      <pre>{JSON.stringify(value, null, 2)}</pre>
+    </div>
+  );
 }

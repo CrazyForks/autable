@@ -445,7 +445,12 @@ test("covers workflow editor, node list, and run history through the real backen
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
   await expect(page.getByRole("button", { name: /whistory_/ })).toBeVisible();
-  await expect(page.getByLabel("Workflow run flow").getByText("table.record.changed")).toBeVisible();
+  const runFlow = page.getByLabel("Workflow run flow");
+  await expect(runFlow.getByText("table.record.changed")).toBeVisible();
+  await expect(runFlow.getByText("Run input")).toBeVisible();
+  await expect(runFlow.getByText("Run output")).toBeVisible();
+  await expect(runFlow.getByText(rowHistory[0].history_key).first()).toBeVisible();
+  await expect(runFlow.getByText(/"record_id": 1/).first()).toBeVisible();
 });
 
 test("persists workflow and form JavaScript into the repository path", async ({ page }) => {
