@@ -409,6 +409,56 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	}
 }
 
+func TestWorkflowRunAPI(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"welcome",
+		"script":"function run(info) { const echoed = info.node(\"echo\", { value: info.inputs.name }); return { message: echoed.value + \"-\" + info.variables.suffix }; }",
+		"variables":{"suffix":"done"}
+	}`))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+	var saved systemdb.WorkflowDefinition
+	if err := json.NewDecoder(workflowRecorder.Body).Decode(&saved); err != nil {
+		t.Fatal(err)
+	}
+
+	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"name":"Ada"}}`))
+	runRecorder := httptest.NewRecorder()
+	server.ServeHTTP(runRecorder, runRequest)
+	if runRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow run 201, got %d: %s", runRecorder.Code, runRecorder.Body.String())
+	}
+	var runResponse workflowRunResponse
+	if err := json.NewDecoder(runRecorder.Body).Decode(&runResponse); err != nil {
+		t.Fatal(err)
+	}
+	if runResponse.HistoryKey == "" || runResponse.Run.Outputs["message"] != "Ada-done" {
+		t.Fatalf("unexpected workflow run response: %#v", runResponse)
+	}
+	if len(runResponse.Run.Steps) != 1 || runResponse.Run.Steps[0].NodeID != "echo" {
+		t.Fatalf("unexpected workflow run steps: %#v", runResponse.Run.Steps)
+	}
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/workflows/1/runs", nil)
+	listRecorder := httptest.NewRecorder()
+	server.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow run list 200, got %d: %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var runs []workflowRunResponse
+	if err := json.NewDecoder(listRecorder.Body).Decode(&runs); err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].HistoryKey != runResponse.HistoryKey {
+		t.Fatalf("unexpected workflow run list: %#v", runs)
+	}
+}
+
 func newTestServer(t *testing.T) (*Server, *systemdb.DB) {
 	t.Helper()
 	system, err := systemdb.Open(context.Background(), filepath.Join(t.TempDir(), "system.sqlite"))

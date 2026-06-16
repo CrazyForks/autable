@@ -163,10 +163,22 @@ select {
   gap: 10px;
 }
 
-.flow-line span {
+.flow-step,
+.flow-empty {
   padding: 9px 10px;
   border-left: 3px solid #2f6f68;
   background: #eef5f3;
+}
+
+.flow-step.error {
+  border-left-color: #a4262c;
+  background: #fdf0f1;
+}
+
+.flow-empty {
+  border-left-color: #8a8886;
+  background: #f7f7f5;
+  color: #605e5c;
 }
 
 .resource-list {

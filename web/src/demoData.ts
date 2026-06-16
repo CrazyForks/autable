@@ -42,18 +42,22 @@ export const initialRows: Array<Record<string, unknown>> = [
   { record_id: 3, name: "Katherine Johnson", email: "katherine@example.com", status: "Active", owner: "research" }
 ];
 
-export const defaultWorkflowScript = `export default async function run(info) {
-  const changed = await info.nodes.trigger.recordChanged();
-  const row = await info.nodes.table.getRecord(changed.record);
+export const defaultWorkflowScript = `export default function run(info) {
+  const changed = info.node("echo", {
+    record_id: info.inputs.record_id,
+    name: info.inputs.name,
+    status: info.inputs.status
+  });
 
-  if (row.status === "Review") {
-    await info.nodes.notification.send({
+  if (changed.status === "Review") {
+    const notification = info.node("echo", {
       channel: info.variables.CHANNEL,
-      text: \`Review needed for \${row.name}\`
+      text: \`Review needed for \${changed.name}\`
     });
+    return { checked: true, record_id: changed.record_id, notification: notification.text };
   }
 
-  return { checked: true, record_id: changed.record.record_id };
+  return { checked: true, record_id: changed.record_id };
 }`;
 
 export const initialWorkflows: WorkflowDefinition[] = [
@@ -69,12 +73,16 @@ export const initialWorkflows: WorkflowDefinition[] = [
     id: 2,
     database_name: "workspace",
     name: "welcome-contact",
-    script: `export default async function run(info) {
-  const changed = await info.nodes.trigger.recordChanged();
-  await info.nodes.notification.send({
-    channel: info.variables.CHANNEL,
-    text: \`New contact: \${changed.record.record_id}\`
+    script: `export default function run(info) {
+  const changed = info.node("echo", {
+    record_id: info.inputs.record_id,
+    name: info.inputs.name
   });
+  const notification = info.node("echo", {
+    channel: info.variables.CHANNEL,
+    text: \`New contact: \${changed.name}\`
+  });
+  return { record_id: changed.record_id, notification: notification.text };
 }`,
     secrets: {},
     variables: { CHANNEL: "sales" }

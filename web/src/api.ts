@@ -59,6 +59,27 @@ export type WorkflowDefinition = {
   variables: Record<string, string>;
 };
 
+export type WorkflowStepRecord = {
+  node_id: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  error?: string;
+};
+
+export type WorkflowRun = {
+  workflow_id: number;
+  timestamp: string;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  steps: WorkflowStepRecord[];
+  error?: string;
+};
+
+export type WorkflowRunResponse = {
+  history_key: string;
+  run: WorkflowRun;
+};
+
 export type FormDefinition = {
   id?: number;
   database_name: string;
@@ -180,6 +201,22 @@ export async function saveWorkflow(dbName: string, workflow: WorkflowDefinition)
     throw new Error(`workflow save failed: ${response.status}`);
   }
   return response.json() as Promise<WorkflowDefinition>;
+}
+
+export async function runWorkflow(
+  workflowID: number,
+  inputs: Record<string, unknown>
+): Promise<WorkflowRunResponse> {
+  const response = await fetch(`/api/workflows/${workflowID}/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ inputs })
+  });
+  const body = await response.json().catch(() => undefined);
+  if (!response.ok && !body?.run) {
+    throw new Error(body?.error ?? `workflow run failed: ${response.status}`);
+  }
+  return body as WorkflowRunResponse;
 }
 
 export async function listForms(dbName: string): Promise<FormDefinition[]> {

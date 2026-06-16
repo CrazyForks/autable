@@ -34,6 +34,7 @@ type WorkflowRun struct {
 	Inputs     map[string]any `json:"inputs,omitempty"`
 	Outputs    map[string]any `json:"outputs,omitempty"`
 	Steps      []StepRecord   `json:"steps"`
+	Error      string         `json:"error,omitempty"`
 }
 
 type StepRecord struct {
@@ -87,6 +88,12 @@ func DecodeRowChange(entry Entry) (RowChange, error) {
 	var change RowChange
 	err := json.Unmarshal(entry.Value, &change)
 	return change, err
+}
+
+func DecodeWorkflowRun(entry Entry) (WorkflowRun, error) {
+	var run WorkflowRun
+	err := json.Unmarshal(entry.Value, &run)
+	return run, err
 }
 
 func clean(value string) string {

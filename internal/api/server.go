@@ -15,6 +15,7 @@ import (
 	"codetable/internal/permission"
 	"codetable/internal/systemdb"
 	"codetable/internal/table"
+	"codetable/internal/workflow"
 )
 
 type Server struct {
@@ -22,6 +23,7 @@ type Server struct {
 	system  *systemdb.DB
 	tables  *table.Service
 	history history.Store
+	runner  *workflow.Runner
 	mux     *http.ServeMux
 }
 
@@ -45,17 +47,31 @@ type userResponse struct {
 	Provider string `json:"provider"`
 }
 
+type workflowRunRequest struct {
+	Inputs map[string]any `json:"inputs"`
+}
+
+type workflowRunResponse struct {
+	HistoryKey string              `json:"history_key"`
+	Run        history.WorkflowRun `json:"run"`
+}
+
 const (
 	sessionCookieName = "codetable_session"
 	sessionTTL        = 14 * 24 * time.Hour
 )
 
 func NewServer(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store) *Server {
+	return NewServerWithWorkflowRunner(catalog, system, tables, historyStore, workflow.NewRunner(historyStore, workflow.EchoNode{}))
+}
+
+func NewServerWithWorkflowRunner(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store, runner *workflow.Runner) *Server {
 	server := &Server{
 		catalog: catalog,
 		system:  system,
 		tables:  tables,
 		history: historyStore,
+		runner:  runner,
 		mux:     http.NewServeMux(),
 	}
 	server.routes()
@@ -79,6 +95,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/databases/", server.handleGetDatabaseResource)
 	server.mux.HandleFunc("POST /api/databases/", server.handlePostDatabaseResource)
 	server.mux.HandleFunc("POST /api/workflows", server.handleSaveWorkflow)
+	server.mux.HandleFunc("POST /api/workflows/", server.handleRunWorkflow)
 	server.mux.HandleFunc("GET /api/workflows/", server.handleGetWorkflow)
 	server.mux.HandleFunc("POST /api/forms", server.handleSaveForm)
 	server.mux.HandleFunc("GET /api/forms/", server.handleGetForm)
@@ -388,6 +405,10 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 }
 
 func (server *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
+	if id, ok := parseWorkflowRunsPath(r.URL.Path); ok {
+		server.handleWorkflowRuns(w, r, id)
+		return
+	}
 	id, ok := parseIDPath(r.URL.Path, "/api/workflows/")
 	if !ok {
 		http.NotFound(w, r)
@@ -399,6 +420,57 @@ func (server *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, workflow)
+}
+
+func (server *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseWorkflowRunsPath(r.URL.Path)
+	if !ok || r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	var request workflowRunRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	workflowDefinition, err := server.system.Workflow(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	run, key, err := server.runner.Run(r.Context(), workflow.Definition{
+		ID:        workflowDefinition.ID,
+		Script:    workflowDefinition.Script,
+		Secrets:   workflowDefinition.Secrets,
+		Variables: workflowDefinition.Variables,
+	}, request.Inputs)
+	status := http.StatusCreated
+	if err != nil {
+		status = http.StatusBadRequest
+	}
+	writeJSON(w, status, workflowRunResponse{HistoryKey: key, Run: run})
+}
+
+func (server *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request, workflowID int64) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	entries, err := server.history.GetPrefix(r.Context(), history.WorkflowPrefix(workflowID))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	runs := make([]workflowRunResponse, 0, len(entries))
+	for _, entry := range entries {
+		run, err := history.DecodeWorkflowRun(entry)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		runs = append(runs, workflowRunResponse{HistoryKey: entry.Key, Run: run})
+	}
+	writeJSON(w, http.StatusOK, runs)
 }
 
 func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
@@ -470,6 +542,15 @@ func parseDatabaseResourcePath(path string) (string, string, bool) {
 		return "", "", false
 	}
 	return parts[2], parts[3], true
+}
+
+func parseWorkflowRunsPath(path string) (int64, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "workflows" || parts[3] != "runs" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(parts[2], 10, 64)
+	return id, err == nil
 }
 
 func parseIDPath(path, prefix string) (int64, bool) {

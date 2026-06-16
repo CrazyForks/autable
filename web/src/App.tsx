@@ -36,6 +36,7 @@ import {
   login,
   logout,
   register,
+  runWorkflow,
   saveForm,
   saveWorkflow,
   updateRow,
@@ -43,7 +44,8 @@ import {
   type Catalog,
   type FormDefinition,
   type TableView,
-  type WorkflowDefinition
+  type WorkflowDefinition,
+  type WorkflowRunResponse
 } from "./api";
 
 type View = "table" | "workflow" | "form";
@@ -61,6 +63,7 @@ export function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [lastWorkflowRun, setLastWorkflowRun] = useState<WorkflowRunResponse | null>(null);
   const [status, setStatus] = useState("Ready");
 
   const database = catalog.databases[0];
@@ -72,6 +75,8 @@ export function App() {
     () => applyTableView(rows, table.views ?? [], selectedTableView),
     [rows, table.views, selectedTableView]
   );
+  const selectedWorkflowRun =
+    lastWorkflowRun?.run.workflow_id === selectedWorkflow?.id ? lastWorkflowRun : null;
 
   const columns = useMemo<GridColumn[]>(
     () => [
@@ -171,6 +176,28 @@ export function App() {
       setStatus(`Workflow saved as #${saved.id}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Workflow save failed");
+    }
+  }
+
+  async function executeWorkflow() {
+    if (!selectedWorkflow?.id) {
+      setStatus("Save workflow before running");
+      return;
+    }
+    const sampleRow = rows[0] ?? {};
+    try {
+      const response = await runWorkflow(selectedWorkflow.id, {
+        ...sampleRow,
+        record_id: Number(sampleRow.record_id ?? 1)
+      });
+      setLastWorkflowRun(response);
+      if (response.run.error) {
+        setStatus(`Workflow failed: ${response.run.error}`);
+        return;
+      }
+      setStatus(`Workflow run saved: ${response.history_key}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Workflow run failed");
     }
   }
 
@@ -368,12 +395,20 @@ export function App() {
                   ))}
                 </div>
                 <Text weight="semibold">Run flow</Text>
-                <div className="flow-line">
-                  <span>trigger.recordChanged</span>
-                  <span>table.getRecord</span>
-                  <span>notification.send</span>
+                <div className="flow-line" aria-label="Workflow run flow">
+                  {selectedWorkflowRun && selectedWorkflowRun.run.steps.length > 0 ? (
+                    selectedWorkflowRun.run.steps.map((step, index) => (
+                      <span key={`${step.node_id}-${index}`} className={step.error ? "flow-step error" : "flow-step"}>
+                        {step.error ? `${step.node_id}: ${step.error}` : step.node_id}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="flow-empty">No runs yet</span>
+                  )}
                 </div>
-                <Button icon={<PlayRegular />}>Run</Button>
+                <Button icon={<PlayRegular />} onClick={executeWorkflow} disabled={!selectedWorkflow?.id}>
+                  Run
+                </Button>
               </div>
             </div>
           )}

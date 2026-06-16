@@ -26,8 +26,9 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Workflow" }));
     expect(screen.getByRole("button", { name: "welcome-contact" })).toBeInTheDocument();
     expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
-      "export default async function run"
+      'info.node("echo"'
     );
+    expect(screen.getByText("No runs yet")).toBeInTheDocument();
   });
 
   it("shows form JavaScript and preview controls", async () => {

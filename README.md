@@ -24,6 +24,7 @@ This repository currently contains the backend core primitives:
 - User identity model with email fallback for password and OIDC accounts.
 - History key generation and prefix scanning for row/workflow history.
 - Stateless workflow node interface definitions.
+- Synchronous JavaScript workflow runs through registered stateless nodes, with each run persisted as `whistory_id_timestamp`.
 
 ## Development
 
