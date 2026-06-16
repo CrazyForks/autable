@@ -89,6 +89,12 @@ const workflowNodeFixture = [
   }
 ];
 
+const authUserFixture = {
+  id: "test-user",
+  email: "user@example.com",
+  provider: "password"
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status });
 }
@@ -96,7 +102,7 @@ function jsonResponse(body: unknown, status = 200) {
 async function defaultFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = String(input);
   if (url === "/api/auth/me") {
-    return jsonResponse({ error: "not authenticated" }, 401);
+    return jsonResponse(authUserFixture);
   }
   if (url === "/api/auth/oidc/providers") {
     return jsonResponse([]);
@@ -144,17 +150,43 @@ function renderApp() {
 describe("App", () => {
   it("renders table view first", async () => {
     renderApp();
-    expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: authUserFixture.email })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /^Table$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Contacts/ })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText("3 of 3 records").length).toBeGreaterThan(0));
+  });
+
+  it("does not load protected workspace resources before authentication", async () => {
+    const requests: string[] = [];
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "/api/auth/me") {
+        return jsonResponse({ error: "not authenticated" }, 401);
+      }
+      if (url === "/api/auth/oidc/providers") {
+        return jsonResponse([]);
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 500);
+    });
+
+    renderApp();
+    await waitFor(() => expect(requests).toContain("/api/auth/me"));
+    expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create DB" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh metadata" })).toBeDisabled();
+    expect(requests).not.toContain("/api/metadata");
+    expect(requests.some((url) => url.includes("/rows"))).toBe(false);
+    expect(requests.some((url) => url.includes("/workflows"))).toBe(false);
+    expect(requests.some((url) => url.includes("/forms"))).toBe(false);
+    expect(requests.some((url) => url.includes("/roles"))).toBe(false);
   });
 
   it("shows configured OIDC providers as login actions", async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+        return jsonResponse({ error: "not authenticated" }, 401);
       }
       if (url === "/api/auth/oidc/providers") {
         return new Response(
@@ -174,7 +206,7 @@ describe("App", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+        return jsonResponse(authUserFixture);
       }
       if (url === "/api/auth/oidc/providers") {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -196,7 +228,7 @@ describe("App", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+        return jsonResponse(authUserFixture);
       }
       if (url === "/api/auth/oidc/providers") {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -227,6 +259,8 @@ describe("App", () => {
     });
 
     renderApp();
+    await screen.findByRole("button", { name: authUserFixture.email });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create DB" })).toBeEnabled());
     await userEvent.type(screen.getByRole("textbox", { name: "New database name" }), "sales");
     await userEvent.click(screen.getByRole("button", { name: "Create DB" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "sales" })).toHaveAttribute("aria-expanded", "true"));
@@ -237,7 +271,7 @@ describe("App", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+        return jsonResponse(authUserFixture);
       }
       if (url === "/api/auth/oidc/providers") {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -284,6 +318,7 @@ describe("App", () => {
     });
 
     renderApp();
+    await screen.findByRole("button", { name: authUserFixture.email });
     await userEvent.type(screen.getByRole("textbox", { name: "New table name" }), "projects");
     await userEvent.click(screen.getByRole("button", { name: "Create Table" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /projects/ })).toBeInTheDocument());
@@ -293,7 +328,7 @@ describe("App", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+        return jsonResponse(authUserFixture);
       }
       if (url === "/api/auth/oidc/providers") {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -354,7 +389,7 @@ describe("App", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+        return jsonResponse(authUserFixture);
       }
       if (url === "/api/auth/oidc/providers") {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -436,7 +471,7 @@ describe("App", () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/me") {
-        return jsonResponse({ error: "not authenticated" }, 401);
+        return jsonResponse(authUserFixture);
       }
       if (url === "/api/auth/oidc/providers") {
         return jsonResponse([]);

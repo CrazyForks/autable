@@ -86,6 +86,7 @@ export function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
   const [selectedRecordID, setSelectedRecordID] = useState(0);
   const [rowHistory, setRowHistory] = useState<RowChange[]>([]);
@@ -172,6 +173,22 @@ export function App() {
       setWorkflows([]);
       setForms([]);
       setRoles([]);
+      setWorkflowNodes([]);
+      setSelectedWorkflowID(0);
+      setSelectedFormID(0);
+      setSelectedRoleName("");
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!currentUser) {
+      setWorkflows([]);
+      setForms([]);
+      setRoles([]);
+      setWorkflowNodes([]);
+      setSelectedWorkflowID(0);
+      setSelectedFormID(0);
+      setSelectedRoleName("");
       return () => {
         cancelled = true;
       };
@@ -216,26 +233,22 @@ export function App() {
     let cancelled = false;
     void loadCurrentUser()
       .then((user) => {
-        if (cancelled || !user) {
-          return;
-        }
-        setCurrentUser(user);
-        setStatus(`Signed in as ${user.email}`);
-      })
-      .catch(() => undefined);
-    void loadMetadata()
-      .then((nextCatalog) => {
         if (cancelled) {
           return;
         }
-        setCatalog(nextCatalog);
-        setSelectedDatabaseName(nextCatalog.databases[0]?.name ?? "");
-        setSelectedTable(nextCatalog.databases[0]?.tables[0]?.name ?? "");
-        setSelectedTableView("all");
+        setCurrentUser(user);
+        if (user) {
+          setStatus(`Signed in as ${user.email}`);
+        }
       })
       .catch((error) => {
         if (!cancelled) {
-          setStatus(error instanceof Error ? error.message : "Metadata load failed");
+          setStatus(error instanceof Error ? error.message : "Current user load failed");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuthReady(true);
         }
       });
     void listOIDCProviders()
@@ -252,7 +265,40 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!database.name || !table.name) {
+    if (!authReady) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!currentUser) {
+      applyCatalogSelection(emptyCatalog, "");
+      setWorkflows([]);
+      setForms([]);
+      setRoles([]);
+      setWorkflowNodes([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void loadMetadata()
+      .then((nextCatalog) => {
+        if (!cancelled) {
+          applyCatalogSelection(nextCatalog);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "Metadata load failed");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, currentUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser || !database.name || !table.name) {
       setRows([]);
       setRowsViewName(selectedTableView);
       return () => {
@@ -281,7 +327,7 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedWorkflow?.id) {
+    if (!currentUser || !selectedWorkflow?.id) {
       setWorkflowRuns([]);
       setSelectedWorkflowRunKey("");
       return () => {
@@ -354,6 +400,10 @@ export function App() {
   }
 
   async function refreshMetadata() {
+    if (!currentUser) {
+      setStatus("Login before refreshing workspace metadata");
+      return;
+    }
     try {
       const nextCatalog = await loadMetadata();
       const dbName = applyCatalogSelection(nextCatalog, selectedDatabaseName);
@@ -784,6 +834,7 @@ export function App() {
     try {
       const user = await register(authEmail, authPassword);
       setCurrentUser(user);
+      setAuthReady(true);
       await refreshCatalogAfterAuth();
       setStatus(`Signed in as ${user.email}`);
     } catch (error) {
@@ -795,6 +846,7 @@ export function App() {
     try {
       const user = await login(authEmail, authPassword);
       setCurrentUser(user);
+      setAuthReady(true);
       await refreshCatalogAfterAuth();
       setStatus(`Signed in as ${user.email}`);
     } catch (error) {
@@ -806,6 +858,7 @@ export function App() {
     try {
       await logout();
       setCurrentUser(null);
+      setAuthReady(true);
       applyCatalogSelection(emptyCatalog, "");
       setStatus("Signed out");
     } catch (error) {
@@ -981,7 +1034,12 @@ export function App() {
           </div>
           <Toolbar aria-label="Workspace actions">
             <Tooltip content="Refresh metadata" relationship="label">
-              <ToolbarButton aria-label="Refresh metadata" icon={<ArrowClockwiseRegular />} onClick={refreshMetadata} />
+              <ToolbarButton
+                aria-label="Refresh metadata"
+                icon={<ArrowClockwiseRegular />}
+                onClick={refreshMetadata}
+                disabled={!currentUser}
+              />
             </Tooltip>
           </Toolbar>
         </header>

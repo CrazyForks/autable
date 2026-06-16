@@ -20,6 +20,30 @@ const runtimeDir = join(dirname(fileURLToPath(import.meta.url)), ".runtime");
 
 test.describe.configure({ mode: "serial" });
 
+test("does not request protected workspace resources before login", async ({ page }) => {
+  const apiPaths: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/")) {
+      apiPaths.push(url.pathname);
+    }
+  });
+
+  await page.goto("/");
+  await page.waitForResponse((response) => response.url().includes("/api/auth/me"));
+  await expect(page.getByRole("button", { name: "Login" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create DB" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Refresh metadata" })).toBeDisabled();
+
+  expect(apiPaths).toContain("/api/auth/me");
+  expect(apiPaths).toContain("/api/auth/oidc/providers");
+  expect(apiPaths).not.toContain("/api/metadata");
+  expect(apiPaths.some((path) => path.includes("/rows"))).toBe(false);
+  expect(apiPaths.some((path) => path.includes("/workflows"))).toBe(false);
+  expect(apiPaths.some((path) => path.includes("/forms"))).toBe(false);
+  expect(apiPaths.some((path) => path.includes("/roles"))).toBe(false);
+});
+
 async function registerUser(page: Page): Promise<AuthUser> {
   sequence += 1;
   const email = `person-${Date.now()}-${sequence}@example.com`;

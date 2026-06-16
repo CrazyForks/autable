@@ -111,6 +111,7 @@ export function WorkspaceNavigation({
   view,
   workflows
 }: WorkspaceNavigationProps) {
+  const isAuthenticated = Boolean(currentUser);
   return (
     <>
       <NavDrawer className="primary-sidebar" type="inline" open>
@@ -122,7 +123,13 @@ export function WorkspaceNavigation({
             <Text size={200} weight="semibold">
               Databases
             </Text>
-            <Button size="small" icon={<AddRegular />} aria-label="Create database" onClick={onCreateDatabase} />
+            <Button
+              size="small"
+              icon={<AddRegular />}
+              aria-label="Create database"
+              onClick={onCreateDatabase}
+              disabled={!isAuthenticated}
+            />
           </div>
           <Nav
             className="database-nav"
@@ -164,8 +171,11 @@ export function WorkspaceNavigation({
               placeholder="new database"
               value={newDatabaseName}
               onChange={(_, data) => onNewDatabaseNameChange(data.value)}
+              disabled={!isAuthenticated}
             />
-            <Button onClick={onCreateDatabase}>Create DB</Button>
+            <Button onClick={onCreateDatabase} disabled={!isAuthenticated}>
+              Create DB
+            </Button>
           </div>
           <div className="account-slot">
             {currentUser ? (
