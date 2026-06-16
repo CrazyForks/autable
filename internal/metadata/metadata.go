@@ -10,26 +10,26 @@ import (
 )
 
 type Catalog struct {
-	Databases []Database `yaml:"databases"`
+	Databases []Database `yaml:"databases" json:"databases"`
 }
 
 type Database struct {
-	Name       string  `yaml:"name"`
-	SQLitePath string  `yaml:"sqlite_path"`
-	Tables     []Table `yaml:"tables"`
+	Name       string  `yaml:"name" json:"name"`
+	SQLitePath string  `yaml:"sqlite_path" json:"sqlite_path"`
+	Tables     []Table `yaml:"tables" json:"tables"`
 }
 
 type Table struct {
-	Name        string  `yaml:"name"`
-	DisplayName string  `yaml:"display_name"`
-	Fields      []Field `yaml:"fields"`
+	Name        string  `yaml:"name" json:"name"`
+	DisplayName string  `yaml:"display_name" json:"display_name"`
+	Fields      []Field `yaml:"fields" json:"fields"`
 }
 
 type Field struct {
-	Name     string `yaml:"name"`
-	Type     string `yaml:"type"`
-	Required bool   `yaml:"required"`
-	Deleted  bool   `yaml:"deleted"`
+	Name     string `yaml:"name" json:"name"`
+	Type     string `yaml:"type" json:"type"`
+	Required bool   `yaml:"required" json:"required"`
+	Deleted  bool   `yaml:"deleted" json:"deleted"`
 }
 
 func Load(path string) (Catalog, error) {

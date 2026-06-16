@@ -19,21 +19,21 @@ type DB struct {
 }
 
 type WorkflowDefinition struct {
-	ID        int64
-	Name      string
-	Script    string
-	Secrets   map[string]string
-	Variables map[string]string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        int64             `json:"id"`
+	Name      string            `json:"name"`
+	Script    string            `json:"script"`
+	Secrets   map[string]string `json:"secrets"`
+	Variables map[string]string `json:"variables"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 type FormDefinition struct {
-	ID        int64
-	Name      string
-	Script    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Script    string    `json:"script"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type userModel struct {
@@ -212,6 +212,14 @@ func (db *DB) SaveForm(ctx context.Context, form FormDefinition) (FormDefinition
 		return modelToForm(model), nil
 	}
 	if err := db.orm.WithContext(ctx).Save(&model).Error; err != nil {
+		return FormDefinition{}, err
+	}
+	return modelToForm(model), nil
+}
+
+func (db *DB) Form(ctx context.Context, id int64) (FormDefinition, error) {
+	var model formModel
+	if err := db.orm.WithContext(ctx).First(&model, id).Error; err != nil {
 		return FormDefinition{}, err
 	}
 	return modelToForm(model), nil
