@@ -210,7 +210,7 @@ test("covers table views, row creation, and row history through the real backend
 });
 
 test("covers workflow editor, node list, and run history through the real backend", async ({ page }) => {
-  await setupWorkspace(page);
+  const workspace = await setupWorkspace(page);
 
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
   const workflowName = `ui-workflow-${Date.now()}`;
@@ -220,9 +220,21 @@ test("covers workflow editor, node list, and run history through the real backen
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
   await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/info\.node/);
   await expect(page.getByText("echo").first()).toBeVisible();
+  const rowHistory = (await api(
+    page,
+    "GET",
+    `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows/1/history`
+  )) as Array<{ history_key: string }>;
+  await page.getByLabel("Workflow JavaScript").fill(
+    "function run(info) {\n  const triggered = info.node('table.record.changed', { history_key: info.inputs.history_key });\n  return { record_id: triggered.record.record_id, name: triggered.values.name };\n}"
+  );
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(/Workflow saved as #/)).toBeVisible();
+  await page.getByLabel("Workflow Inputs JSON").fill(JSON.stringify({ history_key: rowHistory[0].history_key }, null, 2));
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
   await expect(page.getByRole("button", { name: /whistory_/ })).toBeVisible();
+  await expect(page.getByLabel("Workflow run flow").getByText("table.record.changed")).toBeVisible();
 });
 
 test("persists workflow and form JavaScript into the repository path", async ({ page }) => {

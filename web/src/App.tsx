@@ -90,6 +90,7 @@ export function App() {
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunResponse[]>([]);
   const [selectedWorkflowRunKey, setSelectedWorkflowRunKey] = useState("");
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [workflowInputsText, setWorkflowInputsText] = useState("{}");
   const [workflowSecretsText, setWorkflowSecretsText] = useState("{}");
   const [workflowVariablesText, setWorkflowVariablesText] = useState("{}");
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -271,6 +272,7 @@ export function App() {
   }, [currentUser?.id, database.name, table.name, selectedTableView]);
 
   useEffect(() => {
+    setWorkflowInputsText("{}");
     setWorkflowSecretsText(stringMapToJSON(selectedWorkflow?.secrets ?? {}));
     setWorkflowVariablesText(stringMapToJSON(selectedWorkflow?.variables ?? {}));
   }, [selectedWorkflow?.id]);
@@ -692,11 +694,20 @@ export function App() {
       return;
     }
     const sampleRow = rows[0] ?? {};
+    const parsedInputs = parseAnyMap(workflowInputsText);
+    if (!parsedInputs.ok) {
+      setStatus(parsedInputs.error);
+      return;
+    }
+    const runInputs =
+      Object.keys(parsedInputs.value).length > 0
+        ? parsedInputs.value
+        : {
+            ...sampleRow,
+            record_id: Number(sampleRow.record_id ?? 1)
+          };
     try {
-      const response = await runWorkflow(selectedWorkflow.id, {
-        ...sampleRow,
-        record_id: Number(sampleRow.record_id ?? 1)
-      });
+      const response = await runWorkflow(selectedWorkflow.id, runInputs);
       setWorkflowRuns((current) => [response, ...current.filter((run) => run.history_key !== response.history_key)]);
       setSelectedWorkflowRunKey(response.history_key);
       if (response.run.error) {
@@ -847,6 +858,16 @@ export function App() {
     setWorkflows((current) =>
       current.map((item) => (item.id === selectedWorkflow?.id ? { ...item, [kind]: parsed.value } : item))
     );
+  }
+
+  function updateWorkflowInputsJSON(text: string) {
+    setWorkflowInputsText(text);
+    const parsed = parseAnyMap(text);
+    if (!parsed.ok) {
+      setStatus(parsed.error);
+      return;
+    }
+    setStatus("Workflow inputs updated");
   }
 
   function updateSelectedFormScript(script: string) {
@@ -1027,7 +1048,9 @@ export function App() {
               onSave={persistWorkflow}
               onSelectRunKey={setSelectedWorkflowRunKey}
               onUpdateConfigJSON={updateSelectedWorkflowJSON}
+              onUpdateInputsJSON={updateWorkflowInputsJSON}
               onUpdateScript={updateSelectedWorkflowScript}
+              inputsText={workflowInputsText}
               selectedRun={selectedWorkflowRun}
               secretsText={workflowSecretsText}
               variablesText={workflowVariablesText}
@@ -1139,6 +1162,19 @@ function parseStringMap(text: string): { ok: true; value: Record<string, string>
     values[key] = value;
   }
   return { ok: true, value: values };
+}
+
+function parseAnyMap(text: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Invalid JSON" };
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    return { ok: false, error: "Workflow inputs must be a JSON object" };
+  }
+  return { ok: true, value: parsed as Record<string, unknown> };
 }
 
 function applyTableView(rows: Array<Record<string, unknown>>, views: TableView[], selectedView: string) {

@@ -6,10 +6,12 @@ type WorkflowWorkspaceProps = {
   databaseName: string;
   onExecute: () => void;
   onSave: () => void;
+  onUpdateInputsJSON: (text: string) => void;
   onSelectRunKey: (historyKey: string) => void;
   onUpdateConfigJSON: (kind: "secrets" | "variables", text: string) => void;
   onUpdateScript: (script: string) => void;
   selectedRun: WorkflowRunResponse | null;
+  inputsText: string;
   variablesText: string;
   secretsText: string;
   workflow?: WorkflowDefinition;
@@ -21,10 +23,12 @@ export function WorkflowWorkspace({
   databaseName,
   onExecute,
   onSave,
+  onUpdateInputsJSON,
   onSelectRunKey,
   onUpdateConfigJSON,
   onUpdateScript,
   selectedRun,
+  inputsText,
   secretsText,
   variablesText,
   workflow,
@@ -51,6 +55,16 @@ export function WorkflowWorkspace({
           aria-label="Workflow JavaScript"
         />
         <div className="workflow-config-grid">
+          <label className="field-stack">
+            <span>Inputs JSON</span>
+            <Textarea
+              className="json-editor"
+              value={inputsText}
+              onChange={(_, data) => onUpdateInputsJSON(data.value)}
+              resize="none"
+              aria-label="Workflow Inputs JSON"
+            />
+          </label>
           <label className="field-stack">
             <span>Variables JSON</span>
             <Textarea
