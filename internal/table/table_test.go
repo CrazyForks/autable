@@ -391,6 +391,85 @@ func TestCreateRowUsesInjectedRepository(t *testing.T) {
 	}
 }
 
+func TestCreateRowRollsBackWhenHistoryWriteFails(t *testing.T) {
+	ctx := context.Background()
+	repository := NewMemoryRowRepository()
+	service := NewServiceWithRepository(failingHistoryStore{}, repository)
+	catalog := testTableCatalog()
+	perms := testWritePerms()
+
+	if _, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"name": "Ada"}); err == nil {
+		t.Fatal("expected history failure")
+	}
+	rows, err := repository.Rows(ctx, "db", "contacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected create rollback when history fails, got %#v", rows)
+	}
+}
+
+func TestUpdateRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
+	ctx := context.Background()
+	repository := NewMemoryRowRepository()
+	catalog := testTableCatalog()
+	perms := testWritePerms()
+	row, err := NewServiceWithRepository(history.NewMemoryStore(), repository).CreateRow(
+		ctx,
+		catalog,
+		perms,
+		"u1",
+		"db",
+		"contacts",
+		map[string]any{"name": "Ada"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewServiceWithRepository(failingHistoryStore{}, repository)
+	if _, err := service.UpdateRow(ctx, catalog, perms, "u1", "db", "contacts", row.RecordID, map[string]any{"name": "Grace"}); err == nil {
+		t.Fatal("expected history failure")
+	}
+	loaded, err := repository.Row(ctx, "db", "contacts", row.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Values["name"] != "Ada" {
+		t.Fatalf("expected update to be skipped when history fails, got %#v", loaded)
+	}
+}
+
+func TestDeleteRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
+	ctx := context.Background()
+	repository := NewMemoryRowRepository()
+	catalog := testTableCatalog()
+	perms := testWritePerms()
+	row, err := NewServiceWithRepository(history.NewMemoryStore(), repository).CreateRow(
+		ctx,
+		catalog,
+		perms,
+		"u1",
+		"db",
+		"contacts",
+		map[string]any{"name": "Ada"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewServiceWithRepository(failingHistoryStore{}, repository)
+	if _, err := service.DeleteRow(ctx, catalog, perms, "u1", "db", "contacts", row.RecordID); err == nil {
+		t.Fatal("expected history failure")
+	}
+	loaded, err := repository.Row(ctx, "db", "contacts", row.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Values["name"] != "Ada" {
+		t.Fatalf("expected delete to be skipped when history fails, got %#v", loaded)
+	}
+}
+
 func TestRowsAppliesComposedViewFiltersAndSorts(t *testing.T) {
 	ctx := context.Background()
 	service := NewService(history.NewMemoryStore())
@@ -440,6 +519,40 @@ func TestRowsAppliesComposedViewFiltersAndSorts(t *testing.T) {
 	if rows[0].Values["name"] != "Grace" || rows[1].Values["name"] != "Ada" {
 		t.Fatalf("unexpected sorted view rows: %#v", rows)
 	}
+}
+
+type failingHistoryStore struct{}
+
+func (failingHistoryStore) Put(context.Context, string, []byte) error {
+	return errors.New("history write failed")
+}
+
+func (failingHistoryStore) Get(context.Context, string) (history.Entry, error) {
+	return history.Entry{}, history.ErrNotFound
+}
+
+func (failingHistoryStore) GetPrefix(context.Context, string) ([]history.Entry, error) {
+	return nil, nil
+}
+
+func testTableCatalog() metadata.Catalog {
+	return metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "db",
+		SQLitePath: "./db.sqlite",
+		Tables: []metadata.Table{{
+			Name:   "contacts",
+			Fields: []metadata.Field{{Name: "name", Type: "text"}},
+		}},
+	}}}
+}
+
+func testWritePerms() permission.Set {
+	return permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	})
 }
 
 func TestRowsRejectsViewsUsingUnreadableFields(t *testing.T) {

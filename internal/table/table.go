@@ -28,6 +28,7 @@ type RowRepository interface {
 	CreateRow(ctx context.Context, dbName, tableName string, values map[string]any) (Row, error)
 	UpdateRow(ctx context.Context, dbName, tableName string, recordID int64, values map[string]any) (Row, error)
 	DeleteRow(ctx context.Context, dbName, tableName string, recordID int64) (Row, error)
+	Row(ctx context.Context, dbName, tableName string, recordID int64) (Row, error)
 	Rows(ctx context.Context, dbName, tableName string) ([]Row, error)
 }
 
@@ -68,7 +69,7 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 	if err != nil {
 		return Row{}, err
 	}
-	_, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
 		RecordID:  row.RecordID,
@@ -76,8 +77,8 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 		Operation: "create",
 		Values:    cloneValues(row.Values),
 		ActorID:   actorID,
-	})
-	if err != nil {
+	}); err != nil {
+		_, _ = service.rows.DeleteRow(ctx, dbName, tableName, row.RecordID)
 		return Row{}, err
 	}
 	return row, nil
@@ -93,23 +94,26 @@ func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, err
 	}
 
-	row, err := service.rows.UpdateRow(ctx, dbName, tableName, recordID, cloneValues(values))
+	existing, err := service.rows.Row(ctx, dbName, tableName, recordID)
 	if err != nil {
 		return Row{}, err
 	}
-	_, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+	nextValues := cloneValues(existing.Values)
+	for key, value := range values {
+		nextValues[key] = value
+	}
+	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
-		RecordID:  row.RecordID,
+		RecordID:  recordID,
 		Timestamp: time.Now().UTC(),
 		Operation: "update",
-		Values:    cloneValues(row.Values),
+		Values:    cloneValues(nextValues),
 		ActorID:   actorID,
-	})
-	if err != nil {
+	}); err != nil {
 		return Row{}, err
 	}
-	return row, nil
+	return service.rows.UpdateRow(ctx, dbName, tableName, recordID, cloneValues(values))
 }
 
 func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName string, recordID int64) (Row, error) {
@@ -121,11 +125,11 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("%w: %s", ErrPermissionDenied, resource)
 	}
 
-	row, err := service.rows.DeleteRow(ctx, dbName, tableName, recordID)
+	row, err := service.rows.Row(ctx, dbName, tableName, recordID)
 	if err != nil {
 		return Row{}, err
 	}
-	_, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
 		RecordID:  row.RecordID,
@@ -133,11 +137,10 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		Operation: "delete",
 		Values:    cloneValues(row.Values),
 		ActorID:   actorID,
-	})
-	if err != nil {
+	}); err != nil {
 		return Row{}, err
 	}
-	return row, nil
+	return service.rows.DeleteRow(ctx, dbName, tableName, recordID)
 }
 
 func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName, viewName string) ([]Row, error) {
@@ -266,6 +269,18 @@ func (repository *MemoryRowRepository) DeleteRow(_ context.Context, dbName, tabl
 		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
 	}
 	delete(repository.rows[resource], recordID)
+	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
+}
+
+func (repository *MemoryRowRepository) Row(_ context.Context, dbName, tableName string, recordID int64) (Row, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+
+	resource := dbName + "." + tableName
+	row, ok := repository.rows[resource][recordID]
+	if !ok {
+		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
+	}
 	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
 }
 
