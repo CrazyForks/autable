@@ -183,6 +183,54 @@ test("shows database-owned workflow and form lists across table owners", async (
   await expect(page.getByRole("button", { name: formName })).toBeVisible();
 });
 
+test("hides workflow and form resources without resource permission", async ({ page }) => {
+  const resourceUser = await registerUser(page);
+  await api(page, "POST", "/api/auth/logout");
+  const dbOwner = await registerUser(page);
+  const suffix = `${Date.now()}-${sequence}`;
+  const databaseName = `scoped${suffix}`;
+  const workflowName = `private-workflow-${suffix}`;
+  const formName = `private-form-${suffix}`;
+
+  await api(page, "POST", "/api/databases", {
+    name: databaseName,
+    sqlite_path: `./data/${databaseName}.sqlite`
+  });
+  await api(page, "POST", `/api/databases/${databaseName}/tables`, {
+    name: "contacts",
+    display_name: "Contacts",
+    fields: [{ name: "name", type: "text", required: false, deleted: false }],
+    views: []
+  });
+  await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
+    name: workflowName,
+    script: "function run() { return {}; }",
+    secrets: {},
+    variables: {}
+  });
+  await api(page, "POST", `/api/databases/${databaseName}/forms`, {
+    name: formName,
+    script: "root.append(api.submit('Save'));"
+  });
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: resourceUser.id,
+    scope: "table",
+    resource: `${databaseName}.contacts`,
+    field: "",
+    level: 1
+  });
+
+  await api(page, "POST", "/api/auth/logout");
+  await loginUser(page, resourceUser.email);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Contacts/ })).toBeVisible();
+  await page.getByRole("button", { name: "Workflow", exact: true }).click();
+  await expect(page.getByRole("button", { name: workflowName })).toHaveCount(0);
+  await page.getByRole("button", { name: "Form", exact: true }).click();
+  await expect(page.getByRole("button", { name: formName })).toHaveCount(0);
+});
+
 test("covers database and table creation through the real backend", async ({ page }) => {
   const workspace = await setupWorkspace(page);
 
