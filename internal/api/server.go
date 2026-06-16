@@ -30,12 +30,18 @@ type Server struct {
 	catalog      metadata.Catalog
 	metadataPath string
 	openDatabase func(context.Context, string, string) error
+	codeFiles    codeFileStore
 	system       *systemdb.DB
 	tables       *table.Service
 	history      history.Store
 	runner       *workflow.Runner
 	oidc         []config.OIDCProvider
 	mux          *http.ServeMux
+}
+
+type codeFileStore interface {
+	SaveWorkflowScript(context.Context, systemdb.WorkflowDefinition) error
+	SaveFormScript(context.Context, systemdb.FormDefinition) error
 }
 
 type createDatabaseRequest struct {
@@ -148,6 +154,10 @@ func (server *Server) EnableMetadataWrites(path string) {
 
 func (server *Server) SetDatabaseOpener(openDatabase func(context.Context, string, string) error) {
 	server.openDatabase = openDatabase
+}
+
+func (server *Server) SetCodeFileStore(store codeFileStore) {
+	server.codeFiles = store
 }
 
 func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -599,6 +609,10 @@ func (server *Server) handleSaveWorkflow(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if err := server.saveWorkflowScriptFile(r.Context(), saved); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	if workflow.ID == 0 {
 		if !server.grantResourceOwner(w, r, actorID, permission.ScopeWorkflow, saved.ID) {
 			return
@@ -710,6 +724,10 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		if err := server.saveWorkflowScriptFile(r.Context(), saved); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 		if workflow.ID == 0 {
 			if !server.grantResourceOwner(w, r, actorID, permission.ScopeWorkflow, saved.ID) {
 				return
@@ -728,6 +746,10 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 		form.DatabaseName = dbName
 		saved, err := server.system.SaveForm(r.Context(), form)
 		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if err := server.saveFormScriptFile(r.Context(), saved); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -904,6 +926,10 @@ func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
 	}
 	saved, err := server.system.SaveForm(r.Context(), form)
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := server.saveFormScriptFile(r.Context(), saved); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -1185,6 +1211,20 @@ func readableHistoryValues(values map[string]any, perms permission.Set, actorID,
 		}
 	}
 	return readable
+}
+
+func (server *Server) saveWorkflowScriptFile(ctx context.Context, workflow systemdb.WorkflowDefinition) error {
+	if server.codeFiles == nil {
+		return nil
+	}
+	return server.codeFiles.SaveWorkflowScript(ctx, workflow)
+}
+
+func (server *Server) saveFormScriptFile(ctx context.Context, form systemdb.FormDefinition) error {
+	if server.codeFiles == nil {
+		return nil
+	}
+	return server.codeFiles.SaveFormScript(ctx, form)
 }
 
 func (server *Server) grantResourceOwner(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {

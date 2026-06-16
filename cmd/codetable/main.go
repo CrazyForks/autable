@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"codetable/internal/api"
+	"codetable/internal/codefiles"
 	"codetable/internal/config"
 	"codetable/internal/history"
 	"codetable/internal/metadata"
@@ -67,6 +68,7 @@ func run(ctx context.Context, configPath, metadataPath string) error {
 	)
 	server.EnableMetadataWrites(metadataPath)
 	server.SetDatabaseOpener(rowRepository.OpenDatabase)
+	server.SetCodeFileStore(codefiles.NewStore(cfg.Repository.Path))
 	slog.Info("codetable listening", "address", address)
 	return http.ListenAndServe(address, server)
 }

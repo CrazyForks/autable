@@ -1,4 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type AuthUser = {
   id: string;
@@ -7,6 +10,7 @@ type AuthUser = {
 };
 
 let sequence = 0;
+const runtimeDir = join(dirname(fileURLToPath(import.meta.url)), ".runtime");
 
 test.describe.configure({ mode: "serial" });
 
@@ -134,6 +138,46 @@ test("covers workflow editor, node list, and run history through the real backen
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
   await expect(page.getByRole("button", { name: /whistory_/ })).toBeVisible();
+});
+
+test("persists workflow and form JavaScript into the repository path", async ({ page }) => {
+  const user = await registerUser(page);
+  const suffix = `${Date.now()}-${sequence}`;
+  await grant(page, user.id, { scope: "database", resource: "workspace", level: 2 });
+
+  const workflowName = `repo-workflow-${suffix}`;
+  const workflowScript = 'function run(info) { return { name: info.inputs.name }; }';
+  const workflow = (await api(page, "POST", "/api/databases/workspace/workflows", {
+    database_name: "workspace",
+    name: workflowName,
+    script: workflowScript,
+    secrets: {},
+    variables: {}
+  })) as { id: number };
+  const workflowPath = join(
+    runtimeDir,
+    "workspace",
+    "workflows",
+    "workspace",
+    `${String(workflow.id).padStart(20, "0")}-${workflowName}.js`
+  );
+  expect(readFileSync(workflowPath, "utf8")).toBe(workflowScript);
+
+  const formName = `repo-form-${suffix}`;
+  const formScript = "root.append(api.input({ name: 'email' }))";
+  const form = (await api(page, "POST", "/api/databases/workspace/forms", {
+    database_name: "workspace",
+    name: formName,
+    script: formScript
+  })) as { id: number };
+  const formPath = join(
+    runtimeDir,
+    "workspace",
+    "forms",
+    "workspace",
+    `${String(form.id).padStart(20, "0")}-${formName}.js`
+  );
+  expect(readFileSync(formPath, "utf8")).toBe(formScript);
 });
 
 test("covers form runtime preview and submit through the real backend", async ({ page }) => {

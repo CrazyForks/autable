@@ -13,12 +13,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"codetable/internal/auth"
+	"codetable/internal/codefiles"
 	"codetable/internal/config"
 	"codetable/internal/history"
 	"codetable/internal/metadata"
@@ -786,6 +788,8 @@ func TestCreateRowAPICanUsePersistentRepository(t *testing.T) {
 
 func TestWorkflowAndFormAPI(t *testing.T) {
 	server, system := newTestServer(t)
+	codeRoot := t.TempDir()
+	server.SetCodeFileStore(codefiles.NewStore(codeRoot))
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
@@ -863,6 +867,20 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	}
 	if workflow.ID != 1 || form.ID != 1 {
 		t.Fatalf("expected autoincrement ids, got workflow=%d form=%d", workflow.ID, form.ID)
+	}
+	workflowScript, err := os.ReadFile(filepath.Join(codeRoot, "workflows", "db", "00000000000000000001-notify.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(workflowScript) != workflow.Script {
+		t.Fatalf("unexpected workflow code file: %s", workflowScript)
+	}
+	formScript, err := os.ReadFile(filepath.Join(codeRoot, "forms", "db", "00000000000000000001-contact-intake.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(formScript) != form.Script {
+		t.Fatalf("unexpected form code file: %s", formScript)
 	}
 }
 
