@@ -12,6 +12,7 @@ import (
 	"codetable/internal/history"
 	"codetable/internal/metadata"
 	"codetable/internal/permission"
+	"codetable/internal/recorddb"
 	"codetable/internal/systemdb"
 	"codetable/internal/table"
 )
@@ -76,6 +77,56 @@ func TestCreateRowAPIDeniesMissingWritePermission(t *testing.T) {
 	}
 }
 
+func TestCreateRowAPICanUsePersistentRepository(t *testing.T) {
+	ctx := context.Background()
+	system, err := systemdb.Open(ctx, filepath.Join(t.TempDir(), "system.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := system.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	catalog := testCatalog(filepath.Join(t.TempDir(), "workspace.sqlite"))
+	repository, err := recorddb.OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	historyStore := history.NewMemoryStore()
+	server := NewServer(catalog, system, table.NewServiceWithRepository(historyStore, repository), historyStore)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{"values":{"name":"Ada"}}`))
+	request.Header.Set("X-Codetable-User", "u1")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	rows, err := repository.Rows(ctx, "db", "contacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Values["name"] != "Ada" {
+		t.Fatalf("unexpected persisted API rows: %#v", rows)
+	}
+}
+
 func TestWorkflowAndFormAPI(t *testing.T) {
 	server, _ := newTestServer(t)
 
@@ -133,9 +184,14 @@ func newTestServer(t *testing.T) (*Server, *systemdb.DB) {
 		}
 	})
 	historyStore := history.NewMemoryStore()
-	catalog := metadata.Catalog{Databases: []metadata.Database{{
+	catalog := testCatalog("./db.sqlite")
+	return NewServer(catalog, system, table.NewService(historyStore), historyStore), system
+}
+
+func testCatalog(sqlitePath string) metadata.Catalog {
+	return metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
-		SQLitePath: "./db.sqlite",
+		SQLitePath: sqlitePath,
 		Tables: []metadata.Table{{
 			Name: "contacts",
 			Fields: []metadata.Field{
@@ -144,5 +200,4 @@ func newTestServer(t *testing.T) (*Server, *systemdb.DB) {
 			},
 		}},
 	}}}
-	return NewServer(catalog, system, table.NewService(historyStore), historyStore), system
 }

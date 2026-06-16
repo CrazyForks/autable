@@ -16,6 +16,7 @@ This repository currently contains the backend core primitives:
 - `config.yml` loading and validation, including OIDC settings.
 - YAML metadata for databases and tables, including soft-deleted fields.
 - Hidden, auto-incrementing `record_id` handling.
+- Per-metadata-database SQLite row persistence through GORM.
 - Field-level permissions: none, read, write.
 - User identity model with email fallback for password and OIDC accounts.
 - History key generation and prefix scanning for row/workflow history.

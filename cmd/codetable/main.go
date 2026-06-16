@@ -11,6 +11,7 @@ import (
 	"codetable/internal/config"
 	"codetable/internal/history"
 	"codetable/internal/metadata"
+	"codetable/internal/recorddb"
 	"codetable/internal/systemdb"
 	"codetable/internal/table"
 )
@@ -47,11 +48,17 @@ func run(ctx context.Context, configPath, metadataPath string) error {
 	}
 	defer historyStore.Close()
 
+	rowRepository, err := recorddb.OpenCatalog(ctx, catalog)
+	if err != nil {
+		return err
+	}
+	defer rowRepository.Close()
+
 	address := cfg.Server.Address
 	if address == "" {
 		address = "127.0.0.1:8080"
 	}
-	server := api.NewServer(catalog, system, table.NewService(historyStore), historyStore)
+	server := api.NewServer(catalog, system, table.NewServiceWithRepository(historyStore, rowRepository), historyStore)
 	slog.Info("codetable listening", "address", address)
 	return http.ListenAndServe(address, server)
 }

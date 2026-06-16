@@ -50,6 +50,21 @@ func TestUserUpsertUsesEmailFallback(t *testing.T) {
 	}
 }
 
+func TestOpenCreatesParentDirectory(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "nested", "system.sqlite")
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 func TestPermissionGrantPersistence(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)

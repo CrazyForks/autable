@@ -109,3 +109,36 @@ func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 		t.Fatalf("expected permission error, got %v", err)
 	}
 }
+
+func TestCreateRowUsesInjectedRepository(t *testing.T) {
+	ctx := context.Background()
+	store := history.NewMemoryStore()
+	repository := NewMemoryRowRepository()
+	service := NewServiceWithRepository(store, repository)
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "db",
+		SQLitePath: "./db.sqlite",
+		Tables: []metadata.Table{{
+			Name:   "contacts",
+			Fields: []metadata.Field{{Name: "name", Type: "text"}},
+		}},
+	}}}
+	perms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	})
+
+	first, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"name": "Ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"name": "Grace"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.RecordID != 1 || second.RecordID != 2 {
+		t.Fatalf("expected injected repository to allocate ids, got %d and %d", first.RecordID, second.RecordID)
+	}
+}
