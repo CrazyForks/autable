@@ -3,13 +3,20 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"codetable/internal/config"
 	"codetable/internal/history"
@@ -172,6 +179,50 @@ func TestOIDCStartRedirectsToAuthorizeEndpoint(t *testing.T) {
 	}
 	if cookie.Value != "main:"+query.Get("state") {
 		t.Fatalf("expected state cookie to match redirect state, got %q and %q", cookie.Value, query.Get("state"))
+	}
+}
+
+func TestOIDCCallbackCreatesSessionWithVerifiedIDToken(t *testing.T) {
+	issuer := newFakeOIDCIssuer(t, "codetable", "sub-123", "Person@Example.com")
+	defer issuer.Close()
+	server, _ := newTestServerWithOIDC(t, []config.OIDCProvider{
+		{
+			Name:         "main",
+			IssuerURL:    issuer.URL,
+			ClientID:     "codetable",
+			ClientSecret: "secret",
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/main/callback?code=ok&state=state-1", nil)
+	request.Host = "app.example"
+	request.AddCookie(&http.Cookie{Name: oidcStateCookieName, Value: "main:state-1"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusFound {
+		t.Fatalf("expected callback 302, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Header().Get("Location") != "/" {
+		t.Fatalf("expected callback to redirect to app root, got %q", recorder.Header().Get("Location"))
+	}
+	cookie := sessionCookie(t, recorder)
+	if !cookie.HttpOnly || cookie.Value == "" {
+		t.Fatalf("expected session cookie, got %#v", cookie)
+	}
+
+	me := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	me.AddCookie(cookie)
+	meRecorder := httptest.NewRecorder()
+	server.ServeHTTP(meRecorder, me)
+	if meRecorder.Code != http.StatusOK {
+		t.Fatalf("expected me 200 after oidc callback, got %d: %s", meRecorder.Code, meRecorder.Body.String())
+	}
+	var user userResponse
+	if err := json.NewDecoder(meRecorder.Body).Decode(&user); err != nil {
+		t.Fatal(err)
+	}
+	if user.Email != "person@example.com" || user.Provider != "oidc" {
+		t.Fatalf("unexpected oidc user: %#v", user)
 	}
 }
 
@@ -762,4 +813,94 @@ func oidcStateCookie(t *testing.T, recorder *httptest.ResponseRecorder) *http.Co
 	}
 	t.Fatalf("missing oidc state cookie in Set-Cookie headers: %s", strings.Join(recorder.Result().Header.Values("Set-Cookie"), ", "))
 	return nil
+}
+
+func newFakeOIDCIssuer(t *testing.T, clientID, subject, email string) *httptest.Server {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var issuer *httptest.Server
+	issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			writeTestJSON(t, w, map[string]any{
+				"issuer":                                issuer.URL,
+				"authorization_endpoint":                issuer.URL + "/authorize",
+				"token_endpoint":                        issuer.URL + "/token",
+				"jwks_uri":                              issuer.URL + "/jwks",
+				"userinfo_endpoint":                     issuer.URL + "/userinfo",
+				"id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		case "/token":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected token exchange to use POST, got %s", r.Method)
+			}
+			writeTestJSON(t, w, map[string]any{
+				"access_token": "access-token",
+				"token_type":   "Bearer",
+				"id_token":     signTestIDToken(t, key, issuer.URL, clientID, subject, email),
+			})
+		case "/jwks":
+			writeTestJSON(t, w, map[string]any{
+				"keys": []map[string]any{
+					{
+						"kty": "RSA",
+						"use": "sig",
+						"kid": "test-key",
+						"alg": "RS256",
+						"n":   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+						"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
+					},
+				},
+			})
+		case "/userinfo":
+			writeTestJSON(t, w, map[string]any{
+				"email":          email,
+				"email_verified": true,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return issuer
+}
+
+func signTestIDToken(t *testing.T, key *rsa.PrivateKey, issuer, audience, subject, email string) string {
+	t.Helper()
+	header := map[string]string{"alg": "RS256", "kid": "test-key", "typ": "JWT"}
+	now := time.Now().UTC()
+	payload := map[string]any{
+		"iss":            issuer,
+		"sub":            subject,
+		"aud":            audience,
+		"exp":            now.Add(time.Hour).Unix(),
+		"iat":            now.Add(-time.Minute).Unix(),
+		"email":          email,
+		"email_verified": true,
+	}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsigned := base64.RawURLEncoding.EncodeToString(headerJSON) + "." + base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sum := sha256.Sum256([]byte(unsigned))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return unsigned + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
+func writeTestJSON(t *testing.T, w http.ResponseWriter, value any) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		t.Fatal(err)
+	}
 }

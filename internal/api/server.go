@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
+
 	"codetable/internal/auth"
 	"codetable/internal/config"
 	"codetable/internal/history"
@@ -55,6 +58,11 @@ type oidcProviderResponse struct {
 	Name      string   `json:"name"`
 	IssuerURL string   `json:"issuer_url"`
 	Scopes    []string `json:"scopes"`
+}
+
+type oidcEmailClaims struct {
+	Email         string `json:"email"`
+	EmailVerified *bool  `json:"email_verified,omitempty"`
 }
 
 type workflowRunRequest struct {
@@ -200,7 +208,7 @@ func (server *Server) handleOIDCProviders(w http.ResponseWriter, _ *http.Request
 
 func (server *Server) handleOIDC(w http.ResponseWriter, r *http.Request) {
 	providerName, action, ok := parseOIDCPath(r.URL.Path)
-	if !ok || action != "start" || r.Method != http.MethodGet {
+	if !ok || r.Method != http.MethodGet {
 		http.NotFound(w, r)
 		return
 	}
@@ -209,18 +217,106 @@ func (server *Server) handleOIDC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("oidc provider %q not found", providerName))
 		return
 	}
+	switch action {
+	case "start":
+		server.handleOIDCStart(w, r, provider)
+	case "callback":
+		server.handleOIDCCallback(w, r, provider)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (server *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request, provider config.OIDCProvider) {
 	state, err := auth.NewSessionToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	setOIDCStateCookie(w, providerName, state)
+	setOIDCStateCookie(w, provider.Name, state)
 	authURL, err := oidcAuthorizeURL(r, provider, state)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func (server *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request, provider config.OIDCProvider) {
+	state := r.URL.Query().Get("state")
+	if state == "" {
+		writeError(w, http.StatusBadRequest, errors.New("oidc state is required"))
+		return
+	}
+	cookie, err := r.Cookie(oidcStateCookieName)
+	if err != nil || cookie.Value != provider.Name+":"+state {
+		writeError(w, http.StatusUnauthorized, errors.New("invalid oidc state"))
+		return
+	}
+	clearOIDCStateCookie(w)
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		writeError(w, http.StatusBadRequest, errors.New("oidc code is required"))
+		return
+	}
+	oidcProvider, err := oidc.NewProvider(r.Context(), provider.IssuerURL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	oauthConfig := oauth2.Config{
+		ClientID:     provider.ClientID,
+		ClientSecret: provider.ClientSecret,
+		Endpoint:     oidcProvider.Endpoint(),
+		RedirectURL:  oidcCallbackURL(r, provider.Name),
+		Scopes:       oidcScopes(provider),
+	}
+	token, err := oauthConfig.Exchange(r.Context(), code)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		writeError(w, http.StatusBadGateway, errors.New("oidc id_token is required"))
+		return
+	}
+	idToken, err := oidcProvider.Verifier(&oidc.Config{ClientID: provider.ClientID}).Verify(r.Context(), rawIDToken)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	claims, err := oidcClaims(r.Context(), oidcProvider, token, idToken)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if claims.EmailVerified != nil && !*claims.EmailVerified {
+		writeError(w, http.StatusUnauthorized, errors.New("oidc email is not verified"))
+		return
+	}
+	user, err := auth.NewOIDCUser(auth.OIDCIdentity{
+		ProviderName: provider.Name,
+		Subject:      idToken.Subject,
+		Email:        claims.Email,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	user, err = server.system.UpsertUserByEmail(r.Context(), user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	session, err := server.system.CreateSession(r.Context(), user.ID, sessionTTL)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	setSessionCookie(w, session)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (server *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -916,6 +1012,18 @@ func setOIDCStateCookie(w http.ResponseWriter, providerName, state string) {
 	})
 }
 
+func clearOIDCStateCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    "",
+		Path:     "/api/auth/oidc",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+	})
+}
+
 func oidcAuthorizeURL(r *http.Request, provider config.OIDCProvider, state string) (string, error) {
 	issuerURL := strings.TrimRight(provider.IssuerURL, "/")
 	if issuerURL == "" {
@@ -952,6 +1060,27 @@ func oidcCallbackURL(r *http.Request, providerName string) string {
 		Host:   host,
 		Path:   "/api/auth/oidc/" + url.PathEscape(providerName) + "/callback",
 	}).String()
+}
+
+func oidcClaims(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken) (oidcEmailClaims, error) {
+	var claims oidcEmailClaims
+	if err := idToken.Claims(&claims); err != nil {
+		return oidcEmailClaims{}, err
+	}
+	if claims.Email != "" {
+		return claims, nil
+	}
+	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+	if err != nil {
+		return oidcEmailClaims{}, err
+	}
+	if err := userInfo.Claims(&claims); err != nil {
+		return oidcEmailClaims{}, err
+	}
+	if claims.Email == "" {
+		return oidcEmailClaims{}, errors.New("oidc email is required")
+	}
+	return claims, nil
 }
 
 func toUserResponse(user auth.User) userResponse {
