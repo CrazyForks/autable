@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Input,
@@ -64,6 +64,7 @@ export function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [lastWorkflowRun, setLastWorkflowRun] = useState<WorkflowRunResponse | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [status, setStatus] = useState("Ready");
 
   const database = catalog.databases[0];
@@ -78,6 +79,10 @@ export function App() {
   const selectedWorkflowRun =
     lastWorkflowRun?.run.workflow_id === selectedWorkflow?.id ? lastWorkflowRun : null;
   const renderedForm = useMemo(() => renderFormScript(selectedForm?.script ?? ""), [selectedForm?.script]);
+
+  useEffect(() => {
+    setFormValues({});
+  }, [selectedForm?.id, selectedForm?.script]);
 
   const columns = useMemo<GridColumn[]>(
     () => [
@@ -217,6 +222,36 @@ export function App() {
     }
   }
 
+  async function submitRenderedForm(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const values = Object.fromEntries(
+      renderedForm.elements.flatMap((element) => {
+        if (element.kind === "input") {
+          return [[element.name, formValues[element.name] ?? ""]];
+        }
+        if (element.kind === "select") {
+          return [[element.name, formValues[element.name] ?? element.options[0] ?? ""]];
+        }
+        return [];
+      })
+    );
+    if (!currentUser) {
+      const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
+      setRows((current) => [...current, { record_id: localID, ...values }]);
+      setStatus("Local form submitted");
+      return;
+    }
+    try {
+      const saved = await createRow(database.name, table.name, values);
+      setRows((current) => [...current, { record_id: saved.record_id, ...saved.values }]);
+      setStatus(`Form created record ${saved.record_id}`);
+    } catch (error) {
+      const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
+      setRows((current) => [...current, { record_id: localID, ...values }]);
+      setStatus(error instanceof Error ? `Local form: ${error.message}` : "Local form submitted");
+    }
+  }
+
   async function registerUser() {
     try {
       const user = await register(authEmail, authPassword);
@@ -255,6 +290,10 @@ export function App() {
 
   function updateSelectedFormScript(script: string) {
     setForms((current) => current.map((item) => (item.id === selectedForm?.id ? { ...item, script } : item)));
+  }
+
+  function updateFormValue(name: string, value: string) {
+    setFormValues((current) => ({ ...current, [name]: value }));
   }
 
   return (
@@ -435,7 +474,7 @@ export function App() {
                   aria-label="Form JavaScript"
                 />
               </div>
-              <form className="form-preview">
+              <form className="form-preview" onSubmit={submitRenderedForm}>
                 <Text weight="semibold">Forms</Text>
                 <div className="resource-list">
                   {forms.map((item) => (
@@ -455,7 +494,12 @@ export function App() {
                     return (
                       <label key={element.name} className="field-stack">
                         <span>{element.label}</span>
-                        <Input type={element.inputType} required={element.required} />
+                        <Input
+                          type={element.inputType}
+                          required={element.required}
+                          value={formValues[element.name] ?? ""}
+                          onChange={(_, data) => updateFormValue(element.name, data.value)}
+                        />
                       </label>
                     );
                   }
@@ -463,7 +507,10 @@ export function App() {
                     return (
                       <label key={element.name} className="field-stack">
                         <span>{element.label}</span>
-                        <Select>
+                        <Select
+                          value={formValues[element.name] ?? element.options[0] ?? ""}
+                          onChange={(_, data) => updateFormValue(element.name, data.value)}
+                        >
                           {element.options.map((option) => (
                             <option key={option}>{option}</option>
                           ))}
@@ -475,7 +522,7 @@ export function App() {
                     return <div key={element.html} className="form-html" dangerouslySetInnerHTML={{ __html: element.html }} />;
                   }
                   return (
-                    <Button key={element.label} appearance="primary">
+                    <Button key={element.label} type="button" appearance="primary" onClick={() => void submitRenderedForm()}>
                       {element.label}
                     </Button>
                   );

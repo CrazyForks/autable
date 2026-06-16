@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { describe, expect, it } from "vitest";
@@ -36,8 +36,13 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Form" }));
     expect(screen.getByRole("button", { name: "quick-status" })).toBeInTheDocument();
     expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Margaret Hamilton");
     expect(screen.getByRole("button", { name: "Create record" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Create record" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Table" }));
+    await waitFor(() => expect(screen.getByText("4 of 4 records")).toBeInTheDocument());
 
+    await userEvent.click(screen.getByRole("tab", { name: "Form" }));
     await userEvent.click(screen.getByRole("button", { name: "quick-status" }));
     expect(screen.getByRole("button", { name: "Update status" })).toBeInTheDocument();
   });

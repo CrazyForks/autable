@@ -28,6 +28,7 @@ This repository currently contains the backend core primitives:
 - Synchronous JavaScript workflow runs through registered stateless nodes, with each run persisted as `whistory_id_timestamp`.
 - A `table.record.changed` trigger node that accepts an `rhistory_db_table_record_id_timestamp` key and exposes the decoded row change.
 - A frontend form JavaScript runtime with `api.input`, `api.select`, `api.submit`, and `root.append(...)` preview rendering.
+- Form preview submissions collect script-created controls, create local demo rows when unsigned, and use the row API when signed in.
 
 ## Development
 

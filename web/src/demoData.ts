@@ -89,7 +89,13 @@ export const initialWorkflows: WorkflowDefinition[] = [
   }
 ];
 
-export const defaultFormScript = `const email = api.input({
+export const defaultFormScript = `const name = api.input({
+  name: "name",
+  label: "Name",
+  required: true
+});
+
+const email = api.input({
   name: "email",
   label: "Email",
   type: "email",
@@ -102,7 +108,7 @@ const status = api.select({
   options: ["Active", "Review", "Archived"]
 });
 
-root.append(email, status, api.submit("Create record"));`;
+root.append(name, email, status, api.submit("Create record"));`;
 
 export const initialForms: FormDefinition[] = [
   {
