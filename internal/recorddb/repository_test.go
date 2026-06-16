@@ -4,8 +4,12 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"codetable/internal/metadata"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestRepositoryCreatesOneSQLiteFilePerMetadataDatabase(t *testing.T) {
@@ -81,6 +85,105 @@ func TestRepositoryPersistsRowsAcrossReopen(t *testing.T) {
 	}
 	if loaded.RecordID != row.RecordID || loaded.Values["name"] != "Ada" {
 		t.Fatalf("unexpected persisted row: %#v", loaded)
+	}
+}
+
+func TestRepositoryAllocatesRecordIDsPerTableAcrossReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "workspace.sqlite")
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: path}}}
+
+	repository, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contact, err := repository.CreateRow(ctx, "workspace", "contacts", map[string]any{"name": "Ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := repository.CreateRow(ctx, "workspace", "projects", map[string]any{"name": "Apollo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contact.RecordID != 1 || project.RecordID != 1 {
+		t.Fatalf("expected each table to start at record_id 1, got contact=%d project=%d", contact.RecordID, project.RecordID)
+	}
+	if err := repository.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	nextContact, err := reopened.CreateRow(ctx, "workspace", "contacts", map[string]any{"name": "Grace"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextProject, err := reopened.CreateRow(ctx, "workspace", "projects", map[string]any{"name": "Gemini"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextContact.RecordID != 2 || nextProject.RecordID != 2 {
+		t.Fatalf("expected each table to continue independently, got contact=%d project=%d", nextContact.RecordID, nextProject.RecordID)
+	}
+}
+
+func TestRepositoryMigratesLegacyGlobalRecordIDSchema(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "workspace.sqlite")
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.WithContext(ctx).AutoMigrate(&legacyRecord{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.WithContext(ctx).Create(&legacyRecord{
+		RecordID:  1,
+		Table:     "contacts",
+		Values:    JSONMap{"name": "Ada"},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: path}}}
+	repository, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	loaded, err := repository.Row(ctx, "workspace", "contacts", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Values["name"] != "Ada" {
+		t.Fatalf("expected migrated legacy row, got %#v", loaded)
+	}
+	project, err := repository.CreateRow(ctx, "workspace", "projects", map[string]any{"name": "Apollo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.RecordID != 1 {
+		t.Fatalf("expected new table to start at record_id 1 after migration, got %d", project.RecordID)
 	}
 }
 

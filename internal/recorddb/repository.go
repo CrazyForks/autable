@@ -25,11 +25,24 @@ type Repository struct {
 }
 
 type Record struct {
-	RecordID  int64     `gorm:"primaryKey;autoIncrement;column:record_id"`
-	TableName string    `gorm:"index;not null"`
+	ID        int64     `gorm:"primaryKey;autoIncrement"`
+	RecordID  int64     `gorm:"uniqueIndex:idx_record_table_record_id;not null;column:record_id"`
+	TableName string    `gorm:"uniqueIndex:idx_record_table_record_id;index;not null"`
 	Values    JSONMap   `gorm:"type:json;not null"`
 	CreatedAt time.Time `gorm:"not null"`
 	UpdatedAt time.Time `gorm:"not null"`
+}
+
+type legacyRecord struct {
+	RecordID  int64  `gorm:"primaryKey;autoIncrement;column:record_id"`
+	Table     string `gorm:"column:table_name"`
+	Values    JSONMap
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (legacyRecord) TableName() string {
+	return "records"
 }
 
 func OpenCatalog(ctx context.Context, catalog metadata.Catalog) (*Repository, error) {
@@ -51,6 +64,13 @@ func (repository *Repository) OpenDatabase(ctx context.Context, name, path strin
 	if err != nil {
 		return err
 	}
+	if err := migrateLegacyRecordSchema(ctx, db); err != nil {
+		handle, closeErr := db.DB()
+		if closeErr == nil {
+			_ = handle.Close()
+		}
+		return err
+	}
 	if err := db.WithContext(ctx).AutoMigrate(&Record{}); err != nil {
 		handle, closeErr := db.DB()
 		if closeErr == nil {
@@ -70,11 +90,25 @@ func (repository *Repository) CreateRow(ctx context.Context, dbName, tableName s
 	if err != nil {
 		return table.Row{}, err
 	}
-	record := Record{
-		TableName: tableName,
-		Values:    JSONMap(cloneValues(values)),
-	}
-	if err := db.WithContext(ctx).Create(&record).Error; err != nil {
+	var record Record
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var latest Record
+		err := tx.
+			Where(&Record{TableName: tableName}).
+			Order(clause.OrderByColumn{Column: clause.Column{Name: "record_id"}, Desc: true}).
+			First(&latest).
+			Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		record = Record{
+			RecordID:  latest.RecordID + 1,
+			TableName: tableName,
+			Values:    JSONMap(cloneValues(values)),
+		}
+		return tx.Create(&record).Error
+	})
+	if err != nil {
 		return table.Row{}, err
 	}
 	return table.Row{RecordID: record.RecordID, Values: record.Values.Plain()}, nil
@@ -189,6 +223,40 @@ func (repository *Repository) database(name string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownDatabase, name)
 	}
 	return db, nil
+}
+
+func migrateLegacyRecordSchema(ctx context.Context, db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&Record{}) || migrator.HasColumn(&Record{}, "id") {
+		return nil
+	}
+
+	var records []legacyRecord
+	if err := db.WithContext(ctx).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "record_id"}}).
+		Find(&records).
+		Error; err != nil {
+		return err
+	}
+	if err := migrator.DropTable(&legacyRecord{}); err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).AutoMigrate(&Record{}); err != nil {
+		return err
+	}
+	for _, old := range records {
+		record := Record{
+			RecordID:  old.RecordID,
+			TableName: old.Table,
+			Values:    old.Values,
+			CreatedAt: old.CreatedAt,
+			UpdatedAt: old.UpdatedAt,
+		}
+		if err := db.WithContext(ctx).Create(&record).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func cloneValues(values map[string]any) map[string]any {
