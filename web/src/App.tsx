@@ -478,7 +478,7 @@ export function App() {
     }
   }
 
-  async function addFieldFromSidebar() {
+  async function addFieldFromCanvas() {
     const name = newFieldName.trim();
     if (!name) {
       setStatus("Field name is required");
@@ -498,7 +498,7 @@ export function App() {
     setNewFieldRequired(false);
   }
 
-  async function deleteFieldFromSidebar(fieldName: string) {
+  async function deleteFieldFromCanvas(fieldName: string) {
     const nextTable = {
       ...table,
       fields: table.fields.map((field) => (field.name === fieldName ? { ...field, deleted: true } : field))
@@ -506,7 +506,7 @@ export function App() {
     await persistTableMetadata(nextTable, `Deleted field ${fieldName}`);
   }
 
-  async function createViewFromSidebar() {
+  async function createViewFromCanvas() {
     const name = newViewName.trim();
     if (!name) {
       setStatus("View name is required");
@@ -1012,10 +1012,10 @@ export function App() {
               newViewSortDirection={newViewSortDirection}
               newViewSortField={newViewSortField}
               onAddRow={addDraftRow}
-              onAddField={addFieldFromSidebar}
+              onAddField={addFieldFromCanvas}
               onCellEdited={editCell}
-              onCreateView={createViewFromSidebar}
-              onDeleteField={deleteFieldFromSidebar}
+              onCreateView={createViewFromCanvas}
+              onDeleteField={deleteFieldFromCanvas}
               onDeleteSelectedRow={deleteSelectedRow}
               onLoadHistory={loadSelectedRowHistory}
               onNewFieldNameChange={setNewFieldName}
