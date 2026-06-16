@@ -228,6 +228,42 @@ select {
   gap: 10px;
 }
 
+.run-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.run-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8d6cf;
+  background: #fbfaf7;
+  color: #242322;
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-history-item span {
+  overflow-wrap: anywhere;
+}
+
+.run-history-item span:last-child {
+  color: #5f5c56;
+  font-size: 12px;
+}
+
+.run-history-item.selected {
+  border-color: #2f6f68;
+  background: #eef5f3;
+}
+
 .flow-step,
 .flow-empty {
   padding: 9px 10px;

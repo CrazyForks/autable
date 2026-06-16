@@ -34,6 +34,7 @@ import {
   listForms,
   listRowHistory,
   listRows,
+  listWorkflowRuns,
   listWorkflows,
   loadCurrentUser,
   loadMetadata,
@@ -78,7 +79,8 @@ export function App() {
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
   const [selectedRecordID, setSelectedRecordID] = useState(0);
   const [rowHistory, setRowHistory] = useState<RowChange[]>([]);
-  const [lastWorkflowRun, setLastWorkflowRun] = useState<WorkflowRunResponse | null>(null);
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunResponse[]>([]);
+  const [selectedWorkflowRunKey, setSelectedWorkflowRunKey] = useState("");
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [workflowSecretsText, setWorkflowSecretsText] = useState("{}");
   const [workflowVariablesText, setWorkflowVariablesText] = useState("{}");
@@ -98,7 +100,7 @@ export function App() {
     [displayedRows]
   );
   const selectedWorkflowRun =
-    lastWorkflowRun?.run.workflow_id === selectedWorkflow?.id ? lastWorkflowRun : null;
+    workflowRuns.find((run) => run.history_key === selectedWorkflowRunKey) ?? workflowRuns[0] ?? null;
   const renderedForm = useMemo(() => renderFormScript(selectedForm?.script ?? ""), [selectedForm?.script]);
 
   useEffect(() => {
@@ -161,6 +163,36 @@ export function App() {
     setWorkflowSecretsText(stringMapToJSON(selectedWorkflow?.secrets ?? {}));
     setWorkflowVariablesText(stringMapToJSON(selectedWorkflow?.variables ?? {}));
   }, [selectedWorkflow?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedWorkflow?.id) {
+      setWorkflowRuns([]);
+      setSelectedWorkflowRunKey("");
+      return () => {
+        cancelled = true;
+      };
+    }
+    const userID = currentUser ? undefined : "demo-user";
+    void listWorkflowRuns(selectedWorkflow.id, userID)
+      .then((runs) => {
+        if (cancelled) {
+          return;
+        }
+        const newestFirst = [...runs].reverse();
+        setWorkflowRuns(newestFirst);
+        setSelectedWorkflowRunKey(newestFirst[0]?.history_key ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkflowRuns([]);
+          setSelectedWorkflowRunKey("");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, selectedWorkflow?.id]);
 
   const columns = useMemo<GridColumn[]>(
     () => [
@@ -289,7 +321,8 @@ export function App() {
         ...sampleRow,
         record_id: Number(sampleRow.record_id ?? 1)
       }, currentUser ? undefined : "demo-user");
-      setLastWorkflowRun(response);
+      setWorkflowRuns((current) => [response, ...current.filter((run) => run.history_key !== response.history_key)]);
+      setSelectedWorkflowRunKey(response.history_key);
       if (response.run.error) {
         setStatus(`Workflow failed: ${response.run.error}`);
         return;
@@ -672,6 +705,21 @@ export function App() {
                   ))}
                 </div>
                 <Text weight="semibold">Run flow</Text>
+                {workflowRuns.length > 0 && (
+                  <div className="run-history-list" aria-label="Workflow run history">
+                    {workflowRuns.map((run) => (
+                      <button
+                        key={run.history_key}
+                        className={run.history_key === selectedWorkflowRun?.history_key ? "run-history-item selected" : "run-history-item"}
+                        type="button"
+                        onClick={() => setSelectedWorkflowRunKey(run.history_key)}
+                      >
+                        <span>{run.history_key}</span>
+                        <span>{new Date(run.run.timestamp).toLocaleString()}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="flow-line" aria-label="Workflow run flow">
                   {selectedWorkflowRun && selectedWorkflowRun.run.steps.length > 0 ? (
                     selectedWorkflowRun.run.steps.map((step, index) => (

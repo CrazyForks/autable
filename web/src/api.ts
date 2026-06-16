@@ -323,6 +323,17 @@ export async function runWorkflow(
   return body as WorkflowRunResponse;
 }
 
+export async function listWorkflowRuns(workflowID: number, userID?: string): Promise<WorkflowRunResponse[]> {
+  const response = await fetch(`/api/workflows/${workflowID}/runs`, {
+    headers: userHeaders(userID)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? `workflow runs failed: ${response.status}`);
+  }
+  return response.json() as Promise<WorkflowRunResponse[]>;
+}
+
 export async function listForms(dbName: string, userID?: string): Promise<FormDefinition[]> {
   const response = await fetch(`/api/databases/${dbName}/forms`, {
     headers: userHeaders(userID)

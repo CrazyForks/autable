@@ -140,6 +140,42 @@ describe("App", () => {
     expect(screen.getByText("No runs yet")).toBeInTheDocument();
   });
 
+  it("loads persisted workflow runs and renders their flow", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/auth/me") {
+        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+      }
+      if (url === "/api/auth/oidc/providers") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.startsWith("/api/tables/workspace/contacts/rows")) {
+        return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
+      }
+      if (url === "/api/workflows/1/runs") {
+        return new Response(
+          JSON.stringify([
+            {
+              history_key: "whistory_00000000000000000001_00000000000000000100",
+              run: {
+                workflow_id: 1,
+                timestamp: "2026-06-16T10:00:00Z",
+                steps: [{ node_id: "echo", input: { value: "Ada" }, output: { value: "Ada" } }]
+              }
+            }
+          ]),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+    });
+
+    renderApp();
+    await userEvent.click(screen.getByRole("tab", { name: "Workflow" }));
+    expect(await screen.findByText("whistory_00000000000000000001_00000000000000000100")).toBeInTheDocument();
+    expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
+  });
+
   it("shows form JavaScript and preview controls", async () => {
     renderApp();
     await userEvent.click(screen.getByRole("tab", { name: "Form" }));
