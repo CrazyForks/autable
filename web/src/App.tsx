@@ -693,21 +693,13 @@ export function App() {
       setStatus("Save workflow before running");
       return;
     }
-    const sampleRow = rows[0] ?? {};
     const parsedInputs = parseAnyMap(workflowInputsText);
     if (!parsedInputs.ok) {
       setStatus(parsedInputs.error);
       return;
     }
-    const runInputs =
-      Object.keys(parsedInputs.value).length > 0
-        ? parsedInputs.value
-        : {
-            ...sampleRow,
-            record_id: Number(sampleRow.record_id ?? 1)
-          };
     try {
-      const response = await runWorkflow(selectedWorkflow.id, runInputs);
+      const response = await runWorkflow(selectedWorkflow.id, parsedInputs.value);
       setWorkflowRuns((current) => [response, ...current.filter((run) => run.history_key !== response.history_key)]);
       setSelectedWorkflowRunKey(response.history_key);
       if (response.run.error) {

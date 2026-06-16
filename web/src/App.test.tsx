@@ -386,6 +386,35 @@ describe("App", () => {
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
   });
 
+  it("runs workflows with only the explicit inputs JSON", async () => {
+    let runBody: unknown;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/workflows/1/runs" && init?.method === "POST") {
+        runBody = JSON.parse(String(init.body));
+        return new Response(
+          JSON.stringify({
+            history_key: "whistory_00000000000000000001_00000000000000000101",
+            run: {
+              workflow_id: 1,
+              timestamp: "2026-06-16T10:00:00Z",
+              inputs: {},
+              outputs: {},
+              steps: []
+            }
+          }),
+          { status: 201 }
+        );
+      }
+      return defaultFetch(input, init);
+    });
+
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(runBody).toEqual({ inputs: {} }));
+  });
+
   it("shows form JavaScript and preview controls", async () => {
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
