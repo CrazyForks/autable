@@ -16,12 +16,13 @@ describe("App", () => {
   it("renders table view first", () => {
     renderApp();
     expect(screen.getByRole("combobox", { name: "Table" })).toHaveValue("contacts");
-    expect(screen.getByText("3 records")).toBeInTheDocument();
+    expect(screen.getByText("3 of 3 records")).toBeInTheDocument();
   });
 
   it("shows workflow JavaScript as the workflow view", async () => {
     renderApp();
     await userEvent.click(screen.getByRole("tab", { name: "Workflow" }));
+    expect(screen.getByRole("button", { name: "welcome-contact" })).toBeInTheDocument();
     expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
       "export default async function run"
     );
@@ -30,6 +31,7 @@ describe("App", () => {
   it("shows form JavaScript and preview controls", async () => {
     renderApp();
     await userEvent.click(screen.getByRole("tab", { name: "Form" }));
+    expect(screen.getByRole("button", { name: "quick-status" })).toBeInTheDocument();
     expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
   });

@@ -10,6 +10,27 @@ databases:
             required: true
           - name: "email"
             type: "email"
+          - name: "status"
+            type: "text"
           - name: "archived_note"
             type: "text"
             deleted: true
+        views:
+          - name: "active"
+            display_name: "Active contacts"
+            filters:
+              - field: "status"
+                op: "eq"
+                value: "active"
+            sorts:
+              - field: "name"
+                direction: "asc"
+          - name: "active-email"
+            display_name: "Active contacts with email"
+            base_view: "active"
+            filters:
+              - field: "email"
+                op: "not_empty"
+            sorts:
+              - field: "record_id"
+                direction: "desc"

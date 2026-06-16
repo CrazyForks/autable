@@ -21,21 +21,23 @@ type DB struct {
 }
 
 type WorkflowDefinition struct {
-	ID        int64             `json:"id"`
-	Name      string            `json:"name"`
-	Script    string            `json:"script"`
-	Secrets   map[string]string `json:"secrets"`
-	Variables map[string]string `json:"variables"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID           int64             `json:"id"`
+	DatabaseName string            `json:"database_name"`
+	Name         string            `json:"name"`
+	Script       string            `json:"script"`
+	Secrets      map[string]string `json:"secrets"`
+	Variables    map[string]string `json:"variables"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
 }
 
 type FormDefinition struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Script    string    `json:"script"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           int64     `json:"id"`
+	DatabaseName string    `json:"database_name"`
+	Name         string    `json:"name"`
+	Script       string    `json:"script"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type userModel struct {
@@ -60,7 +62,8 @@ type permissionGrantModel struct {
 
 type workflowModel struct {
 	ID            int64  `gorm:"primaryKey;autoIncrement"`
-	Name          string `gorm:"uniqueIndex;not null"`
+	DatabaseName  string `gorm:"uniqueIndex:idx_workflow_database_name;not null"`
+	Name          string `gorm:"uniqueIndex:idx_workflow_database_name;not null"`
 	Script        string `gorm:"not null"`
 	SecretsJSON   string `gorm:"not null"`
 	VariablesJSON string `gorm:"not null"`
@@ -69,11 +72,12 @@ type workflowModel struct {
 }
 
 type formModel struct {
-	ID        int64  `gorm:"primaryKey;autoIncrement"`
-	Name      string `gorm:"uniqueIndex;not null"`
-	Script    string `gorm:"not null"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           int64  `gorm:"primaryKey;autoIncrement"`
+	DatabaseName string `gorm:"uniqueIndex:idx_form_database_name;not null"`
+	Name         string `gorm:"uniqueIndex:idx_form_database_name;not null"`
+	Script       string `gorm:"not null"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 func Open(ctx context.Context, path string) (*DB, error) {
@@ -184,6 +188,9 @@ func (db *DB) GrantsForSubject(ctx context.Context, subjectID string) (permissio
 }
 
 func (db *DB) SaveWorkflow(ctx context.Context, workflow WorkflowDefinition) (WorkflowDefinition, error) {
+	if workflow.DatabaseName == "" {
+		return WorkflowDefinition{}, errors.New("database_name is required")
+	}
 	model, err := workflowToModel(workflow)
 	if err != nil {
 		return WorkflowDefinition{}, err
@@ -208,7 +215,31 @@ func (db *DB) Workflow(ctx context.Context, id int64) (WorkflowDefinition, error
 	return modelToWorkflow(model)
 }
 
+func (db *DB) Workflows(ctx context.Context, databaseName string) ([]WorkflowDefinition, error) {
+	var models []workflowModel
+	err := db.orm.WithContext(ctx).
+		Where(&workflowModel{DatabaseName: databaseName}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}}).
+		Find(&models).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	workflows := make([]WorkflowDefinition, 0, len(models))
+	for _, model := range models {
+		workflow, err := modelToWorkflow(model)
+		if err != nil {
+			return nil, err
+		}
+		workflows = append(workflows, workflow)
+	}
+	return workflows, nil
+}
+
 func (db *DB) SaveForm(ctx context.Context, form FormDefinition) (FormDefinition, error) {
+	if form.DatabaseName == "" {
+		return FormDefinition{}, errors.New("database_name is required")
+	}
 	model := formToModel(form)
 	if form.ID == 0 {
 		if err := db.orm.WithContext(ctx).Create(&model).Error; err != nil {
@@ -228,6 +259,23 @@ func (db *DB) Form(ctx context.Context, id int64) (FormDefinition, error) {
 		return FormDefinition{}, err
 	}
 	return modelToForm(model), nil
+}
+
+func (db *DB) Forms(ctx context.Context, databaseName string) ([]FormDefinition, error) {
+	var models []formModel
+	err := db.orm.WithContext(ctx).
+		Where(&formModel{DatabaseName: databaseName}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}}).
+		Find(&models).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	forms := make([]FormDefinition, 0, len(models))
+	for _, model := range models {
+		forms = append(forms, modelToForm(model))
+	}
+	return forms, nil
 }
 
 func userToModel(user auth.User) userModel {
@@ -283,6 +331,7 @@ func workflowToModel(workflow WorkflowDefinition) (workflowModel, error) {
 	}
 	return workflowModel{
 		ID:            workflow.ID,
+		DatabaseName:  workflow.DatabaseName,
 		Name:          workflow.Name,
 		Script:        workflow.Script,
 		SecretsJSON:   string(secrets),
@@ -294,11 +343,12 @@ func workflowToModel(workflow WorkflowDefinition) (workflowModel, error) {
 
 func modelToWorkflow(model workflowModel) (WorkflowDefinition, error) {
 	workflow := WorkflowDefinition{
-		ID:        model.ID,
-		Name:      model.Name,
-		Script:    model.Script,
-		CreatedAt: model.CreatedAt,
-		UpdatedAt: model.UpdatedAt,
+		ID:           model.ID,
+		DatabaseName: model.DatabaseName,
+		Name:         model.Name,
+		Script:       model.Script,
+		CreatedAt:    model.CreatedAt,
+		UpdatedAt:    model.UpdatedAt,
 	}
 	if err := json.Unmarshal([]byte(model.SecretsJSON), &workflow.Secrets); err != nil {
 		return WorkflowDefinition{}, err
@@ -311,21 +361,23 @@ func modelToWorkflow(model workflowModel) (WorkflowDefinition, error) {
 
 func formToModel(form FormDefinition) formModel {
 	return formModel{
-		ID:        form.ID,
-		Name:      form.Name,
-		Script:    form.Script,
-		CreatedAt: form.CreatedAt,
-		UpdatedAt: form.UpdatedAt,
+		ID:           form.ID,
+		DatabaseName: form.DatabaseName,
+		Name:         form.Name,
+		Script:       form.Script,
+		CreatedAt:    form.CreatedAt,
+		UpdatedAt:    form.UpdatedAt,
 	}
 }
 
 func modelToForm(model formModel) FormDefinition {
 	return FormDefinition{
-		ID:        model.ID,
-		Name:      model.Name,
-		Script:    model.Script,
-		CreatedAt: model.CreatedAt,
-		UpdatedAt: model.UpdatedAt,
+		ID:           model.ID,
+		DatabaseName: model.DatabaseName,
+		Name:         model.Name,
+		Script:       model.Script,
+		CreatedAt:    model.CreatedAt,
+		UpdatedAt:    model.UpdatedAt,
 	}
 }
 

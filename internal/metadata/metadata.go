@@ -23,6 +23,7 @@ type Table struct {
 	Name        string  `yaml:"name" json:"name"`
 	DisplayName string  `yaml:"display_name" json:"display_name"`
 	Fields      []Field `yaml:"fields" json:"fields"`
+	Views       []View  `yaml:"views" json:"views"`
 }
 
 type Field struct {
@@ -30,6 +31,31 @@ type Field struct {
 	Type     string `yaml:"type" json:"type"`
 	Required bool   `yaml:"required" json:"required"`
 	Deleted  bool   `yaml:"deleted" json:"deleted"`
+}
+
+type View struct {
+	Name        string       `yaml:"name" json:"name"`
+	DisplayName string       `yaml:"display_name" json:"display_name"`
+	BaseView    string       `yaml:"base_view" json:"base_view,omitempty"`
+	Filters     []ViewFilter `yaml:"filters" json:"filters"`
+	Sorts       []ViewSort   `yaml:"sorts" json:"sorts"`
+}
+
+type ViewFilter struct {
+	Field string `yaml:"field" json:"field"`
+	Op    string `yaml:"op" json:"op"`
+	Value any    `yaml:"value" json:"value,omitempty"`
+}
+
+type ViewSort struct {
+	Field     string `yaml:"field" json:"field"`
+	Direction string `yaml:"direction" json:"direction"`
+}
+
+type ResolvedView struct {
+	Name    string       `json:"name"`
+	Filters []ViewFilter `json:"filters"`
+	Sorts   []ViewSort   `json:"sorts"`
 }
 
 func Load(path string) (Catalog, error) {
@@ -93,6 +119,47 @@ func (table Table) validate(dbName string, tableIndex int) error {
 			return fmt.Errorf("database %q table %q field %q type is required", dbName, table.Name, field.Name)
 		}
 	}
+	if err := table.validateViews(dbName); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (table Table) validateViews(dbName string) error {
+	views := map[string]View{}
+	for _, view := range table.Views {
+		if view.Name == "" {
+			return fmt.Errorf("database %q table %q contains a view without a name", dbName, table.Name)
+		}
+		if _, ok := views[view.Name]; ok {
+			return fmt.Errorf("database %q table %q view %q is duplicated", dbName, table.Name, view.Name)
+		}
+		views[view.Name] = view
+		for _, filter := range view.Filters {
+			if _, ok := table.Field(filter.Field); !ok {
+				return fmt.Errorf("database %q table %q view %q filter field %q is unknown", dbName, table.Name, view.Name, filter.Field)
+			}
+			if filter.Op == "" {
+				return fmt.Errorf("database %q table %q view %q filter op is required", dbName, table.Name, view.Name)
+			}
+			if !slices.Contains([]string{"eq", "contains", "not_empty"}, filter.Op) {
+				return fmt.Errorf("database %q table %q view %q filter op %q is unsupported", dbName, table.Name, view.Name, filter.Op)
+			}
+		}
+		for _, sort := range view.Sorts {
+			if _, ok := table.Field(sort.Field); !ok {
+				return fmt.Errorf("database %q table %q view %q sort field %q is unknown", dbName, table.Name, view.Name, sort.Field)
+			}
+			if sort.Direction != "asc" && sort.Direction != "desc" {
+				return fmt.Errorf("database %q table %q view %q sort direction must be asc or desc", dbName, table.Name, view.Name)
+			}
+		}
+	}
+	for _, view := range table.Views {
+		if _, err := table.resolveView(view.Name, map[string]bool{}); err != nil {
+			return fmt.Errorf("database %q table %q view %q: %w", dbName, table.Name, view.Name, err)
+		}
+	}
 	return nil
 }
 
@@ -128,4 +195,46 @@ func (table Table) Field(name string) (Field, bool) {
 	return Field{}, false
 }
 
-var ErrUnknownField = errors.New("unknown field")
+func (table Table) View(name string) (View, bool) {
+	for _, view := range table.Views {
+		if view.Name == name {
+			return view, true
+		}
+	}
+	return View{}, false
+}
+
+func (table Table) ResolveView(name string) (ResolvedView, error) {
+	return table.resolveView(name, map[string]bool{})
+}
+
+func (table Table) resolveView(name string, visiting map[string]bool) (ResolvedView, error) {
+	view, ok := table.View(name)
+	if !ok {
+		return ResolvedView{}, fmt.Errorf("%w: %s", ErrUnknownView, name)
+	}
+	if visiting[name] {
+		return ResolvedView{}, fmt.Errorf("%w: %s", ErrViewCycle, name)
+	}
+	visiting[name] = true
+	defer delete(visiting, name)
+
+	resolved := ResolvedView{Name: name}
+	if view.BaseView != "" {
+		base, err := table.resolveView(view.BaseView, visiting)
+		if err != nil {
+			return ResolvedView{}, err
+		}
+		resolved.Filters = append(resolved.Filters, base.Filters...)
+		resolved.Sorts = append(resolved.Sorts, base.Sorts...)
+	}
+	resolved.Filters = append(resolved.Filters, view.Filters...)
+	resolved.Sorts = append(resolved.Sorts, view.Sorts...)
+	return resolved, nil
+}
+
+var (
+	ErrUnknownField = errors.New("unknown field")
+	ErrUnknownView  = errors.New("unknown view")
+	ErrViewCycle    = errors.New("view cycle")
+)

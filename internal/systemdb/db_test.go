@@ -96,10 +96,11 @@ func TestWorkflowDefinitionStoresSecretsAndVariablesAsJSON(t *testing.T) {
 	db := openTestDB(t)
 
 	saved, err := db.SaveWorkflow(ctx, WorkflowDefinition{
-		Name:      "notify",
-		Script:    "export default async function run() {}",
-		Secrets:   map[string]string{"TOKEN": "secret"},
-		Variables: map[string]string{"CHANNEL": "ops"},
+		DatabaseName: "workspace",
+		Name:         "notify",
+		Script:       "export default async function run() {}",
+		Secrets:      map[string]string{"TOKEN": "secret"},
+		Variables:    map[string]string{"CHANNEL": "ops"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +116,13 @@ func TestWorkflowDefinitionStoresSecretsAndVariablesAsJSON(t *testing.T) {
 	if loaded.Secrets["TOKEN"] != "secret" || loaded.Variables["CHANNEL"] != "ops" {
 		t.Fatalf("unexpected workflow JSON fields: %#v", loaded)
 	}
+	list, err := db.Workflows(ctx, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != saved.ID {
+		t.Fatalf("unexpected workflow list: %#v", list)
+	}
 }
 
 func TestFormDefinitionAutoincrementsID(t *testing.T) {
@@ -122,14 +130,22 @@ func TestFormDefinitionAutoincrementsID(t *testing.T) {
 	db := openTestDB(t)
 
 	saved, err := db.SaveForm(ctx, FormDefinition{
-		Name:   "contact-intake",
-		Script: "root.append(api.input({ name: 'email' }))",
+		DatabaseName: "workspace",
+		Name:         "contact-intake",
+		Script:       "root.append(api.input({ name: 'email' }))",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if saved.ID != 1 {
 		t.Fatalf("expected first form id to be 1, got %d", saved.ID)
+	}
+	list, err := db.Forms(ctx, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != saved.ID {
+		t.Fatalf("unexpected form list: %#v", list)
 	}
 }
 

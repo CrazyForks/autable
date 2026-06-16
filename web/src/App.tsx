@@ -25,9 +25,20 @@ import DataEditor, {
   type GridColumn,
   type Item
 } from "@glideapps/glide-data-grid";
-import { demoCatalog, defaultFormScript, defaultWorkflowScript, initialRows } from "./demoData";
+import { demoCatalog, initialForms, initialRows, initialWorkflows } from "./demoData";
 import { previewFormElements } from "./formRuntime";
-import { createRow, loadMetadata, saveForm, saveWorkflow, type Catalog } from "./api";
+import {
+  createRow,
+  listForms,
+  listWorkflows,
+  loadMetadata,
+  saveForm,
+  saveWorkflow,
+  type Catalog,
+  type FormDefinition,
+  type TableView,
+  type WorkflowDefinition
+} from "./api";
 
 type View = "table" | "workflow" | "form";
 
@@ -36,13 +47,22 @@ export function App() {
   const [rows, setRows] = useState(initialRows);
   const [view, setView] = useState<View>("table");
   const [selectedTable, setSelectedTable] = useState("contacts");
-  const [workflowScript, setWorkflowScript] = useState(defaultWorkflowScript);
-  const [formScript, setFormScript] = useState(defaultFormScript);
+  const [selectedTableView, setSelectedTableView] = useState("all");
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>(initialWorkflows);
+  const [forms, setForms] = useState<FormDefinition[]>(initialForms);
+  const [selectedWorkflowID, setSelectedWorkflowID] = useState(initialWorkflows[0]?.id ?? 0);
+  const [selectedFormID, setSelectedFormID] = useState(initialForms[0]?.id ?? 0);
   const [status, setStatus] = useState("Ready");
 
   const database = catalog.databases[0];
   const table = database.tables.find((item) => item.name === selectedTable) ?? database.tables[0];
   const activeFields = table.fields.filter((field) => !field.deleted);
+  const selectedWorkflow = workflows.find((item) => item.id === selectedWorkflowID) ?? workflows[0];
+  const selectedForm = forms.find((item) => item.id === selectedFormID) ?? forms[0];
+  const displayedRows = useMemo(
+    () => applyTableView(rows, table.views ?? [], selectedTableView),
+    [rows, table.views, selectedTableView]
+  );
 
   const columns = useMemo<GridColumn[]>(
     () => [
@@ -58,7 +78,7 @@ export function App() {
 
   const getCellContent = ([columnIndex, rowIndex]: Item): GridCell => {
     const column = columns[columnIndex];
-    const row = rows[rowIndex];
+    const row = displayedRows[rowIndex];
     const value = row?.[String(column.id)] ?? "";
     return {
       kind: GridCellKind.Text,
@@ -70,8 +90,17 @@ export function App() {
 
   async function refreshMetadata() {
     try {
-      setCatalog(await loadMetadata());
-      setStatus("Metadata refreshed");
+      const nextCatalog = await loadMetadata();
+      setCatalog(nextCatalog);
+      const dbName = nextCatalog.databases[0]?.name;
+      if (dbName) {
+        const [nextWorkflows, nextForms] = await Promise.all([listWorkflows(dbName), listForms(dbName)]);
+        setWorkflows(nextWorkflows);
+        setForms(nextForms);
+        setSelectedWorkflowID(nextWorkflows[0]?.id ?? 0);
+        setSelectedFormID(nextForms[0]?.id ?? 0);
+      }
+      setStatus("Metadata and db-level resources refreshed");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Metadata refresh failed");
     }
@@ -92,13 +121,13 @@ export function App() {
   }
 
   async function persistWorkflow() {
+    if (!selectedWorkflow) {
+      return;
+    }
     try {
-      const saved = await saveWorkflow({
-        name: "record-review",
-        script: workflowScript,
-        secrets: { TOKEN: "" },
-        variables: { CHANNEL: "ops" }
-      });
+      const saved = await saveWorkflow(database.name, selectedWorkflow);
+      setWorkflows((current) => replaceResource(current, saved));
+      setSelectedWorkflowID(saved.id ?? 0);
       setStatus(`Workflow saved as #${saved.id}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Workflow save failed");
@@ -106,12 +135,27 @@ export function App() {
   }
 
   async function persistForm() {
+    if (!selectedForm) {
+      return;
+    }
     try {
-      const saved = await saveForm({ name: "contact-intake", script: formScript });
+      const saved = await saveForm(database.name, selectedForm);
+      setForms((current) => replaceResource(current, saved));
+      setSelectedFormID(saved.id ?? 0);
       setStatus(`Form saved as #${saved.id}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Form save failed");
     }
+  }
+
+  function updateSelectedWorkflowScript(script: string) {
+    setWorkflows((current) =>
+      current.map((item) => (item.id === selectedWorkflow?.id ? { ...item, script } : item))
+    );
+  }
+
+  function updateSelectedFormScript(script: string) {
+    setForms((current) => current.map((item) => (item.id === selectedForm?.id ? { ...item, script } : item)));
   }
 
   return (
@@ -124,6 +168,15 @@ export function App() {
         <Label htmlFor="table-select">Table</Label>
         <Select id="table-select" value={selectedTable} onChange={(_, data) => setSelectedTable(data.value)}>
           {database.tables.map((item) => (
+            <option key={item.name} value={item.name}>
+              {item.display_name || item.name}
+            </option>
+          ))}
+        </Select>
+        <Label htmlFor="view-select">View</Label>
+        <Select id="view-select" value={selectedTableView} onChange={(_, data) => setSelectedTableView(data.value)}>
+          <option value="all">All records</option>
+          {(table.views ?? []).map((item) => (
             <option key={item.name} value={item.name}>
               {item.display_name || item.name}
             </option>
@@ -158,7 +211,9 @@ export function App() {
               <div className="section-header">
                 <div>
                   <Text weight="semibold">{table.display_name || table.name}</Text>
-                  <Text size={200}>{rows.length} records</Text>
+                  <Text size={200}>
+                    {displayedRows.length} of {rows.length} records
+                  </Text>
                 </div>
                 <Button icon={<AddRegular />} appearance="primary" onClick={addDraftRow}>
                   Row
@@ -168,7 +223,7 @@ export function App() {
                 <DataEditor
                   getCellContent={getCellContent}
                   columns={columns}
-                  rows={rows.length}
+                  rows={displayedRows.length}
                   rowMarkers="number"
                   smoothScrollX
                   smoothScrollY
@@ -184,8 +239,8 @@ export function App() {
               <div className="editor-pane">
                 <div className="section-header">
                   <div>
-                    <Text weight="semibold">record-review.js</Text>
-                    <Text size={200}>Default view is JavaScript</Text>
+                    <Text weight="semibold">{selectedWorkflow?.name ?? "workflow"}.js</Text>
+                    <Text size={200}>{database.name} workflow</Text>
                   </div>
                   <Button icon={<SaveRegular />} appearance="primary" onClick={persistWorkflow}>
                     Save
@@ -193,13 +248,26 @@ export function App() {
                 </div>
                 <Textarea
                   className="code-editor"
-                  value={workflowScript}
-                  onChange={(_, data) => setWorkflowScript(data.value)}
+                  value={selectedWorkflow?.script ?? ""}
+                  onChange={(_, data) => updateSelectedWorkflowScript(data.value)}
                   resize="none"
                   aria-label="Workflow JavaScript"
                 />
               </div>
               <div className="history-pane">
+                <Text weight="semibold">Workflows</Text>
+                <div className="resource-list">
+                  {workflows.map((item) => (
+                    <button
+                      key={item.id ?? item.name}
+                      className={item.id === selectedWorkflow?.id ? "resource-item selected" : "resource-item"}
+                      type="button"
+                      onClick={() => setSelectedWorkflowID(item.id ?? 0)}
+                    >
+                      {item.name}
+                    </button>
+                  ))}
+                </div>
                 <Text weight="semibold">Run flow</Text>
                 <div className="flow-line">
                   <span>trigger.recordChanged</span>
@@ -216,8 +284,8 @@ export function App() {
               <div className="editor-pane">
                 <div className="section-header">
                   <div>
-                    <Text weight="semibold">contact-intake.js</Text>
-                    <Text size={200}>Form script creates elements through the frontend API</Text>
+                    <Text weight="semibold">{selectedForm?.name ?? "form"}.js</Text>
+                    <Text size={200}>{database.name} form</Text>
                   </div>
                   <Button icon={<SaveRegular />} appearance="primary" onClick={persistForm}>
                     Save
@@ -225,13 +293,26 @@ export function App() {
                 </div>
                 <Textarea
                   className="code-editor"
-                  value={formScript}
-                  onChange={(_, data) => setFormScript(data.value)}
+                  value={selectedForm?.script ?? ""}
+                  onChange={(_, data) => updateSelectedFormScript(data.value)}
                   resize="none"
                   aria-label="Form JavaScript"
                 />
               </div>
               <form className="form-preview">
+                <Text weight="semibold">Forms</Text>
+                <div className="resource-list">
+                  {forms.map((item) => (
+                    <button
+                      key={item.id ?? item.name}
+                      className={item.id === selectedForm?.id ? "resource-item selected" : "resource-item"}
+                      type="button"
+                      onClick={() => setSelectedFormID(item.id ?? 0)}
+                    >
+                      {item.name}
+                    </button>
+                  ))}
+                </div>
                 {previewFormElements().map((element) => {
                   if (element.kind === "input") {
                     return (
@@ -268,4 +349,76 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function replaceResource<T extends { id?: number }>(items: T[], saved: T): T[] {
+  if (!saved.id) {
+    return items;
+  }
+  if (!items.some((item) => item.id === saved.id)) {
+    return [...items, saved];
+  }
+  return items.map((item) => (item.id === saved.id ? saved : item));
+}
+
+function applyTableView(rows: Array<Record<string, unknown>>, views: TableView[], selectedView: string) {
+  if (selectedView === "all") {
+    return rows;
+  }
+  const resolved = resolveTableView(views, selectedView, new Set());
+  if (!resolved) {
+    return rows;
+  }
+  const filtered = rows.filter((row) =>
+    resolved.filters.every((filter) => {
+      const value = rowValue(row, filter.field);
+      if (filter.op === "eq") {
+        return String(value) === String(filter.value);
+      }
+      if (filter.op === "contains") {
+        return String(value).toLowerCase().includes(String(filter.value ?? "").toLowerCase());
+      }
+      if (filter.op === "not_empty") {
+        return value !== undefined && value !== null && String(value).trim() !== "";
+      }
+      return false;
+    })
+  );
+  return [...filtered].sort((left, right) => {
+    for (const sortDef of resolved.sorts) {
+      const leftValue = String(rowValue(left, sortDef.field));
+      const rightValue = String(rowValue(right, sortDef.field));
+      if (leftValue === rightValue) {
+        continue;
+      }
+      return sortDef.direction === "desc" ? rightValue.localeCompare(leftValue) : leftValue.localeCompare(rightValue);
+    }
+    return Number(left.record_id ?? 0) - Number(right.record_id ?? 0);
+  });
+}
+
+function resolveTableView(views: TableView[], name: string, visiting: Set<string>): TableView | undefined {
+  const view = views.find((item) => item.name === name);
+  if (!view || visiting.has(name)) {
+    return undefined;
+  }
+  visiting.add(name);
+  if (!view.base_view) {
+    visiting.delete(name);
+    return view;
+  }
+  const base = resolveTableView(views, view.base_view, visiting);
+  visiting.delete(name);
+  if (!base) {
+    return view;
+  }
+  return {
+    ...view,
+    filters: [...base.filters, ...view.filters],
+    sorts: [...base.sorts, ...view.sorts]
+  };
+}
+
+function rowValue(row: Record<string, unknown>, field: string) {
+  return row[field];
 }

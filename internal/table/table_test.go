@@ -142,3 +142,54 @@ func TestCreateRowUsesInjectedRepository(t *testing.T) {
 		t.Fatalf("expected injected repository to allocate ids, got %d and %d", first.RecordID, second.RecordID)
 	}
 }
+
+func TestRowsAppliesComposedViewFiltersAndSorts(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(history.NewMemoryStore())
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "db",
+		SQLitePath: "./db.sqlite",
+		Tables: []metadata.Table{{
+			Name: "contacts",
+			Fields: []metadata.Field{
+				{Name: "name", Type: "text"},
+				{Name: "status", Type: "text"},
+			},
+			Views: []metadata.View{
+				{
+					Name:    "active",
+					Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
+				},
+				{
+					Name:     "active-a",
+					BaseView: "active",
+					Filters:  []metadata.ViewFilter{{Field: "name", Op: "contains", Value: "a"}},
+					Sorts:    []metadata.ViewSort{{Field: "name", Direction: "desc"}},
+				},
+			},
+		}},
+	}}}
+	perms := permission.New(
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeTable, Resource: "db.contacts", Level: permission.Write},
+	)
+	for _, values := range []map[string]any{
+		{"name": "Ada", "status": "active"},
+		{"name": "Grace", "status": "active"},
+		{"name": "Linus", "status": "archived"},
+	} {
+		if _, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", values); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := service.Rows(ctx, catalog, perms, "u1", "db", "contacts", "active-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two rows, got %#v", rows)
+	}
+	if rows[0].Values["name"] != "Grace" || rows[1].Values["name"] != "Ada" {
+		t.Fatalf("unexpected sorted view rows: %#v", rows)
+	}
+}

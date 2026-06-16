@@ -64,6 +64,51 @@ func TestCreateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	}
 }
 
+func TestListRowsAPIAppliesView(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"values":{"name":"Ada","email":"ada@example.com","status":"active"}}`,
+		`{"values":{"name":"Grace","email":"grace@example.com","status":"active"}}`,
+		`{"values":{"name":"Linus","email":"linus@example.com","status":"archived"}}`,
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(body))
+		request.Header.Set("X-Codetable-User", "u1")
+		recorder := httptest.NewRecorder()
+		server.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", recorder.Code, recorder.Body.String())
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/tables/db/contacts/rows?view=active-a", nil)
+	request.Header.Set("X-Codetable-User", "u1")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var rows []rowResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two view rows, got %#v", rows)
+	}
+	if rows[0].Values["name"] != "Grace" || rows[1].Values["name"] != "Ada" {
+		t.Fatalf("unexpected view order: %#v", rows)
+	}
+}
+
 func TestCreateRowAPIDeniesMissingWritePermission(t *testing.T) {
 	server, _ := newTestServer(t)
 	body := bytes.NewBufferString(`{"values":{"name":"Ada"}}`)
@@ -130,7 +175,7 @@ func TestCreateRowAPICanUsePersistentRepository(t *testing.T) {
 func TestWorkflowAndFormAPI(t *testing.T) {
 	server, _ := newTestServer(t)
 
-	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/workflows", bytes.NewBufferString(`{
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
 		"script":"export default async function run() {}",
 		"secrets":{"TOKEN":"secret"},
@@ -146,14 +191,30 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	if err := json.NewDecoder(workflowRecorder.Body).Decode(&workflow); err != nil {
 		t.Fatal(err)
 	}
+	if workflow.DatabaseName != "db" {
+		t.Fatalf("expected db-level workflow, got %#v", workflow)
+	}
 	getWorkflow := httptest.NewRequest(http.MethodGet, "/api/workflows/1", nil)
 	getWorkflowRecorder := httptest.NewRecorder()
 	server.ServeHTTP(getWorkflowRecorder, getWorkflow)
 	if getWorkflowRecorder.Code != http.StatusOK {
 		t.Fatalf("expected workflow 200, got %d: %s", getWorkflowRecorder.Code, getWorkflowRecorder.Body.String())
 	}
+	listWorkflows := httptest.NewRequest(http.MethodGet, "/api/databases/db/workflows", nil)
+	listWorkflowsRecorder := httptest.NewRecorder()
+	server.ServeHTTP(listWorkflowsRecorder, listWorkflows)
+	if listWorkflowsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow list 200, got %d: %s", listWorkflowsRecorder.Code, listWorkflowsRecorder.Body.String())
+	}
+	var workflows []systemdb.WorkflowDefinition
+	if err := json.NewDecoder(listWorkflowsRecorder.Body).Decode(&workflows); err != nil {
+		t.Fatal(err)
+	}
+	if len(workflows) != 1 || workflows[0].ID != workflow.ID {
+		t.Fatalf("unexpected workflow list: %#v", workflows)
+	}
 
-	formRequest := httptest.NewRequest(http.MethodPost, "/api/forms", bytes.NewBufferString(`{
+	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"contact-intake",
 		"script":"root.append(api.input({ name: 'email' }))"
 	}`))
@@ -166,6 +227,22 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	var form systemdb.FormDefinition
 	if err := json.NewDecoder(formRecorder.Body).Decode(&form); err != nil {
 		t.Fatal(err)
+	}
+	if form.DatabaseName != "db" {
+		t.Fatalf("expected db-level form, got %#v", form)
+	}
+	listForms := httptest.NewRequest(http.MethodGet, "/api/databases/db/forms", nil)
+	listFormsRecorder := httptest.NewRecorder()
+	server.ServeHTTP(listFormsRecorder, listForms)
+	if listFormsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected form list 200, got %d: %s", listFormsRecorder.Code, listFormsRecorder.Body.String())
+	}
+	var forms []systemdb.FormDefinition
+	if err := json.NewDecoder(listFormsRecorder.Body).Decode(&forms); err != nil {
+		t.Fatal(err)
+	}
+	if len(forms) != 1 || forms[0].ID != form.ID {
+		t.Fatalf("unexpected form list: %#v", forms)
 	}
 	if workflow.ID != 1 || form.ID != 1 {
 		t.Fatalf("expected autoincrement ids, got workflow=%d form=%d", workflow.ID, form.ID)
@@ -197,6 +274,19 @@ func testCatalog(sqlitePath string) metadata.Catalog {
 			Fields: []metadata.Field{
 				{Name: "name", Type: "text", Required: true},
 				{Name: "email", Type: "email"},
+				{Name: "status", Type: "text"},
+			},
+			Views: []metadata.View{
+				{
+					Name:    "active",
+					Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
+				},
+				{
+					Name:     "active-a",
+					BaseView: "active",
+					Filters:  []metadata.ViewFilter{{Field: "name", Op: "contains", Value: "a"}},
+					Sorts:    []metadata.ViewSort{{Field: "name", Direction: "desc"}},
+				},
 			},
 		}},
 	}}}

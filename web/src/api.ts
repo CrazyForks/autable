@@ -5,10 +5,30 @@ export type Field = {
   deleted: boolean;
 };
 
+export type TableViewFilter = {
+  field: string;
+  op: "eq" | "contains" | "not_empty";
+  value?: unknown;
+};
+
+export type TableViewSort = {
+  field: string;
+  direction: "asc" | "desc";
+};
+
+export type TableView = {
+  name: string;
+  display_name: string;
+  base_view?: string;
+  filters: TableViewFilter[];
+  sorts: TableViewSort[];
+};
+
 export type TableMetadata = {
   name: string;
   display_name: string;
   fields: Field[];
+  views: TableView[];
 };
 
 export type DatabaseMetadata = {
@@ -32,6 +52,7 @@ export type RowChange = {
 
 export type WorkflowDefinition = {
   id?: number;
+  database_name: string;
   name: string;
   script: string;
   secrets: Record<string, string>;
@@ -40,6 +61,7 @@ export type WorkflowDefinition = {
 
 export type FormDefinition = {
   id?: number;
+  database_name: string;
   name: string;
   script: string;
 };
@@ -73,8 +95,16 @@ export async function createRow(
   return response.json() as Promise<{ record_id: number; values: Record<string, unknown> }>;
 }
 
-export async function saveWorkflow(workflow: WorkflowDefinition): Promise<WorkflowDefinition> {
-  const response = await fetch("/api/workflows", {
+export async function listWorkflows(dbName: string): Promise<WorkflowDefinition[]> {
+  const response = await fetch(`/api/databases/${dbName}/workflows`);
+  if (!response.ok) {
+    throw new Error(`workflow list failed: ${response.status}`);
+  }
+  return response.json() as Promise<WorkflowDefinition[]>;
+}
+
+export async function saveWorkflow(dbName: string, workflow: WorkflowDefinition): Promise<WorkflowDefinition> {
+  const response = await fetch(`/api/databases/${dbName}/workflows`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(workflow)
@@ -85,8 +115,16 @@ export async function saveWorkflow(workflow: WorkflowDefinition): Promise<Workfl
   return response.json() as Promise<WorkflowDefinition>;
 }
 
-export async function saveForm(form: FormDefinition): Promise<FormDefinition> {
-  const response = await fetch("/api/forms", {
+export async function listForms(dbName: string): Promise<FormDefinition[]> {
+  const response = await fetch(`/api/databases/${dbName}/forms`);
+  if (!response.ok) {
+    throw new Error(`form list failed: ${response.status}`);
+  }
+  return response.json() as Promise<FormDefinition[]>;
+}
+
+export async function saveForm(dbName: string, form: FormDefinition): Promise<FormDefinition> {
+  const response = await fetch(`/api/databases/${dbName}/forms`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(form)

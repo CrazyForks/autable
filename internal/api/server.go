@@ -52,7 +52,9 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/metadata", server.handleMetadata)
 	server.mux.HandleFunc("POST /api/permissions/grants", server.handleSaveGrant)
 	server.mux.HandleFunc("POST /api/tables/", server.handleCreateRow)
-	server.mux.HandleFunc("GET /api/tables/", server.handleRowHistory)
+	server.mux.HandleFunc("GET /api/tables/", server.handleGetTable)
+	server.mux.HandleFunc("GET /api/databases/", server.handleGetDatabaseResource)
+	server.mux.HandleFunc("POST /api/databases/", server.handlePostDatabaseResource)
 	server.mux.HandleFunc("POST /api/workflows", server.handleSaveWorkflow)
 	server.mux.HandleFunc("GET /api/workflows/", server.handleGetWorkflow)
 	server.mux.HandleFunc("POST /api/forms", server.handleSaveForm)
@@ -110,6 +112,41 @@ func (server *Server) handleCreateRow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rowResponse{RecordID: row.RecordID, Values: row.Values})
 }
 
+func (server *Server) handleGetTable(w http.ResponseWriter, r *http.Request) {
+	if dbName, tableName, ok := parseTableRowsPath(r.URL.Path); ok {
+		server.handleListRows(w, r, dbName, tableName)
+		return
+	}
+	server.handleRowHistory(w, r)
+}
+
+func (server *Server) handleListRows(w http.ResponseWriter, r *http.Request, dbName, tableName string) {
+	actorID := r.Header.Get("X-Codetable-User")
+	if actorID == "" {
+		writeError(w, http.StatusUnauthorized, errors.New("X-Codetable-User header is required"))
+		return
+	}
+	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	rows, err := server.tables.Rows(r.Context(), server.catalog, perms, actorID, dbName, tableName, r.URL.Query().Get("view"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, table.ErrPermissionDenied) {
+			status = http.StatusForbidden
+		}
+		writeError(w, status, err)
+		return
+	}
+	response := make([]rowResponse, 0, len(rows))
+	for _, row := range rows {
+		response = append(response, rowResponse{RecordID: row.RecordID, Values: row.Values})
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (server *Server) handleRowHistory(w http.ResponseWriter, r *http.Request) {
 	dbName, tableName, recordID, ok := parseRowHistoryPath(r.URL.Path)
 	if !ok || r.Method != http.MethodGet {
@@ -145,6 +182,70 @@ func (server *Server) handleSaveWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusCreated, saved)
+}
+
+func (server *Server) handleGetDatabaseResource(w http.ResponseWriter, r *http.Request) {
+	dbName, resource, ok := parseDatabaseResourcePath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	switch resource {
+	case "workflows":
+		workflows, err := server.system.Workflows(r.Context(), dbName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, workflows)
+	case "forms":
+		forms, err := server.system.Forms(r.Context(), dbName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, forms)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.Request) {
+	dbName, resource, ok := parseDatabaseResourcePath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	switch resource {
+	case "workflows":
+		var workflow systemdb.WorkflowDefinition
+		if err := readJSON(r, &workflow); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		workflow.DatabaseName = dbName
+		saved, err := server.system.SaveWorkflow(r.Context(), workflow)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, saved)
+	case "forms":
+		var form systemdb.FormDefinition
+		if err := readJSON(r, &form); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		form.DatabaseName = dbName
+		saved, err := server.system.SaveForm(r.Context(), form)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, saved)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (server *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +308,17 @@ func parseRowHistoryPath(path string) (string, string, int64, bool) {
 		return "", "", 0, false
 	}
 	return parts[2], parts[3], recordID, true
+}
+
+func parseDatabaseResourcePath(path string) (string, string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "databases" {
+		return "", "", false
+	}
+	if parts[3] != "workflows" && parts[3] != "forms" {
+		return "", "", false
+	}
+	return parts[2], parts[3], true
 }
 
 func parseIDPath(path, prefix string) (int64, bool) {

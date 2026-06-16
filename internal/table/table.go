@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +26,7 @@ type Row struct {
 
 type RowRepository interface {
 	CreateRow(ctx context.Context, dbName, tableName string, values map[string]any) (Row, error)
+	Rows(ctx context.Context, dbName, tableName string) ([]Row, error)
 }
 
 type Service struct {
@@ -86,6 +89,39 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 	return row, nil
 }
 
+func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName, viewName string) ([]Row, error) {
+	tableMeta, ok := catalog.Table(dbName, tableName)
+	if !ok {
+		return nil, fmt.Errorf("table %s.%s not found", dbName, tableName)
+	}
+
+	rows, err := service.rows.Rows(ctx, dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if viewName != "" {
+		resolved, err := tableMeta.ResolveView(viewName)
+		if err != nil {
+			return nil, err
+		}
+		rows = applyFilters(rows, resolved.Filters)
+		applySorts(rows, resolved.Sorts)
+	}
+
+	resource := dbName + "." + tableName
+	filtered := make([]Row, 0, len(rows))
+	for _, row := range rows {
+		values := map[string]any{}
+		for fieldName, value := range row.Values {
+			if perms.CanReadField(actorID, resource, fieldName) {
+				values[fieldName] = value
+			}
+		}
+		filtered = append(filtered, Row{RecordID: row.RecordID, Values: values})
+	}
+	return filtered, nil
+}
+
 type MemoryRowRepository struct {
 	mu     sync.Mutex
 	nextID map[string]int64
@@ -112,6 +148,78 @@ func (repository *MemoryRowRepository) CreateRow(_ context.Context, dbName, tabl
 	}
 	repository.rows[resource][recordID] = row
 	return row, nil
+}
+
+func (repository *MemoryRowRepository) Rows(_ context.Context, dbName, tableName string) ([]Row, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+
+	resource := dbName + "." + tableName
+	rows := make([]Row, 0, len(repository.rows[resource]))
+	for _, row := range repository.rows[resource] {
+		rows = append(rows, Row{RecordID: row.RecordID, Values: cloneValues(row.Values)})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].RecordID < rows[j].RecordID
+	})
+	return rows, nil
+}
+
+func applyFilters(rows []Row, filters []metadata.ViewFilter) []Row {
+	filtered := rows[:0]
+	for _, row := range rows {
+		if rowMatchesFilters(row, filters) {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
+func rowMatchesFilters(row Row, filters []metadata.ViewFilter) bool {
+	for _, filter := range filters {
+		value := rowValue(row, filter.Field)
+		switch filter.Op {
+		case "eq":
+			if fmt.Sprint(value) != fmt.Sprint(filter.Value) {
+				return false
+			}
+		case "contains":
+			if !strings.Contains(strings.ToLower(fmt.Sprint(value)), strings.ToLower(fmt.Sprint(filter.Value))) {
+				return false
+			}
+		case "not_empty":
+			if strings.TrimSpace(fmt.Sprint(value)) == "" || value == nil {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func applySorts(rows []Row, sorts []metadata.ViewSort) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		for _, sortDef := range sorts {
+			left := fmt.Sprint(rowValue(rows[i], sortDef.Field))
+			right := fmt.Sprint(rowValue(rows[j], sortDef.Field))
+			if left == right {
+				continue
+			}
+			if sortDef.Direction == "desc" {
+				return left > right
+			}
+			return left < right
+		}
+		return rows[i].RecordID < rows[j].RecordID
+	})
+}
+
+func rowValue(row Row, field string) any {
+	if field == "record_id" {
+		return row.RecordID
+	}
+	return row.Values[field]
 }
 
 func cloneValues(values map[string]any) map[string]any {

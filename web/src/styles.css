@@ -155,6 +155,27 @@ select {
   background: #eef5f3;
 }
 
+.resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resource-item {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #d8d6cf;
+  background: #ffffff;
+  color: #242424;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resource-item.selected {
+  border-color: #2f6f68;
+  background: #eef5f3;
+}
+
 .field-stack {
   display: flex;
   flex-direction: column;

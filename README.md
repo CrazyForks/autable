@@ -17,6 +17,7 @@ This repository currently contains the backend core primitives:
 - YAML metadata for databases and tables, including soft-deleted fields.
 - Hidden, auto-incrementing `record_id` handling.
 - Per-metadata-database SQLite row persistence through GORM.
+- Table views with composable `base_view`, filters, and sorts.
 - Field-level permissions: none, read, write.
 - User identity model with email fallback for password and OIDC accounts.
 - History key generation and prefix scanning for row/workflow history.
