@@ -774,7 +774,17 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 
 func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 	ctx := context.Background()
-	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: "./data/workspace.sqlite"}}}
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "workspace",
+		SQLitePath: "./data/workspace.sqlite",
+		Tables: []metadata.Table{{
+			Name: "contacts",
+			Fields: []metadata.Field{
+				{Name: "name", Type: "text"},
+				{Name: "email", Type: "email"},
+			},
+		}},
+	}}}
 	server, system, _ := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
@@ -832,6 +842,138 @@ func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 	}
 	if len(roles) != 1 || roles[0].SubjectID != "role:workspace:editor" || len(roles[0].Grants) != 2 || len(roles[0].Members) != 2 {
 		t.Fatalf("unexpected roles response: %#v", roles)
+	}
+}
+
+func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{
+		{
+			Name:       "workspace",
+			SQLitePath: "./data/workspace.sqlite",
+			Tables: []metadata.Table{{
+				Name: "contacts",
+				Fields: []metadata.Field{
+					{Name: "name", Type: "text"},
+					{Name: "legacy", Type: "text", Deleted: true},
+				},
+			}},
+		},
+		{
+			Name:       "other",
+			SQLitePath: "./data/other.sqlite",
+			Tables: []metadata.Table{{
+				Name:   "contacts",
+				Fields: []metadata.Field{{Name: "name", Type: "text"}},
+			}},
+		},
+	}}
+	server, system, _ := newTestServerWithMetadataFile(t, catalog)
+	workspaceWorkflow, err := system.SaveWorkflow(ctx, systemdb.WorkflowDefinition{
+		DatabaseName: "workspace",
+		Name:         "workspace-flow",
+		Script:       "function run() {}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherWorkflow, err := system.SaveWorkflow(ctx, systemdb.WorkflowDefinition{
+		DatabaseName: "other",
+		Name:         "other-flow",
+		Script:       "function run() {}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceForm, err := system.SaveForm(ctx, systemdb.FormDefinition{
+		DatabaseName: "workspace",
+		Name:         "workspace-form",
+		Script:       "root.append()",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherForm, err := system.SaveForm(ctx, systemdb.FormDefinition{
+		DatabaseName: "other",
+		Name:         "other-form",
+		Script:       "root.append()",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	valid := []permission.Grant{
+		{Scope: permission.ScopeDatabase, Resource: "workspace", Level: permission.Write},
+		{Scope: permission.ScopeTable, Resource: "workspace.contacts", Level: permission.Read},
+		{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "name", Level: permission.Read},
+		{Scope: permission.ScopeWorkflow, Resource: resourceID(workspaceWorkflow.ID), Level: permission.Read},
+		{Scope: permission.ScopeForm, Resource: resourceID(workspaceForm.ID), Level: permission.Read},
+		{Scope: permission.ScopeTable, Resource: "other.contacts", Level: permission.None},
+	}
+	if err := server.validateRoleGrants(ctx, "workspace", valid); err != nil {
+		t.Fatalf("expected valid workspace grants, got %v", err)
+	}
+
+	invalidCases := []struct {
+		name  string
+		grant permission.Grant
+	}{
+		{name: "other table", grant: permission.Grant{Scope: permission.ScopeTable, Resource: "other.contacts", Level: permission.Read}},
+		{name: "other field", grant: permission.Grant{Scope: permission.ScopeField, Resource: "other.contacts", Field: "name", Level: permission.Read}},
+		{name: "deleted field", grant: permission.Grant{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "legacy", Level: permission.Read}},
+		{name: "record id field", grant: permission.Grant{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "record_id", Level: permission.Read}},
+		{name: "other workflow", grant: permission.Grant{Scope: permission.ScopeWorkflow, Resource: resourceID(otherWorkflow.ID), Level: permission.Read}},
+		{name: "other form", grant: permission.Grant{Scope: permission.ScopeForm, Resource: resourceID(otherForm.ID), Level: permission.Read}},
+	}
+	for _, tc := range invalidCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := server.validateRoleGrants(ctx, "workspace", []permission.Grant{tc.grant}); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestRoleGrantAPIRejectsCrossDatabaseResources(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{
+		{Name: "workspace", SQLitePath: "./data/workspace.sqlite", Tables: []metadata.Table{{Name: "contacts", Fields: []metadata.Field{{Name: "name", Type: "text"}}}}},
+		{Name: "other", SQLitePath: "./data/other.sqlite", Tables: []metadata.Table{{Name: "contacts", Fields: []metadata.Field{{Name: "name", Type: "text"}}}}},
+	}}
+	server, system, _ := newTestServerWithMetadataFile(t, catalog)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "workspace",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := system.SaveRole(ctx, systemdb.RoleDefinition{DatabaseName: "workspace", Name: "editor"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := system.ReplaceRoleGrants(ctx, "workspace", "editor", []permission.Grant{
+		{Scope: permission.ScopeTable, Resource: "workspace.contacts", Level: permission.Read},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/api/databases/workspace/roles/editor/grants", bytes.NewBufferString(`{
+		"grants":[{"scope":"table","resource":"other.contacts","level":2}]
+	}`))
+	request.AddCookie(testSessionCookie(t, system, "owner"))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected cross-database grant 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	role, err := system.Role(ctx, "workspace", "editor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(role.Grants) != 1 || role.Grants[0].Resource != "workspace.contacts" {
+		t.Fatalf("expected rejected update to leave existing grants intact, got %#v", role.Grants)
 	}
 }
 

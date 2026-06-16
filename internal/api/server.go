@@ -888,6 +888,10 @@ func (server *Server) handlePutDatabaseResource(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if err := server.validateRoleGrants(r.Context(), dbName, request.Grants); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 		role, err = server.system.ReplaceRoleGrants(r.Context(), dbName, roleName, request.Grants)
 	case "members":
 		var request roleMembersRequest
@@ -1396,6 +1400,96 @@ func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Gr
 	default:
 		return "", fmt.Errorf("unsupported grant scope %q", grant.Scope)
 	}
+}
+
+func (server *Server) validateRoleGrants(ctx context.Context, dbName string, grants []permission.Grant) error {
+	for _, grant := range grants {
+		if grant.Level == permission.None {
+			continue
+		}
+		grantDBName, err := server.grantDatabaseName(ctx, grant)
+		if err != nil {
+			return err
+		}
+		if grantDBName != dbName {
+			return fmt.Errorf("grant resource %q belongs to database %q, not %q", grant.Resource, grantDBName, dbName)
+		}
+		if err := server.validateGrantResource(ctx, dbName, grant); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (server *Server) validateGrantResource(ctx context.Context, dbName string, grant permission.Grant) error {
+	switch grant.Scope {
+	case permission.ScopeDatabase:
+		if grant.Resource != dbName {
+			return fmt.Errorf("database grant resource must be %q", dbName)
+		}
+		if _, ok := server.catalogSnapshot().Database(dbName); !ok {
+			return fmt.Errorf("database %q not found", dbName)
+		}
+	case permission.ScopeTable:
+		_, tableName, ok := strings.Cut(grant.Resource, ".")
+		if !ok || tableName == "" {
+			return fmt.Errorf("grant resource %q must be db.table", grant.Resource)
+		}
+		if _, ok := server.catalogSnapshot().Table(dbName, tableName); !ok {
+			return fmt.Errorf("table %s.%s not found", dbName, tableName)
+		}
+	case permission.ScopeField:
+		_, tableName, ok := strings.Cut(grant.Resource, ".")
+		if !ok || tableName == "" {
+			return fmt.Errorf("grant resource %q must be db.table", grant.Resource)
+		}
+		tableMeta, ok := server.catalogSnapshot().Table(dbName, tableName)
+		if !ok {
+			return fmt.Errorf("table %s.%s not found", dbName, tableName)
+		}
+		if grant.Field == "" {
+			return errors.New("field grant requires field")
+		}
+		field, ok := tableMeta.Field(grant.Field)
+		if !ok || field.Deleted || field.Name == "record_id" {
+			return fmt.Errorf("field %s.%s.%s not found", dbName, tableName, grant.Field)
+		}
+	case permission.ScopeWorkflow:
+		workflow, err := workflowByGrantResource(ctx, server.system, grant.Resource)
+		if err != nil {
+			return err
+		}
+		if workflow.DatabaseName != dbName {
+			return fmt.Errorf("workflow %s belongs to database %q, not %q", grant.Resource, workflow.DatabaseName, dbName)
+		}
+	case permission.ScopeForm:
+		form, err := formByGrantResource(ctx, server.system, grant.Resource)
+		if err != nil {
+			return err
+		}
+		if form.DatabaseName != dbName {
+			return fmt.Errorf("form %s belongs to database %q, not %q", grant.Resource, form.DatabaseName, dbName)
+		}
+	default:
+		return fmt.Errorf("unsupported grant scope %q", grant.Scope)
+	}
+	return nil
+}
+
+func workflowByGrantResource(ctx context.Context, system *systemdb.DB, resource string) (systemdb.WorkflowDefinition, error) {
+	id, err := strconv.ParseInt(resource, 10, 64)
+	if err != nil {
+		return systemdb.WorkflowDefinition{}, fmt.Errorf("grant workflow resource %q must be an id", resource)
+	}
+	return system.Workflow(ctx, id)
+}
+
+func formByGrantResource(ctx context.Context, system *systemdb.DB, resource string) (systemdb.FormDefinition, error) {
+	id, err := strconv.ParseInt(resource, 10, 64)
+	if err != nil {
+		return systemdb.FormDefinition{}, fmt.Errorf("grant form resource %q must be an id", resource)
+	}
+	return system.Form(ctx, id)
 }
 
 func (server *Server) requireDatabaseOrTableWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {
