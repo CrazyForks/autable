@@ -15,6 +15,7 @@ This repository currently contains the backend core primitives:
 
 - `config.yml` loading and validation, including OIDC settings.
 - YAML metadata for databases and tables, including soft-deleted fields.
+- Authenticated database/table creation that writes metadata YAML and grants database/table owner permissions.
 - Hidden, auto-incrementing `record_id` handling.
 - Per-metadata-database SQLite row persistence through GORM.
 - Row create/update history written to LevelDB-compatible storage.

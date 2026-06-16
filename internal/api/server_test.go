@@ -372,6 +372,136 @@ func TestUpdateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	}
 }
 
+func TestPermissionGrantAPIRequiresAuthentication(t *testing.T) {
+	server, _ := newTestServer(t)
+	request := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
+		"subject_id":"u1",
+		"scope":"table",
+		"resource":"db.contacts",
+		"level":2
+	}`))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated grant save 401, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPermissionGrantAPISavesAuthenticatedGrant(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	request := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
+		"subject_id":"u1",
+		"scope":"field",
+		"resource":"db.contacts",
+		"field":"email",
+		"level":2
+	}`))
+	request.Header.Set("X-Codetable-User", "admin")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected authenticated grant save 201, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	perms, err := system.GrantsForSubject(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !perms.CanWriteField("u1", "db.contacts", "email") {
+		t.Fatal("expected API grant to persist field write permission")
+	}
+}
+
+func TestCreateDatabaseAPIWritesMetadataAndGrantsOwner(t *testing.T) {
+	ctx := context.Background()
+	server, system, metadataPath := newTestServerWithMetadataFile(t, metadata.Catalog{})
+	request := httptest.NewRequest(http.MethodPost, "/api/databases", bytes.NewBufferString(`{
+		"name":"sales",
+		"sqlite_path":"./data/sales.sqlite"
+	}`))
+	request.Header.Set("X-Codetable-User", "owner")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected database create 201, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	loaded, err := metadata.Load(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, ok := loaded.Database("sales")
+	if !ok || db.SQLitePath != "./data/sales.sqlite" {
+		t.Fatalf("expected sales database in metadata, got %#v", loaded)
+	}
+	perms, err := system.GrantsForSubject(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !perms.CanWriteResource("owner", permission.ScopeDatabase, "sales") {
+		t.Fatal("expected database creator to receive database write permission")
+	}
+}
+
+func TestDatabaseOwnerCanCreateTable(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: "./data/workspace.sqlite"}}}
+	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "workspace",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/databases/workspace/tables", bytes.NewBufferString(`{
+		"name":"contacts",
+		"display_name":"Contacts",
+		"fields":[{"name":"name","type":"text","required":true},{"name":"email","type":"email"}],
+		"views":[]
+	}`))
+	request.Header.Set("X-Codetable-User", "owner")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected table create 201, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	loaded, err := metadata.Load(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tableMeta, ok := loaded.Table("workspace", "contacts")
+	if !ok || tableMeta.Fields[0].Name != "name" {
+		t.Fatalf("expected contacts table in metadata, got %#v", loaded)
+	}
+	perms, err := system.GrantsForSubject(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !perms.CanWriteField("owner", "workspace.contacts", "name") {
+		t.Fatal("expected table creator to receive table write permission")
+	}
+}
+
+func TestNonDatabaseOwnerCannotCreateTable(t *testing.T) {
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: "./data/workspace.sqlite"}}}
+	server, _, _ := newTestServerWithMetadataFile(t, catalog)
+	request := httptest.NewRequest(http.MethodPost, "/api/databases/workspace/tables", bytes.NewBufferString(`{
+		"name":"contacts",
+		"fields":[{"name":"name","type":"text"}]
+	}`))
+	request.Header.Set("X-Codetable-User", "other")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected non-owner table create 403, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestListRowsAPIAppliesView(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
@@ -772,6 +902,27 @@ func newTestServerWithOIDC(t *testing.T, providers []config.OIDCProvider) (*Serv
 	historyStore := history.NewMemoryStore()
 	catalog := testCatalog("./db.sqlite")
 	return NewServerWithOIDCProviders(catalog, system, table.NewService(historyStore), historyStore, providers), system
+}
+
+func newTestServerWithMetadataFile(t *testing.T, catalog metadata.Catalog) (*Server, *systemdb.DB, string) {
+	t.Helper()
+	system, err := systemdb.Open(context.Background(), filepath.Join(t.TempDir(), "system.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := system.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	metadataPath := filepath.Join(t.TempDir(), "metadata", "main.yml")
+	if err := metadata.Save(metadataPath, catalog); err != nil {
+		t.Fatal(err)
+	}
+	historyStore := history.NewMemoryStore()
+	server := NewServer(catalog, system, table.NewService(historyStore), historyStore)
+	server.EnableMetadataWrites(metadataPath)
+	return server, system, metadataPath
 }
 
 func testCatalog(sqlitePath string) metadata.Catalog {

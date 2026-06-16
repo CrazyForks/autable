@@ -1,6 +1,9 @@
 package metadata
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestCatalogValidateRejectsUserRecordID(t *testing.T) {
 	catalog := Catalog{Databases: []Database{{
@@ -83,5 +86,37 @@ func TestValidateRejectsViewCycles(t *testing.T) {
 
 	if err := table.validate("db", 0); err == nil {
 		t.Fatal("expected view cycle validation error")
+	}
+}
+
+func TestAddDatabaseAddTableAndSave(t *testing.T) {
+	catalog := Catalog{}
+	catalog, err := catalog.AddDatabase(Database{Name: "workspace", SQLitePath: "./data/workspace.sqlite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err = catalog.AddTable("workspace", Table{
+		Name:        "contacts",
+		DisplayName: "Contacts",
+		Fields:      []Field{{Name: "name", Type: "text", Required: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AddTable("workspace", Table{Name: "contacts", Fields: []Field{{Name: "email", Type: "email"}}}); err == nil {
+		t.Fatal("expected duplicate table validation error")
+	}
+
+	path := filepath.Join(t.TempDir(), "metadata", "main.yml")
+	if err := Save(path, catalog); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := loaded.Table("workspace", "contacts")
+	if !ok || table.Fields[0].Name != "name" {
+		t.Fatalf("unexpected loaded catalog: %#v", loaded)
 	}
 }

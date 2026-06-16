@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"gopkg.in/yaml.v3"
@@ -74,6 +75,20 @@ func Load(path string) (Catalog, error) {
 	return catalog, nil
 }
 
+func Save(path string, catalog Catalog) error {
+	if err := catalog.Validate(); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(catalog)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
 func (catalog Catalog) Validate() error {
 	seenDBs := map[string]struct{}{}
 	for dbIndex, db := range catalog.Databases {
@@ -100,6 +115,57 @@ func (catalog Catalog) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (catalog Catalog) Database(name string) (Database, bool) {
+	for _, db := range catalog.Databases {
+		if db.Name == name {
+			return db, true
+		}
+	}
+	return Database{}, false
+}
+
+func (catalog Catalog) AddDatabase(database Database) (Catalog, error) {
+	if database.Name == "" {
+		return Catalog{}, errors.New("database name is required")
+	}
+	if database.SQLitePath == "" {
+		return Catalog{}, errors.New("database sqlite_path is required")
+	}
+	if _, ok := catalog.Database(database.Name); ok {
+		return Catalog{}, fmt.Errorf("database %q already exists", database.Name)
+	}
+	next := Catalog{Databases: slices.Clone(catalog.Databases)}
+	next.Databases = append(next.Databases, database)
+	if err := next.Validate(); err != nil {
+		return Catalog{}, err
+	}
+	return next, nil
+}
+
+func (catalog Catalog) AddTable(dbName string, table Table) (Catalog, error) {
+	if table.Name == "" {
+		return Catalog{}, errors.New("table name is required")
+	}
+	next := Catalog{Databases: slices.Clone(catalog.Databases)}
+	for dbIndex, db := range next.Databases {
+		if db.Name != dbName {
+			continue
+		}
+		for _, existing := range db.Tables {
+			if existing.Name == table.Name {
+				return Catalog{}, fmt.Errorf("database %q table %q already exists", dbName, table.Name)
+			}
+		}
+		db.Tables = append(slices.Clone(db.Tables), table)
+		next.Databases[dbIndex] = db
+		if err := next.Validate(); err != nil {
+			return Catalog{}, err
+		}
+		return next, nil
+	}
+	return Catalog{}, fmt.Errorf("database %q not found", dbName)
 }
 
 func (table Table) validate(dbName string, tableIndex int) error {

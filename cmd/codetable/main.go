@@ -65,6 +65,8 @@ func run(ctx context.Context, configPath, metadataPath string) error {
 		historyStore,
 		cfg.OIDC.Providers,
 	)
+	server.EnableMetadataWrites(metadataPath)
+	server.SetDatabaseOpener(rowRepository.OpenDatabase)
 	slog.Info("codetable listening", "address", address)
 	return http.ListenAndServe(address, server)
 }

@@ -24,10 +24,14 @@ func TestFieldLevelPermission(t *testing.T) {
 
 func TestResourceLevelPermission(t *testing.T) {
 	perms := New(
+		Grant{SubjectID: "u1", Scope: ScopeDatabase, Resource: "workspace", Level: Write},
 		Grant{SubjectID: "u1", Scope: ScopeWorkflow, Resource: "7", Level: Write},
 		Grant{SubjectID: "u1", Scope: ScopeForm, Resource: "3", Level: Read},
 	)
 
+	if !perms.CanWriteResource("u1", ScopeDatabase, "workspace") {
+		t.Fatal("expected database write permission")
+	}
 	if !perms.CanWriteResource("u1", ScopeWorkflow, "7") {
 		t.Fatal("expected workflow write permission")
 	}

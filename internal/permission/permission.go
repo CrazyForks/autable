@@ -11,6 +11,7 @@ const (
 type Scope string
 
 const (
+	ScopeDatabase Scope = "database"
 	ScopeTable    Scope = "table"
 	ScopeField    Scope = "field"
 	ScopeWorkflow Scope = "workflow"
@@ -18,11 +19,11 @@ const (
 )
 
 type Grant struct {
-	SubjectID string
-	Scope     Scope
-	Resource  string
-	Field     string
-	Level     Level
+	SubjectID string `json:"subject_id"`
+	Scope     Scope  `json:"scope"`
+	Resource  string `json:"resource"`
+	Field     string `json:"field"`
+	Level     Level  `json:"level"`
 }
 
 type Set struct {

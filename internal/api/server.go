@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -25,13 +26,21 @@ import (
 )
 
 type Server struct {
-	catalog metadata.Catalog
-	system  *systemdb.DB
-	tables  *table.Service
-	history history.Store
-	runner  *workflow.Runner
-	oidc    []config.OIDCProvider
-	mux     *http.ServeMux
+	catalogMu    sync.RWMutex
+	catalog      metadata.Catalog
+	metadataPath string
+	openDatabase func(context.Context, string, string) error
+	system       *systemdb.DB
+	tables       *table.Service
+	history      history.Store
+	runner       *workflow.Runner
+	oidc         []config.OIDCProvider
+	mux          *http.ServeMux
+}
+
+type createDatabaseRequest struct {
+	Name       string `json:"name"`
+	SQLitePath string `json:"sqlite_path"`
 }
 
 type createRowRequest struct {
@@ -125,6 +134,14 @@ func NewServerWithWorkflowRunnerAndOIDC(catalog metadata.Catalog, system *system
 	return server
 }
 
+func (server *Server) EnableMetadataWrites(path string) {
+	server.metadataPath = path
+}
+
+func (server *Server) SetDatabaseOpener(openDatabase func(context.Context, string, string) error) {
+	server.openDatabase = openDatabase
+}
+
 func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	server.mux.ServeHTTP(w, r)
 }
@@ -141,6 +158,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("POST /api/tables/", server.handleCreateRow)
 	server.mux.HandleFunc("PATCH /api/tables/", server.handleUpdateRow)
 	server.mux.HandleFunc("GET /api/tables/", server.handleGetTable)
+	server.mux.HandleFunc("POST /api/databases", server.handleCreateDatabase)
 	server.mux.HandleFunc("GET /api/databases/", server.handleGetDatabaseResource)
 	server.mux.HandleFunc("POST /api/databases/", server.handlePostDatabaseResource)
 	server.mux.HandleFunc("GET /api/workflow/nodes", server.handleWorkflowNodes)
@@ -347,10 +365,43 @@ func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, server.catalog)
+	writeJSON(w, http.StatusOK, server.catalogSnapshot())
+}
+
+func (server *Server) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := server.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	var request createDatabaseRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if request.SQLitePath == "" {
+		request.SQLitePath = fmt.Sprintf("./data/%s.sqlite", request.Name)
+	}
+	database := metadata.Database{Name: request.Name, SQLitePath: request.SQLitePath, Tables: []metadata.Table{}}
+	if err := server.createDatabase(r.Context(), database); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := server.system.SaveGrant(r.Context(), permission.Grant{
+		SubjectID: actorID,
+		Scope:     permission.ScopeDatabase,
+		Resource:  database.Name,
+		Level:     permission.Write,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, database)
 }
 
 func (server *Server) handleSaveGrant(w http.ResponseWriter, r *http.Request) {
+	if _, ok := server.requireUserID(w, r); !ok {
+		return
+	}
 	var grant permission.Grant
 	if err := readJSON(r, &grant); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -389,7 +440,7 @@ func (server *Server) handleCreateRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	row, err := server.tables.CreateRow(r.Context(), server.catalog, perms, actorID, dbName, tableName, request.Values)
+	row, err := server.tables.CreateRow(r.Context(), server.catalogSnapshot(), perms, actorID, dbName, tableName, request.Values)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, table.ErrPermissionDenied) {
@@ -427,7 +478,7 @@ func (server *Server) handleUpdateRow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	row, err := server.tables.UpdateRow(r.Context(), server.catalog, perms, actorID, dbName, tableName, recordID, request.Values)
+	row, err := server.tables.UpdateRow(r.Context(), server.catalogSnapshot(), perms, actorID, dbName, tableName, recordID, request.Values)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, table.ErrPermissionDenied) {
@@ -462,7 +513,7 @@ func (server *Server) handleListRows(w http.ResponseWriter, r *http.Request, dbN
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	rows, err := server.tables.Rows(r.Context(), server.catalog, perms, actorID, dbName, tableName, r.URL.Query().Get("view"))
+	rows, err := server.tables.Rows(r.Context(), server.catalogSnapshot(), perms, actorID, dbName, tableName, r.URL.Query().Get("view"))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, table.ErrPermissionDenied) {
@@ -582,6 +633,35 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 		return
 	}
 	switch resource {
+	case "tables":
+		perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) < permission.Write {
+			writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
+			return
+		}
+		var tableMeta metadata.Table
+		if err := readJSON(r, &tableMeta); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := server.addTable(dbName, tableMeta); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := server.system.SaveGrant(r.Context(), permission.Grant{
+			SubjectID: actorID,
+			Scope:     permission.ScopeTable,
+			Resource:  dbName + "." + tableMeta.Name,
+			Level:     permission.Write,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, tableMeta)
 	case "workflows":
 		var workflow systemdb.WorkflowDefinition
 		if err := readJSON(r, &workflow); err != nil {
@@ -815,7 +895,7 @@ func parseDatabaseResourcePath(path string) (string, string, bool) {
 	if len(parts) != 4 || parts[0] != "api" || parts[1] != "databases" {
 		return "", "", false
 	}
-	if parts[3] != "workflows" && parts[3] != "forms" {
+	if parts[3] != "tables" && parts[3] != "workflows" && parts[3] != "forms" {
 		return "", "", false
 	}
 	return parts[2], parts[3], true
@@ -854,6 +934,51 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+func (server *Server) catalogSnapshot() metadata.Catalog {
+	server.catalogMu.RLock()
+	defer server.catalogMu.RUnlock()
+	return server.catalog
+}
+
+func (server *Server) createDatabase(ctx context.Context, database metadata.Database) error {
+	if server.metadataPath == "" {
+		return errors.New("metadata writes are not configured")
+	}
+	server.catalogMu.Lock()
+	defer server.catalogMu.Unlock()
+	next, err := server.catalog.AddDatabase(database)
+	if err != nil {
+		return err
+	}
+	if server.openDatabase != nil {
+		if err := server.openDatabase(ctx, database.Name, database.SQLitePath); err != nil {
+			return err
+		}
+	}
+	if err := metadata.Save(server.metadataPath, next); err != nil {
+		return err
+	}
+	server.catalog = next
+	return nil
+}
+
+func (server *Server) addTable(dbName string, tableMeta metadata.Table) error {
+	if server.metadataPath == "" {
+		return errors.New("metadata writes are not configured")
+	}
+	server.catalogMu.Lock()
+	defer server.catalogMu.Unlock()
+	next, err := server.catalog.AddTable(dbName, tableMeta)
+	if err != nil {
+		return err
+	}
+	if err := metadata.Save(server.metadataPath, next); err != nil {
+		return err
+	}
+	server.catalog = next
+	return nil
 }
 
 func (server *Server) requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
