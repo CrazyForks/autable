@@ -32,6 +32,7 @@ import {
   createRow,
   listOIDCProviders,
   listForms,
+  listRowHistory,
   listRows,
   listWorkflows,
   loadCurrentUser,
@@ -49,6 +50,7 @@ import {
   type Catalog,
   type FormDefinition,
   type OIDCProvider,
+  type RowChange,
   type RowRecord,
   type TableView,
   type WorkflowDefinition,
@@ -74,6 +76,8 @@ export function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
+  const [selectedRecordID, setSelectedRecordID] = useState(0);
+  const [rowHistory, setRowHistory] = useState<RowChange[]>([]);
   const [lastWorkflowRun, setLastWorkflowRun] = useState<WorkflowRunResponse | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [workflowSecretsText, setWorkflowSecretsText] = useState("{}");
@@ -89,6 +93,10 @@ export function App() {
     () => (rowsViewName === selectedTableView ? rows : applyTableView(rows, table.views ?? [], selectedTableView)),
     [rows, rowsViewName, table.views, selectedTableView]
   );
+  const displayedRecordIDs = useMemo(
+    () => displayedRows.map((row) => Number(row.record_id)).filter((recordID) => Number.isFinite(recordID)),
+    [displayedRows]
+  );
   const selectedWorkflowRun =
     lastWorkflowRun?.run.workflow_id === selectedWorkflow?.id ? lastWorkflowRun : null;
   const renderedForm = useMemo(() => renderFormScript(selectedForm?.script ?? ""), [selectedForm?.script]);
@@ -96,6 +104,18 @@ export function App() {
   useEffect(() => {
     setFormValues({});
   }, [selectedForm?.id, selectedForm?.script]);
+
+  useEffect(() => {
+    if (displayedRecordIDs.length === 0) {
+      setSelectedRecordID(0);
+      setRowHistory([]);
+      return;
+    }
+    if (!displayedRecordIDs.includes(selectedRecordID)) {
+      setSelectedRecordID(displayedRecordIDs[0]);
+      setRowHistory([]);
+    }
+  }, [displayedRecordIDs, selectedRecordID]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +212,8 @@ export function App() {
         )
       );
       setRowsViewName("local");
+      setSelectedRecordID(saved.record_id);
+      setRowHistory([]);
       setStatus(`Updated record ${saved.record_id}`);
     } catch (error) {
       setStatus(error instanceof Error ? `Local edit: ${error.message}` : "Local edit saved");
@@ -229,11 +251,15 @@ export function App() {
       const saved = await createRow(database.name, table.name, values, currentUser ? undefined : "demo-user");
       setRows((current) => [...current, rowRecordToValues(saved)]);
       setRowsViewName("local");
+      setSelectedRecordID(saved.record_id);
+      setRowHistory([]);
       setStatus(`Created record ${saved.record_id}`);
     } catch (error) {
       const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
       setRows((current) => [...current, { record_id: localID, ...values }]);
       setRowsViewName("local");
+      setSelectedRecordID(localID);
+      setRowHistory([]);
       setStatus(error instanceof Error ? `Local draft: ${error.message}` : "Local draft added");
     }
   }
@@ -305,6 +331,8 @@ export function App() {
       const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
       setRows((current) => [...current, { record_id: localID, ...values }]);
       setRowsViewName("local");
+      setSelectedRecordID(localID);
+      setRowHistory([]);
       setStatus("Local form submitted");
       return;
     }
@@ -312,11 +340,15 @@ export function App() {
       const saved = await createRow(database.name, table.name, values);
       setRows((current) => [...current, rowRecordToValues(saved)]);
       setRowsViewName("local");
+      setSelectedRecordID(saved.record_id);
+      setRowHistory([]);
       setStatus(`Form created record ${saved.record_id}`);
     } catch (error) {
       const localID = Math.max(0, ...rows.map((row) => Number(row.record_id))) + 1;
       setRows((current) => [...current, { record_id: localID, ...values }]);
       setRowsViewName("local");
+      setSelectedRecordID(localID);
+      setRowHistory([]);
       setStatus(error instanceof Error ? `Local form: ${error.message}` : "Local form submitted");
     }
   }
@@ -353,6 +385,22 @@ export function App() {
 
   function loginWithOIDC(providerName: string) {
     window.location.assign(oidcStartURL(providerName));
+  }
+
+  async function loadSelectedRowHistory() {
+    if (!selectedRecordID) {
+      setStatus("Select a row before loading history");
+      return;
+    }
+    try {
+      const userID = currentUser ? undefined : "demo-user";
+      const changes = await listRowHistory(database.name, table.name, selectedRecordID, userID);
+      setRowHistory(changes);
+      setStatus(`Loaded ${changes.length} history entries for record ${selectedRecordID}`);
+    } catch (error) {
+      setRowHistory([]);
+      setStatus(error instanceof Error ? error.message : "Row history failed");
+    }
   }
 
   function updateSelectedWorkflowScript(script: string) {
@@ -489,14 +537,41 @@ export function App() {
                     {displayedRows.length} of {rows.length} records
                   </Text>
                 </div>
-                <Button icon={<AddRegular />} appearance="primary" onClick={addDraftRow}>
-                  Row
-                </Button>
+                <div className="table-actions">
+                  <Select
+                    aria-label="History record"
+                    value={selectedRecordID ? String(selectedRecordID) : ""}
+                    onChange={(_, data) => setSelectedRecordID(Number(data.value))}
+                    disabled={displayedRecordIDs.length === 0}
+                  >
+                    {displayedRecordIDs.length === 0 ? (
+                      <option value="">No records</option>
+                    ) : (
+                      displayedRecordIDs.map((recordID) => (
+                        <option key={recordID} value={recordID}>
+                          record #{recordID}
+                        </option>
+                      ))
+                    )}
+                  </Select>
+                  <Button onClick={loadSelectedRowHistory} disabled={!selectedRecordID}>
+                    History
+                  </Button>
+                  <Button icon={<AddRegular />} appearance="primary" onClick={addDraftRow}>
+                    Row
+                  </Button>
+                </div>
               </div>
               <div className="grid-host">
                 <DataEditor
                   getCellContent={getCellContent}
                   onCellEdited={editCell}
+                  onCellClicked={([, rowIndex]) => {
+                    const recordID = Number(displayedRows[rowIndex]?.record_id);
+                    if (Number.isFinite(recordID)) {
+                      setSelectedRecordID(recordID);
+                    }
+                  }}
                   columns={columns}
                   rows={displayedRows.length}
                   rowMarkers="number"
@@ -505,6 +580,21 @@ export function App() {
                   width="100%"
                   height="100%"
                 />
+              </div>
+              <div className="row-history-panel" aria-label="Row history">
+                {rowHistory.length === 0 ? (
+                  <Text size={200}>No row history loaded</Text>
+                ) : (
+                  rowHistory.map((change) => (
+                    <div key={change.history_key} className="row-history-entry">
+                      <div>
+                        <Text weight="semibold">{change.history_key}</Text>
+                        <Text size={200}>{new Date(change.timestamp).toLocaleString()}</Text>
+                      </div>
+                      <pre>{JSON.stringify(change.values, null, 2)}</pre>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

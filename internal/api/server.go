@@ -43,6 +43,11 @@ type rowResponse struct {
 	Values   map[string]any `json:"values"`
 }
 
+type rowHistoryResponse struct {
+	HistoryKey string `json:"history_key"`
+	history.RowChange
+}
+
 type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -484,14 +489,14 @@ func (server *Server) handleRowHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	changes := make([]history.RowChange, 0, len(entries))
+	changes := make([]rowHistoryResponse, 0, len(entries))
 	for _, entry := range entries {
 		change, err := history.DecodeRowChange(entry)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		changes = append(changes, change)
+		changes = append(changes, rowHistoryResponse{HistoryKey: entry.Key, RowChange: change})
 	}
 	writeJSON(w, http.StatusOK, changes)
 }

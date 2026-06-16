@@ -299,12 +299,20 @@ func TestCreateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", historyRecorder.Code, historyRecorder.Body.String())
 	}
 
+	rawHistory := historyRecorder.Body.Bytes()
 	var changes []history.RowChange
-	if err := json.NewDecoder(historyRecorder.Body).Decode(&changes); err != nil {
+	if err := json.Unmarshal(rawHistory, &changes); err != nil {
 		t.Fatal(err)
 	}
 	if len(changes) != 1 || changes[0].Values["name"] != "Ada" {
 		t.Fatalf("unexpected row history: %#v", changes)
+	}
+	var historyEntries []rowHistoryResponse
+	if err := json.Unmarshal(rawHistory, &historyEntries); err != nil {
+		t.Fatal(err)
+	}
+	if len(historyEntries) != 1 || !strings.HasPrefix(historyEntries[0].HistoryKey, "rhistory_db_contacts_00000000000000000001_") {
+		t.Fatalf("expected row history key in response, got %#v", historyEntries)
 	}
 }
 

@@ -79,6 +79,47 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("1 of 1 records")).toBeInTheDocument());
   });
 
+  it("loads row history for the selected table record", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/auth/me") {
+        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+      }
+      if (url === "/api/auth/oidc/providers") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url === "/api/tables/workspace/contacts/rows") {
+        return new Response(
+          JSON.stringify([{ record_id: 42, values: { name: "Backend Row", email: "backend@example.com" } }]),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/tables/workspace/contacts/rows/42/history") {
+        return new Response(
+          JSON.stringify([
+            {
+              history_key: "rhistory_workspace_contacts_00000000000000000042_00000000000000000100",
+              database: "workspace",
+              table: "contacts",
+              record_id: 42,
+              timestamp: "2026-06-16T10:00:00Z",
+              values: { name: "Backend Row" },
+              actor_id: "demo-user"
+            }
+          ]),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+    });
+
+    renderApp();
+    await waitFor(() => expect(screen.getByText("1 of 1 records")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(await screen.findByText("rhistory_workspace_contacts_00000000000000000042_00000000000000000100")).toBeInTheDocument();
+    expect(screen.getByText(/Backend Row/)).toBeInTheDocument();
+  });
+
   it("shows workflow JavaScript as the workflow view", async () => {
     renderApp();
     await userEvent.click(screen.getByRole("tab", { name: "Workflow" }));

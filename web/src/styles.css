@@ -105,7 +105,7 @@ select {
 
 .table-view {
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr) minmax(120px, 24vh);
   gap: 12px;
 }
 
@@ -122,12 +122,57 @@ select {
   gap: 2px;
 }
 
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .grid-host {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   border: 1px solid #d8d6cf;
   background: #ffffff;
+}
+
+.row-history-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #d8d6cf;
+  background: #ffffff;
+}
+
+.row-history-entry {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #ebe8e1;
+}
+
+.row-history-entry:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.row-history-entry > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.row-history-entry pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #242322;
 }
 
 .split-view {

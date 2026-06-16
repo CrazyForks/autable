@@ -42,6 +42,7 @@ export type Catalog = {
 };
 
 export type RowChange = {
+  history_key: string;
   database: string;
   table: string;
   record_id: number;
@@ -197,6 +198,22 @@ export async function listRows(
     throw new Error(error.error ?? `row list failed: ${response.status}`);
   }
   return response.json() as Promise<RowRecord[]>;
+}
+
+export async function listRowHistory(
+  dbName: string,
+  tableName: string,
+  recordID: number,
+  userID?: string
+): Promise<RowChange[]> {
+  const response = await fetch(`/api/tables/${dbName}/${tableName}/rows/${recordID}/history`, {
+    headers: userHeaders(userID)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? `row history failed: ${response.status}`);
+  }
+  return response.json() as Promise<RowChange[]>;
 }
 
 export async function register(email: string, password: string): Promise<AuthUser> {
