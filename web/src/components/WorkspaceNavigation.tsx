@@ -42,15 +42,21 @@ type WorkspaceNavigationProps = {
   database: DatabaseMetadata;
   forms: FormDefinition[];
   newDatabaseName: string;
+  newFormName: string;
   newRoleName: string;
   newTableName: string;
+  newWorkflowName: string;
   onCreateDatabase: () => void;
+  onCreateForm: () => void;
   onCreateRole: () => void;
   onCreateTable: () => void;
+  onCreateWorkflow: () => void;
   onLogout: () => void;
   onNewDatabaseNameChange: (value: string) => void;
+  onNewFormNameChange: (value: string) => void;
   onNewRoleNameChange: (value: string) => void;
   onNewTableNameChange: (value: string) => void;
+  onNewWorkflowNameChange: (value: string) => void;
   onOpenLogin: () => void;
   onSelectDatabaseSection: (databaseName: string, view: WorkspaceView) => void;
   onSelectFormID: (id: number) => void;
@@ -74,15 +80,21 @@ export function WorkspaceNavigation({
   database,
   forms,
   newDatabaseName,
+  newFormName,
   newRoleName,
   newTableName,
+  newWorkflowName,
   onCreateDatabase,
+  onCreateForm,
   onCreateRole,
   onCreateTable,
+  onCreateWorkflow,
   onLogout,
   onNewDatabaseNameChange,
+  onNewFormNameChange,
   onNewRoleNameChange,
   onNewTableNameChange,
+  onNewWorkflowNameChange,
   onOpenLogin,
   onSelectDatabaseSection,
   onSelectFormID,
@@ -196,36 +208,36 @@ export function WorkspaceNavigation({
             </>
           )}
           {view === "workflow" && (
-            <Nav
-              className="resource-nav"
-              aria-label="Workflow list"
-              density="small"
-              selectedValue={selectedWorkflow?.id ? String(selectedWorkflow.id) : ""}
-              onNavItemSelect={(_, data) => onSelectWorkflowID(Number(data.value))}
-            >
-              <NavSectionHeader>Workflows</NavSectionHeader>
-              {workflows.map((item) => (
-                <NavItem key={item.id ?? item.name} value={String(item.id ?? 0)} icon={<DocumentFlowchartRegular />}>
-                  {item.name}
-                </NavItem>
-              ))}
-            </Nav>
+            <ResourceNav
+              ariaLabel="Workflow list"
+              createLabel="Create Workflow"
+              databaseName={database.name}
+              icon="workflow"
+              items={workflows.map((item) => ({ id: item.id ?? 0, name: item.name }))}
+              newName={newWorkflowName}
+              onCreate={onCreateWorkflow}
+              onNewNameChange={onNewWorkflowNameChange}
+              onSelect={onSelectWorkflowID}
+              placeholder="new workflow"
+              selectedID={selectedWorkflow?.id ?? 0}
+              title="Workflows"
+            />
           )}
           {view === "form" && (
-            <Nav
-              className="resource-nav"
-              aria-label="Form list"
-              density="small"
-              selectedValue={selectedForm?.id ? String(selectedForm.id) : ""}
-              onNavItemSelect={(_, data) => onSelectFormID(Number(data.value))}
-            >
-              <NavSectionHeader>Forms</NavSectionHeader>
-              {forms.map((item) => (
-                <NavItem key={item.id ?? item.name} value={String(item.id ?? 0)} icon={<FormRegular />}>
-                  {item.name}
-                </NavItem>
-              ))}
-            </Nav>
+            <ResourceNav
+              ariaLabel="Form list"
+              createLabel="Create Form"
+              databaseName={database.name}
+              icon="form"
+              items={forms.map((item) => ({ id: item.id ?? 0, name: item.name }))}
+              newName={newFormName}
+              onCreate={onCreateForm}
+              onNewNameChange={onNewFormNameChange}
+              onSelect={onSelectFormID}
+              placeholder="new form"
+              selectedID={selectedForm?.id ?? 0}
+              title="Forms"
+            />
           )}
           {view === "permission" && (
             <>
@@ -257,6 +269,51 @@ export function WorkspaceNavigation({
           )}
         </NavDrawerBody>
       </NavDrawer>
+    </>
+  );
+}
+
+function ResourceNav(props: {
+  ariaLabel: string;
+  createLabel: string;
+  databaseName: string;
+  icon: "workflow" | "form";
+  items: Array<{ id: number; name: string }>;
+  newName: string;
+  onCreate: () => void;
+  onNewNameChange: (value: string) => void;
+  onSelect: (id: number) => void;
+  placeholder: string;
+  selectedID: number;
+  title: string;
+}) {
+  const Icon = props.icon === "workflow" ? DocumentFlowchartRegular : FormRegular;
+  return (
+    <>
+      <Nav
+        className="resource-nav"
+        aria-label={props.ariaLabel}
+        density="small"
+        selectedValue={props.selectedID ? String(props.selectedID) : ""}
+        onNavItemSelect={(_, data) => props.onSelect(Number(data.value))}
+      >
+        <NavSectionHeader>{props.title}</NavSectionHeader>
+        {props.items.map((item) => (
+          <NavItem key={item.id || item.name} value={String(item.id)} icon={<Icon />}>
+            {item.name}
+          </NavItem>
+        ))}
+      </Nav>
+      <div className="create-rowline">
+        <Input
+          aria-label={`New ${props.icon} name`}
+          placeholder={props.placeholder}
+          value={props.newName}
+          onChange={(_, data) => props.onNewNameChange(data.value)}
+          disabled={!props.databaseName}
+        />
+        <Button icon={<AddRegular />} aria-label={props.createLabel} onClick={props.onCreate} disabled={!props.databaseName} />
+      </div>
     </>
   );
 }

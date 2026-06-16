@@ -213,6 +213,11 @@ test("covers workflow editor, node list, and run history through the real backen
   await setupWorkspace(page);
 
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
+  const workflowName = `ui-workflow-${Date.now()}`;
+  await page.getByRole("textbox", { name: "New workflow name" }).fill(workflowName);
+  await page.getByRole("button", { name: "Create Workflow" }).click();
+  await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
   await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/info\.node/);
   await expect(page.getByText("echo").first()).toBeVisible();
   await page.getByRole("button", { name: "Run" }).click();
@@ -280,10 +285,13 @@ test("covers form runtime preview and submit through the real backend", async ({
   await setupWorkspace(page);
 
   await page.getByRole("button", { name: "Form", exact: true }).click();
+  const formName = `ui-form-${Date.now()}`;
+  await page.getByRole("textbox", { name: "New form name" }).fill(formName);
+  await page.getByRole("button", { name: "Create Form" }).click();
+  await expect(page.getByText(`Created form ${formName}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: formName })).toBeVisible();
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("Margaret Hamilton");
-  await page.getByRole("textbox", { name: "Email", exact: true }).fill("margaret@example.com");
-  await page.getByRole("combobox").selectOption("Review");
-  await page.getByRole("button", { name: "Create record" }).click();
+  await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByText(/Form created record \d+/)).toBeVisible();
 });
 

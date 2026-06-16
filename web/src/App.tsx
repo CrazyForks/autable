@@ -105,6 +105,8 @@ export function App() {
   const [newViewFilterValue, setNewViewFilterValue] = useState("");
   const [newViewSortField, setNewViewSortField] = useState("");
   const [newViewSortDirection, setNewViewSortDirection] = useState<TableViewSort["direction"]>("asc");
+  const [newWorkflowName, setNewWorkflowName] = useState("");
+  const [newFormName, setNewFormName] = useState("");
   const [newRoleName, setNewRoleName] = useState("");
   const [roleDraftGrants, setRoleDraftGrants] = useState<PermissionGrant[]>([]);
   const [roleDraftMembers, setRoleDraftMembers] = useState<string[]>([]);
@@ -655,6 +657,35 @@ export function App() {
     }
   }
 
+  async function createWorkflowFromSidebar() {
+    const name = newWorkflowName.trim();
+    if (!database.name) {
+      setStatus("Select a database before creating a workflow");
+      return;
+    }
+    if (!name) {
+      setStatus("Workflow name is required");
+      return;
+    }
+    try {
+      const saved = await saveWorkflow(database.name, {
+        database_name: database.name,
+        name,
+        script: "function run(info) {\n  const echoed = info.node('echo', { value: info.inputs.name });\n  return { message: echoed.value };\n}",
+        secrets: {},
+        variables: {}
+      });
+      setWorkflows((current) => replaceResource(current, saved));
+      setSelectedWorkflowID(saved.id ?? 0);
+      setWorkflowRuns([]);
+      setSelectedWorkflowRunKey("");
+      setNewWorkflowName("");
+      setStatus(`Created workflow ${saved.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Workflow creation failed");
+    }
+  }
+
   async function executeWorkflow() {
     if (!selectedWorkflow?.id) {
       setStatus("Save workflow before running");
@@ -689,6 +720,32 @@ export function App() {
       setStatus(`Form saved as #${saved.id}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Form save failed");
+    }
+  }
+
+  async function createFormFromSidebar() {
+    const name = newFormName.trim();
+    if (!database.name) {
+      setStatus("Select a database before creating a form");
+      return;
+    }
+    if (!name) {
+      setStatus("Form name is required");
+      return;
+    }
+    try {
+      const saved = await saveForm(database.name, {
+        database_name: database.name,
+        name,
+        script: "root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit'));"
+      });
+      setForms((current) => replaceResource(current, saved));
+      setSelectedFormID(saved.id ?? 0);
+      setFormValues({});
+      setNewFormName("");
+      setStatus(`Created form ${saved.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Form creation failed");
     }
   }
 
@@ -857,15 +914,21 @@ export function App() {
         database={database}
         forms={forms}
         newDatabaseName={newDatabaseName}
+        newFormName={newFormName}
         newRoleName={newRoleName}
         newTableName={newTableName}
+        newWorkflowName={newWorkflowName}
         onCreateDatabase={createDatabaseFromSidebar}
+        onCreateForm={createFormFromSidebar}
         onCreateRole={createRoleFromSidebar}
         onCreateTable={createTableFromSidebar}
+        onCreateWorkflow={createWorkflowFromSidebar}
         onLogout={logoutUser}
         onNewDatabaseNameChange={setNewDatabaseName}
+        onNewFormNameChange={setNewFormName}
         onNewRoleNameChange={setNewRoleName}
         onNewTableNameChange={setNewTableName}
+        onNewWorkflowNameChange={setNewWorkflowName}
         onOpenLogin={() => setAuthDialogOpen(true)}
         onSelectDatabaseSection={selectDatabaseSection}
         onSelectFormID={setSelectedFormID}
