@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Text, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
-import { AddRegular, ArrowClockwiseRegular } from "@fluentui/react-icons";
+import { ArrowClockwiseRegular } from "@fluentui/react-icons";
 import {
   type EditableGridCell,
   type GridCell,
@@ -982,9 +982,6 @@ export function App() {
           <Toolbar aria-label="Workspace actions">
             <Tooltip content="Refresh metadata" relationship="label">
               <ToolbarButton aria-label="Refresh metadata" icon={<ArrowClockwiseRegular />} onClick={refreshMetadata} />
-            </Tooltip>
-            <Tooltip content="Create row" relationship="label">
-              <ToolbarButton aria-label="Create row" icon={<AddRegular />} onClick={addDraftRow} disabled={view !== "table"} />
             </Tooltip>
           </Toolbar>
         </header>

@@ -255,7 +255,13 @@ test("covers table views, row creation, and row history through the real backend
   const workspace = await setupWorkspace(page);
 
   await expect(page.getByText(/\d+ of \d+ records/).first()).toBeVisible();
-  await page.getByRole("button", { name: "Fields" }).click();
+  const tableCanvas = page.locator(".table-view");
+  await expect(tableCanvas.getByRole("button", { name: "Fields" })).toBeVisible();
+  await expect(tableCanvas.getByRole("button", { name: "View", exact: true })).toBeVisible();
+  await expect(tableCanvas.getByRole("button", { name: "Row", exact: true })).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Workspace actions" }).getByRole("button", { name: "Create row" })).toHaveCount(0);
+
+  await tableCanvas.getByRole("button", { name: "Fields" }).click();
   let dialog = page.getByRole("dialog");
   await dialog.getByLabel("New field name").fill("priority");
   await dialog.getByLabel("New field type").selectOption("text");
@@ -265,9 +271,9 @@ test("covers table views, row creation, and row history through the real backend
   await expect(page.getByText("Deleted field email")).toBeVisible();
   await dialog.getByRole("button", { name: "Close" }).click();
 
-  await page.getByRole("button", { name: "Row", exact: true }).click();
+  await tableCanvas.getByRole("button", { name: "Row", exact: true }).click();
   await expect(page.getByText(/Created record \d+/)).toBeVisible();
-  await page.getByRole("button", { name: "Edit Row" }).click();
+  await tableCanvas.getByRole("button", { name: "Edit Row" }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("name value").fill("Grace Hopper");
   await dialog.getByLabel("status value").fill("Active");
@@ -275,7 +281,7 @@ test("covers table views, row creation, and row history through the real backend
   await expect(page.getByText(/Updated record \d+/)).toBeVisible();
   await dialog.getByRole("button", { name: "Close" }).click();
 
-  await page.getByRole("button", { name: "View", exact: true }).click();
+  await tableCanvas.getByRole("button", { name: "View", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("New view name").fill("active-desc");
   await dialog.getByLabel("Base view").selectOption("active");
@@ -294,9 +300,9 @@ test("covers table views, row creation, and row history through the real backend
 
   await page.getByLabel("Table view").selectOption("active");
   await expect(page.getByText(/\d+ of \d+ records/).first()).toBeVisible();
-  await page.getByRole("button", { name: "History" }).click();
+  await tableCanvas.getByRole("button", { name: "History" }).click();
   await expect(page.getByText(new RegExp(`rhistory_${workspace.databaseName}_contacts_`)).first()).toBeVisible();
-  await page.getByRole("button", { name: "Delete Row" }).click();
+  await tableCanvas.getByRole("button", { name: "Delete Row" }).click();
   await expect(page.getByText(/Deleted record \d+/)).toBeVisible();
 
   const metadata = (await api(page, "GET", "/api/metadata")) as {
