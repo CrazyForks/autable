@@ -208,6 +208,15 @@ select {
   gap: 6px;
 }
 
+.form-error {
+  color: #a4262c;
+}
+
+.form-html {
+  font-size: 13px;
+  color: #242424;
+}
+
 .statusbar {
   display: flex;
   align-items: center;

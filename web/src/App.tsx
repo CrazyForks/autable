@@ -27,7 +27,7 @@ import DataEditor, {
   type Item
 } from "@glideapps/glide-data-grid";
 import { demoCatalog, initialForms, initialRows, initialWorkflows } from "./demoData";
-import { previewFormElements } from "./formRuntime";
+import { renderFormScript } from "./formRuntime";
 import {
   createRow,
   listForms,
@@ -77,6 +77,7 @@ export function App() {
   );
   const selectedWorkflowRun =
     lastWorkflowRun?.run.workflow_id === selectedWorkflow?.id ? lastWorkflowRun : null;
+  const renderedForm = useMemo(() => renderFormScript(selectedForm?.script ?? ""), [selectedForm?.script]);
 
   const columns = useMemo<GridColumn[]>(
     () => [
@@ -448,7 +449,8 @@ export function App() {
                     </button>
                   ))}
                 </div>
-                {previewFormElements().map((element) => {
+                {renderedForm.error && <Text className="form-error">{renderedForm.error}</Text>}
+                {renderedForm.elements.map((element) => {
                   if (element.kind === "input") {
                     return (
                       <label key={element.name} className="field-stack">
@@ -468,6 +470,9 @@ export function App() {
                         </Select>
                       </label>
                     );
+                  }
+                  if (element.kind === "html") {
+                    return <div key={element.html} className="form-html" dangerouslySetInnerHTML={{ __html: element.html }} />;
                   }
                   return (
                     <Button key={element.label} appearance="primary">

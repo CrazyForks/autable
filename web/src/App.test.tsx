@@ -37,5 +37,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "quick-status" })).toBeInTheDocument();
     expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
     expect(screen.getByRole("button", { name: "Create record" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "quick-status" }));
+    expect(screen.getByRole("button", { name: "Update status" })).toBeInTheDocument();
   });
 });
