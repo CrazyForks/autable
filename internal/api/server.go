@@ -439,12 +439,21 @@ func (server *Server) handleCreateDatabase(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *Server) handleSaveGrant(w http.ResponseWriter, r *http.Request) {
-	if _, ok := server.requireUserID(w, r); !ok {
+	actorID, ok := server.requireUserID(w, r)
+	if !ok {
 		return
 	}
 	var grant permission.Grant
 	if err := readJSON(r, &grant); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	dbName, err := server.grantDatabaseName(r.Context(), grant)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if !server.requireDatabaseWrite(w, r, actorID, dbName) {
 		return
 	}
 	if err := server.system.SaveGrant(r.Context(), grant); err != nil {
@@ -1261,6 +1270,44 @@ func (server *Server) requireDatabaseWrite(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 	return true
+}
+
+func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Grant) (string, error) {
+	switch grant.Scope {
+	case permission.ScopeDatabase:
+		if grant.Resource == "" {
+			return "", errors.New("grant database resource is required")
+		}
+		return grant.Resource, nil
+	case permission.ScopeTable, permission.ScopeField:
+		dbName, _, ok := strings.Cut(grant.Resource, ".")
+		if !ok || dbName == "" {
+			return "", fmt.Errorf("grant resource %q must be db.table", grant.Resource)
+		}
+		return dbName, nil
+	case permission.ScopeWorkflow:
+		id, err := strconv.ParseInt(grant.Resource, 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("grant workflow resource %q must be an id", grant.Resource)
+		}
+		workflow, err := server.system.Workflow(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return workflow.DatabaseName, nil
+	case permission.ScopeForm:
+		id, err := strconv.ParseInt(grant.Resource, 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("grant form resource %q must be an id", grant.Resource)
+		}
+		form, err := server.system.Form(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return form.DatabaseName, nil
+	default:
+		return "", fmt.Errorf("unsupported grant scope %q", grant.Scope)
+	}
 }
 
 func (server *Server) requireDatabaseOrTableWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {

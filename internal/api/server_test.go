@@ -459,21 +459,43 @@ func TestPermissionGrantAPIRequiresAuthentication(t *testing.T) {
 	}
 }
 
-func TestPermissionGrantAPISavesAuthenticatedGrant(t *testing.T) {
+func TestPermissionGrantAPIRequiresDatabaseWrite(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
-	request := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
+	denied := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
 		"subject_id":"u1",
 		"scope":"field",
 		"resource":"db.contacts",
 		"field":"email",
 		"level":2
 	}`))
-	request.AddCookie(testSessionCookie(t, system, "admin"))
-	recorder := httptest.NewRecorder()
-	server.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusCreated {
-		t.Fatalf("expected authenticated grant save 201, got %d: %s", recorder.Code, recorder.Body.String())
+	denied.AddCookie(testSessionCookie(t, system, "viewer"))
+	deniedRecorder := httptest.NewRecorder()
+	server.ServeHTTP(deniedRecorder, denied)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected non-owner grant save 403, got %d: %s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "admin",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	allowed := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
+		"subject_id":"u1",
+		"scope":"field",
+		"resource":"db.contacts",
+		"field":"email",
+		"level":2
+	}`))
+	allowed.AddCookie(testSessionCookie(t, system, "admin"))
+	allowedRecorder := httptest.NewRecorder()
+	server.ServeHTTP(allowedRecorder, allowed)
+	if allowedRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected db owner grant save 201, got %d: %s", allowedRecorder.Code, allowedRecorder.Body.String())
 	}
 
 	perms, err := system.GrantsForSubject(ctx, "u1")

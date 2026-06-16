@@ -9,6 +9,12 @@ type AuthUser = {
   provider: string;
 };
 
+type WorkspaceSetup = {
+  user: AuthUser;
+  databaseName: string;
+  tableName: string;
+};
+
 let sequence = 0;
 const runtimeDir = join(dirname(fileURLToPath(import.meta.url)), ".runtime");
 
@@ -52,40 +58,53 @@ async function api(page: Page, method: string, path: string, body?: unknown) {
   );
 }
 
-async function grant(page: Page, userID: string, grantBody: Record<string, unknown>) {
-  await api(page, "POST", "/api/permissions/grants", {
-    subject_id: userID,
-    field: "",
-    ...grantBody
-  });
-}
-
-async function setupWorkspace(page: Page) {
+async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
   const user = await registerUser(page);
   const suffix = `${Date.now()}-${sequence}`;
-  await grant(page, user.id, { scope: "database", resource: "workspace", level: 2 });
-  await grant(page, user.id, { scope: "table", resource: "workspace.contacts", level: 2 });
-  await api(page, "POST", "/api/tables/workspace/contacts/rows", {
+  const databaseName = `workspace${suffix}`;
+  const tableName = "contacts";
+  await api(page, "POST", "/api/databases", {
+    name: databaseName,
+    sqlite_path: `./data/${databaseName}.sqlite`
+  });
+  await api(page, "POST", `/api/databases/${databaseName}/tables`, {
+    name: tableName,
+    display_name: "Contacts",
+    fields: [
+      { name: "name", type: "text", required: true, deleted: false },
+      { name: "email", type: "email", required: false, deleted: false },
+      { name: "status", type: "text", required: false, deleted: false }
+    ],
+    views: [
+      {
+        name: "active",
+        display_name: "Active",
+        filters: [{ field: "status", op: "eq", value: "Active" }],
+        sorts: [{ field: "name", direction: "asc" }]
+      }
+    ]
+  });
+  await api(page, "POST", `/api/tables/${databaseName}/${tableName}/rows`, {
     values: { name: "Ada Lovelace", email: "ada@example.com", status: "Active" }
   });
-  await api(page, "POST", "/api/databases/workspace/workflows", {
-    database_name: "workspace",
+  await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
+    database_name: databaseName,
     name: `welcome-contact-${suffix}`,
     script:
       'function run(info) { const echoed = info.node("echo", { value: info.inputs.name }); return { message: echoed.value }; }',
     secrets: {},
     variables: {}
   });
-  await api(page, "POST", "/api/databases/workspace/forms", {
-    database_name: "workspace",
+  await api(page, "POST", `/api/databases/${databaseName}/forms`, {
+    database_name: databaseName,
     name: `quick-status-${suffix}`,
     script:
       "root.append(api.input({ name: 'name', label: 'Name', required: true }), api.input({ name: 'email', label: 'Email', type: 'email' }), api.select({ name: 'status', label: 'Status', options: ['Active', 'Review'] }), api.submit('Create record'));"
   });
   await page.reload();
-  await expect(page.getByRole("button", { name: "workspace" })).toBeVisible();
+  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
   await expect(page.getByRole("button", { name: /Contacts/ })).toBeVisible();
-  return user;
+  return { user, databaseName, tableName };
 }
 
 test("hides databases when the signed-in user has no permission", async ({ page }) => {
@@ -108,7 +127,7 @@ test("covers login modal and workspace navigation through the real backend", asy
 });
 
 test("covers database and table creation through the real backend", async ({ page }) => {
-  await setupWorkspace(page);
+  const workspace = await setupWorkspace(page);
 
   const suffix = `${Date.now()}-${sequence}`;
   const databaseName = `sales${suffix}`;
@@ -123,18 +142,18 @@ test("covers database and table creation through the real backend", async ({ pag
   await expect(page.getByRole("button", { name: tableName })).toBeVisible();
   await expect(page.getByText(`Created table ${databaseName}.${tableName}`)).toBeVisible();
 
-  await page.getByRole("button", { name: "workspace", exact: true }).click();
-  await expect(page.getByRole("button", { name: "workspace", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: workspace.databaseName, exact: true }).click();
+  await expect(page.getByRole("button", { name: workspace.databaseName, exact: true })).toHaveAttribute("aria-expanded", "true");
 });
 
 test("covers table views, row creation, and row history through the real backend", async ({ page }) => {
-  await setupWorkspace(page);
+  const workspace = await setupWorkspace(page);
 
   await expect(page.getByText(/\d+ of \d+ records/).first()).toBeVisible();
   await page.getByRole("button", { name: "Active", exact: true }).click();
   await expect(page.getByText(/\d+ of \d+ records/).first()).toBeVisible();
   await page.getByRole("button", { name: "History" }).click();
-  await expect(page.getByText(/rhistory_workspace_contacts_/)).toBeVisible();
+  await expect(page.getByText(new RegExp(`rhistory_${workspace.databaseName}_contacts_`))).toBeVisible();
   await page.getByRole("button", { name: "Row", exact: true }).click();
   await expect(page.getByText(/Created record \d+/)).toBeVisible();
 });
@@ -151,14 +170,18 @@ test("covers workflow editor, node list, and run history through the real backen
 });
 
 test("persists workflow and form JavaScript into the repository path", async ({ page }) => {
-  const user = await registerUser(page);
+  await registerUser(page);
   const suffix = `${Date.now()}-${sequence}`;
-  await grant(page, user.id, { scope: "database", resource: "workspace", level: 2 });
+  const databaseName = `repo${suffix}`;
+  await api(page, "POST", "/api/databases", {
+    name: databaseName,
+    sqlite_path: `./data/${databaseName}.sqlite`
+  });
 
   const workflowName = `repo-workflow-${suffix}`;
   const workflowScript = 'function run(info) { return { name: info.inputs.name }; }';
-  const workflow = (await api(page, "POST", "/api/databases/workspace/workflows", {
-    database_name: "workspace",
+  const workflow = (await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
+    database_name: databaseName,
     name: workflowName,
     script: workflowScript,
     secrets: {},
@@ -168,7 +191,7 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
     runtimeDir,
     "workspace",
     "workflows",
-    "workspace",
+    databaseName,
     `${String(workflow.id).padStart(20, "0")}-${workflowName}.js`
   );
   expect(readFileSync(workflowPath, "utf8")).toBe(workflowScript);
@@ -183,8 +206,8 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
 
   const formName = `repo-form-${suffix}`;
   const formScript = "root.append(api.input({ name: 'email' }))";
-  const form = (await api(page, "POST", "/api/databases/workspace/forms", {
-    database_name: "workspace",
+  const form = (await api(page, "POST", `/api/databases/${databaseName}/forms`, {
+    database_name: databaseName,
     name: formName,
     script: formScript
   })) as { id: number };
@@ -192,7 +215,7 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
     runtimeDir,
     "workspace",
     "forms",
-    "workspace",
+    databaseName,
     `${String(form.id).padStart(20, "0")}-${formName}.js`
   );
   expect(readFileSync(formPath, "utf8")).toBe(formScript);
@@ -214,7 +237,7 @@ test("covers form runtime preview and submit through the real backend", async ({
 });
 
 test("covers role members and resource permission grants through the real backend", async ({ page }) => {
-  const user = await setupWorkspace(page);
+  const { user, databaseName, tableName } = await setupWorkspace(page);
 
   await page.getByRole("button", { name: "Permission", exact: true }).click();
   await page.getByRole("textbox", { name: "New role name" }).fill("editor");
@@ -228,7 +251,7 @@ test("covers role members and resource permission grants through the real backen
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved role editor")).toBeVisible();
 
-  const roles = (await api(page, "GET", "/api/databases/workspace/roles")) as Array<{
+  const roles = (await api(page, "GET", `/api/databases/${databaseName}/roles`)) as Array<{
     name: string;
     grants: Array<{ scope: string; resource: string; field: string; level: number }>;
     members: string[];
@@ -237,8 +260,8 @@ test("covers role members and resource permission grants through the real backen
   expect(role?.members).toContain(user.id);
   expect(role?.grants).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ scope: "table", resource: "workspace.contacts", field: "", level: 2 }),
-      expect.objectContaining({ scope: "field", resource: "workspace.contacts", field: "email", level: 1 })
+      expect.objectContaining({ scope: "table", resource: `${databaseName}.${tableName}`, field: "", level: 2 }),
+      expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "email", level: 1 })
     ])
   );
 });
