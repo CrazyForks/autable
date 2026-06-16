@@ -16,6 +16,7 @@ import { WorkspaceNavigation, type WorkspaceView } from "./components/WorkspaceN
 import { renderFormScript, type FormElement } from "./formRuntime";
 import { buildTableColumns, rowRecordToValues } from "./tableGrid";
 import { applyTableView } from "./tableViews";
+import { parseAnyMap, parseStringMap, stringMapToJSON } from "./workflowConfig";
 import {
   createDatabase,
   createRole,
@@ -1126,42 +1127,4 @@ function compactMembers(members: string[]): string[] {
 
 function rowDraftFromRecord(row: Record<string, unknown> | null, fieldNames: string[]): Record<string, string> {
   return Object.fromEntries(fieldNames.map((fieldName) => [fieldName, row?.[fieldName] === undefined ? "" : String(row[fieldName])]));
-}
-
-function stringMapToJSON(values: Record<string, string>): string {
-  const sorted = Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
-  return JSON.stringify(sorted, null, 2);
-}
-
-function parseStringMap(text: string): { ok: true; value: Record<string, string> } | { ok: false; error: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Invalid JSON" };
-  }
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-    return { ok: false, error: "Workflow config must be a JSON object" };
-  }
-  const values: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string") {
-      return { ok: false, error: `Workflow config value for ${key} must be a string` };
-    }
-    values[key] = value;
-  }
-  return { ok: true, value: values };
-}
-
-function parseAnyMap(text: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Invalid JSON" };
-  }
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-    return { ok: false, error: "Workflow inputs must be a JSON object" };
-  }
-  return { ok: true, value: parsed as Record<string, unknown> };
 }
