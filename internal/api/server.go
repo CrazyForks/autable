@@ -41,7 +41,9 @@ type Server struct {
 
 type codeFileStore interface {
 	SaveWorkflowScript(context.Context, systemdb.WorkflowDefinition) error
+	LoadWorkflowScript(context.Context, systemdb.WorkflowDefinition) (string, bool, error)
 	SaveFormScript(context.Context, systemdb.FormDefinition) error
+	LoadFormScript(context.Context, systemdb.FormDefinition) (string, bool, error)
 }
 
 type createDatabaseRequest struct {
@@ -642,6 +644,11 @@ func (server *Server) handleGetDatabaseResource(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		workflows, err = server.workflowDefinitionsWithFileScripts(r.Context(), workflows)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 		filtered, err := server.filterReadableWorkflows(r.Context(), actorID, workflows)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -650,6 +657,11 @@ func (server *Server) handleGetDatabaseResource(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusOK, filtered)
 	case "forms":
 		forms, err := server.system.Forms(r.Context(), dbName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		forms, err = server.formDefinitionsWithFileScripts(r.Context(), forms)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -843,6 +855,11 @@ func (server *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	workflow, err = server.workflowDefinitionWithFileScript(r.Context(), workflow)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, workflow)
 }
 
@@ -867,6 +884,11 @@ func (server *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) 
 	workflowDefinition, err := server.system.Workflow(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	workflowDefinition, err = server.workflowDefinitionWithFileScript(r.Context(), workflowDefinition)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	run, key, err := server.runner.Run(r.Context(), workflow.Definition{
@@ -957,6 +979,11 @@ func (server *Server) handleGetForm(w http.ResponseWriter, r *http.Request) {
 	form, err := server.system.Form(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	form, err = server.formDefinitionWithFileScript(r.Context(), form)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, form)
@@ -1225,6 +1252,64 @@ func (server *Server) saveFormScriptFile(ctx context.Context, form systemdb.Form
 		return nil
 	}
 	return server.codeFiles.SaveFormScript(ctx, form)
+}
+
+func (server *Server) workflowDefinitionsWithFileScripts(ctx context.Context, workflows []systemdb.WorkflowDefinition) ([]systemdb.WorkflowDefinition, error) {
+	if server.codeFiles == nil {
+		return workflows, nil
+	}
+	loaded := make([]systemdb.WorkflowDefinition, 0, len(workflows))
+	for _, workflow := range workflows {
+		updated, err := server.workflowDefinitionWithFileScript(ctx, workflow)
+		if err != nil {
+			return nil, err
+		}
+		loaded = append(loaded, updated)
+	}
+	return loaded, nil
+}
+
+func (server *Server) workflowDefinitionWithFileScript(ctx context.Context, workflow systemdb.WorkflowDefinition) (systemdb.WorkflowDefinition, error) {
+	if server.codeFiles == nil {
+		return workflow, nil
+	}
+	script, ok, err := server.codeFiles.LoadWorkflowScript(ctx, workflow)
+	if err != nil {
+		return systemdb.WorkflowDefinition{}, err
+	}
+	if ok {
+		workflow.Script = script
+	}
+	return workflow, nil
+}
+
+func (server *Server) formDefinitionsWithFileScripts(ctx context.Context, forms []systemdb.FormDefinition) ([]systemdb.FormDefinition, error) {
+	if server.codeFiles == nil {
+		return forms, nil
+	}
+	loaded := make([]systemdb.FormDefinition, 0, len(forms))
+	for _, form := range forms {
+		updated, err := server.formDefinitionWithFileScript(ctx, form)
+		if err != nil {
+			return nil, err
+		}
+		loaded = append(loaded, updated)
+	}
+	return loaded, nil
+}
+
+func (server *Server) formDefinitionWithFileScript(ctx context.Context, form systemdb.FormDefinition) (systemdb.FormDefinition, error) {
+	if server.codeFiles == nil {
+		return form, nil
+	}
+	script, ok, err := server.codeFiles.LoadFormScript(ctx, form)
+	if err != nil {
+		return systemdb.FormDefinition{}, err
+	}
+	if ok {
+		form.Script = script
+	}
+	return form, nil
 }
 
 func (server *Server) grantResourceOwner(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {

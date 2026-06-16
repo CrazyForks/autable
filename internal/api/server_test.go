@@ -882,6 +882,57 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	if string(formScript) != form.Script {
 		t.Fatalf("unexpected form code file: %s", formScript)
 	}
+	fileWorkflowScript := "function run(info) { return { message: info.inputs.name + '-from-file' }; }"
+	if err := os.WriteFile(filepath.Join(codeRoot, "workflows", "db", "00000000000000000001-notify.js"), []byte(fileWorkflowScript), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	getWorkflow = httptest.NewRequest(http.MethodGet, "/api/workflows/1", nil)
+	getWorkflow.AddCookie(testSessionCookie(t, system, "u1"))
+	getWorkflowRecorder = httptest.NewRecorder()
+	server.ServeHTTP(getWorkflowRecorder, getWorkflow)
+	if getWorkflowRecorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow reload 200, got %d: %s", getWorkflowRecorder.Code, getWorkflowRecorder.Body.String())
+	}
+	var reloadedWorkflow systemdb.WorkflowDefinition
+	if err := json.NewDecoder(getWorkflowRecorder.Body).Decode(&reloadedWorkflow); err != nil {
+		t.Fatal(err)
+	}
+	if reloadedWorkflow.Script != fileWorkflowScript {
+		t.Fatalf("expected workflow script from repository file, got %q", reloadedWorkflow.Script)
+	}
+	runWorkflow := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"name":"Ada"}}`))
+	runWorkflow.AddCookie(testSessionCookie(t, system, "u1"))
+	runWorkflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(runWorkflowRecorder, runWorkflow)
+	if runWorkflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected file-backed workflow run 201, got %d: %s", runWorkflowRecorder.Code, runWorkflowRecorder.Body.String())
+	}
+	var run workflowRunResponse
+	if err := json.NewDecoder(runWorkflowRecorder.Body).Decode(&run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Run.Outputs["message"] != "Ada-from-file" {
+		t.Fatalf("expected workflow run to use repository script, got %#v", run.Run.Outputs)
+	}
+
+	fileFormScript := "root.append(api.input({ name: 'from_file' }))"
+	if err := os.WriteFile(filepath.Join(codeRoot, "forms", "db", "00000000000000000001-contact-intake.js"), []byte(fileFormScript), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	getForm := httptest.NewRequest(http.MethodGet, "/api/forms/1", nil)
+	getForm.AddCookie(testSessionCookie(t, system, "u1"))
+	getFormRecorder := httptest.NewRecorder()
+	server.ServeHTTP(getFormRecorder, getForm)
+	if getFormRecorder.Code != http.StatusOK {
+		t.Fatalf("expected form reload 200, got %d: %s", getFormRecorder.Code, getFormRecorder.Body.String())
+	}
+	var reloadedForm systemdb.FormDefinition
+	if err := json.NewDecoder(getFormRecorder.Body).Decode(&reloadedForm); err != nil {
+		t.Fatal(err)
+	}
+	if reloadedForm.Script != fileFormScript {
+		t.Fatalf("expected form script from repository file, got %q", reloadedForm.Script)
+	}
 }
 
 func TestWorkflowRunAPI(t *testing.T) {

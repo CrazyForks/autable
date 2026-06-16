@@ -77,3 +77,36 @@ func TestStoreRemovesOldFileWhenResourceIsRenamed(t *testing.T) {
 		t.Fatalf("unexpected renamed script: %s", newScript)
 	}
 }
+
+func TestStoreLoadsScriptFilesByCurrentPathOrID(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(t.TempDir())
+	workflow := systemdb.WorkflowDefinition{
+		ID:           1,
+		DatabaseName: "workspace",
+		Name:         "notify",
+		Script:       "database copy",
+	}
+	if err := store.SaveWorkflowScript(ctx, workflow); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkflowScriptPath(workflow), []byte("file copy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script, ok, err := store.LoadWorkflowScript(ctx, workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || script != "file copy" {
+		t.Fatalf("expected workflow script from file, got ok=%v script=%q", ok, script)
+	}
+
+	workflow.Name = "renamed-in-db"
+	script, ok, err = store.LoadWorkflowScript(ctx, workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || script != "file copy" {
+		t.Fatalf("expected workflow script fallback by id, got ok=%v script=%q", ok, script)
+	}
+}

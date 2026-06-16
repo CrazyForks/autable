@@ -23,8 +23,16 @@ func (store *Store) SaveWorkflowScript(ctx context.Context, workflow systemdb.Wo
 	return store.writeScript(ctx, "workflows", workflow.DatabaseName, workflow.ID, workflow.Name, workflow.Script)
 }
 
+func (store *Store) LoadWorkflowScript(ctx context.Context, workflow systemdb.WorkflowDefinition) (string, bool, error) {
+	return store.readScript(ctx, "workflows", workflow.DatabaseName, workflow.ID, workflow.Name)
+}
+
 func (store *Store) SaveFormScript(ctx context.Context, form systemdb.FormDefinition) error {
 	return store.writeScript(ctx, "forms", form.DatabaseName, form.ID, form.Name, form.Script)
+}
+
+func (store *Store) LoadFormScript(ctx context.Context, form systemdb.FormDefinition) (string, bool, error) {
+	return store.readScript(ctx, "forms", form.DatabaseName, form.ID, form.Name)
 }
 
 func (store *Store) WorkflowScriptPath(workflow systemdb.WorkflowDefinition) string {
@@ -57,6 +65,38 @@ func (store *Store) writeScript(ctx context.Context, kind, databaseName string, 
 		return err
 	}
 	return os.WriteFile(store.scriptPath(kind, databaseName, id, name), []byte(script), 0o644)
+}
+
+func (store *Store) readScript(ctx context.Context, kind, databaseName string, id int64, name string) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if store.root == "" || databaseName == "" || id == 0 {
+		return "", false, nil
+	}
+
+	path := store.scriptPath(kind, databaseName, id, name)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return string(data), true, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return "", false, err
+	}
+
+	dir := filepath.Join(store.root, kind, safeSegment(databaseName))
+	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("%020d-*.js", id)))
+	if err != nil {
+		return "", false, err
+	}
+	if len(matches) == 0 {
+		return "", false, nil
+	}
+	data, err = os.ReadFile(matches[0])
+	if err != nil {
+		return "", false, err
+	}
+	return string(data), true, nil
 }
 
 func (store *Store) scriptPath(kind, databaseName string, id int64, name string) string {

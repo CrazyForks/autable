@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -162,6 +162,14 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
     `${String(workflow.id).padStart(20, "0")}-${workflowName}.js`
   );
   expect(readFileSync(workflowPath, "utf8")).toBe(workflowScript);
+  const editedWorkflowScript = "function run() { return { source: 'file' }; }";
+  writeFileSync(workflowPath, editedWorkflowScript);
+  const loadedWorkflow = (await api(page, "GET", `/api/workflows/${workflow.id}`)) as { script: string };
+  expect(loadedWorkflow.script).toBe(editedWorkflowScript);
+  const run = (await api(page, "POST", `/api/workflows/${workflow.id}/runs`, { inputs: {} })) as {
+    run: { outputs: { source?: string } };
+  };
+  expect(run.run.outputs.source).toBe("file");
 
   const formName = `repo-form-${suffix}`;
   const formScript = "root.append(api.input({ name: 'email' }))";
@@ -178,6 +186,10 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
     `${String(form.id).padStart(20, "0")}-${formName}.js`
   );
   expect(readFileSync(formPath, "utf8")).toBe(formScript);
+  const editedFormScript = "root.append(api.input({ name: 'from_file' }))";
+  writeFileSync(formPath, editedFormScript);
+  const loadedForm = (await api(page, "GET", `/api/forms/${form.id}`)) as { script: string };
+  expect(loadedForm.script).toBe(editedFormScript);
 });
 
 test("covers form runtime preview and submit through the real backend", async ({ page }) => {
