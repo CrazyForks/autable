@@ -173,6 +173,32 @@ func (repository *Repository) Row(ctx context.Context, dbName, tableName string,
 	return table.Row{RecordID: record.RecordID, Values: record.Values.Plain()}, nil
 }
 
+func (repository *Repository) RestoreRow(ctx context.Context, dbName, tableName string, row table.Row) error {
+	db, err := repository.database(dbName)
+	if err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record Record
+		err := tx.
+			Where(&Record{RecordID: row.RecordID, TableName: tableName}).
+			First(&record).
+			Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&Record{
+				RecordID:  row.RecordID,
+				TableName: tableName,
+				Values:    JSONMap(cloneValues(row.Values)),
+			}).Error
+		}
+		record.Values = JSONMap(cloneValues(row.Values))
+		return tx.Save(&record).Error
+	})
+}
+
 func (repository *Repository) Rows(ctx context.Context, dbName, tableName string) ([]table.Row, error) {
 	db, err := repository.database(dbName)
 	if err != nil {

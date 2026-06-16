@@ -29,6 +29,7 @@ type RowRepository interface {
 	UpdateRow(ctx context.Context, dbName, tableName string, recordID int64, values map[string]any) (Row, error)
 	DeleteRow(ctx context.Context, dbName, tableName string, recordID int64) (Row, error)
 	Row(ctx context.Context, dbName, tableName string, recordID int64) (Row, error)
+	RestoreRow(ctx context.Context, dbName, tableName string, row Row) error
 	Rows(ctx context.Context, dbName, tableName string) ([]Row, error)
 }
 
@@ -98,22 +99,23 @@ func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog,
 	if err != nil {
 		return Row{}, err
 	}
-	nextValues := cloneValues(existing.Values)
-	for key, value := range values {
-		nextValues[key] = value
+	updated, err := service.rows.UpdateRow(ctx, dbName, tableName, recordID, cloneValues(values))
+	if err != nil {
+		return Row{}, err
 	}
 	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
-		RecordID:  recordID,
+		RecordID:  updated.RecordID,
 		Timestamp: time.Now().UTC(),
 		Operation: "update",
-		Values:    cloneValues(nextValues),
+		Values:    cloneValues(updated.Values),
 		ActorID:   actorID,
 	}); err != nil {
+		_ = service.rows.RestoreRow(ctx, dbName, tableName, existing)
 		return Row{}, err
 	}
-	return service.rows.UpdateRow(ctx, dbName, tableName, recordID, cloneValues(values))
+	return updated, nil
 }
 
 func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName string, recordID int64) (Row, error) {
@@ -125,7 +127,7 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("%w: %s", ErrPermissionDenied, resource)
 	}
 
-	row, err := service.rows.Row(ctx, dbName, tableName, recordID)
+	row, err := service.rows.DeleteRow(ctx, dbName, tableName, recordID)
 	if err != nil {
 		return Row{}, err
 	}
@@ -138,9 +140,10 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		Values:    cloneValues(row.Values),
 		ActorID:   actorID,
 	}); err != nil {
+		_ = service.rows.RestoreRow(ctx, dbName, tableName, row)
 		return Row{}, err
 	}
-	return service.rows.DeleteRow(ctx, dbName, tableName, recordID)
+	return row, nil
 }
 
 func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName, viewName string) ([]Row, error) {
@@ -282,6 +285,21 @@ func (repository *MemoryRowRepository) Row(_ context.Context, dbName, tableName 
 		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
 	}
 	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
+}
+
+func (repository *MemoryRowRepository) RestoreRow(_ context.Context, dbName, tableName string, row Row) error {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+
+	resource := dbName + "." + tableName
+	if repository.rows[resource] == nil {
+		repository.rows[resource] = map[int64]Row{}
+	}
+	repository.rows[resource][row.RecordID] = Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}
+	if repository.nextID[resource] < row.RecordID {
+		repository.nextID[resource] = row.RecordID
+	}
+	return nil
 }
 
 func (repository *MemoryRowRepository) Rows(_ context.Context, dbName, tableName string) ([]Row, error) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"codetable/internal/metadata"
+	"codetable/internal/table"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -184,6 +185,49 @@ func TestRepositoryMigratesLegacyGlobalRecordIDSchema(t *testing.T) {
 	}
 	if project.RecordID != 1 {
 		t.Fatalf("expected new table to start at record_id 1 after migration, got %d", project.RecordID)
+	}
+}
+
+func TestRepositoryRestoresRowsWithOriginalRecordID(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "workspace.sqlite")
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: path}}}
+
+	repository, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	row, err := repository.CreateRow(ctx, "workspace", "contacts", map[string]any{"name": "Ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.DeleteRow(ctx, "workspace", "contacts", row.RecordID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.RestoreRow(ctx, "workspace", "contacts", table.Row{
+		RecordID: row.RecordID,
+		Values:   map[string]any{"name": "Ada restored"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := repository.Row(ctx, "workspace", "contacts", row.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.RecordID != row.RecordID || restored.Values["name"] != "Ada restored" {
+		t.Fatalf("unexpected restored row: %#v", restored)
+	}
+	next, err := repository.CreateRow(ctx, "workspace", "contacts", map[string]any{"name": "Grace"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.RecordID != row.RecordID+1 {
+		t.Fatalf("expected record_id to continue after restore, got %d after %d", next.RecordID, row.RecordID)
 	}
 }
 
