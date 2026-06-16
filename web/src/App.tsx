@@ -1,11 +1,27 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   Input,
   Label,
+  AppItemStatic,
+  Nav,
+  NavCategory,
+  NavCategoryItem,
+  NavDivider,
+  NavDrawer,
+  NavDrawerBody,
+  NavDrawerHeader,
+  NavItem,
+  NavSectionHeader,
+  NavSubItem,
+  NavSubItemGroup,
   Select,
-  Tab,
-  TabList,
   Text,
   Textarea,
   Toolbar,
@@ -14,10 +30,17 @@ import {
 } from "@fluentui/react-components";
 import {
   AddRegular,
+  AppsListRegular,
   ArrowClockwiseRegular,
+  DocumentFlowchartRegular,
+  DocumentTableRegular,
   DatabaseRegular,
+  FormRegular,
+  PeopleRegular,
+  PersonRegular,
   PlayRegular,
-  SaveRegular
+  SaveRegular,
+  ShieldRegular
 } from "@fluentui/react-icons";
 import DataEditor, {
   type EditableGridCell,
@@ -29,7 +52,9 @@ import DataEditor, {
 import { demoCatalog, initialForms, initialRows, initialWorkflowNodes, initialWorkflows } from "./demoData";
 import { renderFormScript } from "./formRuntime";
 import {
+  createDatabase,
   createRow,
+  createTable,
   listOIDCProviders,
   listForms,
   listRowHistory,
@@ -49,23 +74,30 @@ import {
   updateRow,
   type AuthUser,
   type Catalog,
+  type DatabaseMetadata,
   type FormDefinition,
   type OIDCProvider,
   type RowChange,
   type RowRecord,
+  type TableMetadata,
   type TableView,
   type WorkflowDefinition,
   type WorkflowNodeInfo,
   type WorkflowRunResponse
 } from "./api";
 
-type View = "table" | "workflow" | "form";
+type View = "table" | "workflow" | "form" | "permission";
+
+const emptyDatabase: DatabaseMetadata = { name: "", sqlite_path: "", tables: [] };
+const emptyTable: TableMetadata = { name: "", display_name: "", fields: [], views: [] };
+const roleItems = ["owner", "editor", "viewer"];
 
 export function App() {
   const [catalog, setCatalog] = useState<Catalog>(demoCatalog);
   const [rows, setRows] = useState(initialRows);
   const [rowsViewName, setRowsViewName] = useState("all");
   const [view, setView] = useState<View>("table");
+  const [selectedDatabaseName, setSelectedDatabaseName] = useState(demoCatalog.databases[0]?.name ?? "");
   const [selectedTable, setSelectedTable] = useState("contacts");
   const [selectedTableView, setSelectedTableView] = useState("all");
   const [workflows, setWorkflows] = useState<WorkflowDefinition[]>(initialWorkflows);
@@ -84,10 +116,14 @@ export function App() {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [workflowSecretsText, setWorkflowSecretsText] = useState("{}");
   const [workflowVariablesText, setWorkflowVariablesText] = useState("{}");
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [newDatabaseName, setNewDatabaseName] = useState("");
+  const [newTableName, setNewTableName] = useState("");
   const [status, setStatus] = useState("Ready");
 
-  const database = catalog.databases[0];
-  const table = database.tables.find((item) => item.name === selectedTable) ?? database.tables[0];
+  const database =
+    catalog.databases.find((item) => item.name === selectedDatabaseName) ?? catalog.databases[0] ?? emptyDatabase;
+  const table = database.tables.find((item) => item.name === selectedTable) ?? database.tables[0] ?? emptyTable;
   const activeFields = table.fields.filter((field) => !field.deleted);
   const selectedWorkflow = workflows.find((item) => item.id === selectedWorkflowID) ?? workflows[0];
   const selectedForm = forms.find((item) => item.id === selectedFormID) ?? forms[0];
@@ -106,6 +142,44 @@ export function App() {
   useEffect(() => {
     setFormValues({});
   }, [selectedForm?.id, selectedForm?.script]);
+
+  useEffect(() => {
+    if (!catalog.databases.some((item) => item.name === selectedDatabaseName)) {
+      setSelectedDatabaseName(catalog.databases[0]?.name ?? "");
+      return;
+    }
+    if (!database.tables.some((item) => item.name === selectedTable)) {
+      setSelectedTable(database.tables[0]?.name ?? "");
+      setSelectedTableView("all");
+    }
+  }, [catalog.databases, database.tables, selectedDatabaseName, selectedTable]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!database.name) {
+      setWorkflows([]);
+      setForms([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    const userID = currentUser ? undefined : "demo-user";
+    void Promise.all([listWorkflows(database.name, userID), listForms(database.name, userID), loadWorkflowNodes()])
+      .then(([nextWorkflows, nextForms, nextWorkflowNodes]) => {
+        if (cancelled) {
+          return;
+        }
+        setWorkflows(nextWorkflows);
+        setForms(nextForms);
+        setWorkflowNodes(nextWorkflowNodes);
+        setSelectedWorkflowID(nextWorkflows[0]?.id ?? 0);
+        setSelectedFormID(nextForms[0]?.id ?? 0);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, database.name]);
 
   useEffect(() => {
     if (displayedRecordIDs.length === 0) {
@@ -144,6 +218,13 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!database.name || !table.name) {
+      setRows([]);
+      setRowsViewName(selectedTableView);
+      return () => {
+        cancelled = true;
+      };
+    }
     const userID = currentUser ? undefined : "demo-user";
     void listRows(database.name, table.name, selectedTableView, userID)
       .then((nextRows) => {
@@ -256,8 +337,11 @@ export function App() {
     try {
       const nextCatalog = await loadMetadata();
       setCatalog(nextCatalog);
-      const dbName = nextCatalog.databases[0]?.name;
+      const dbName = nextCatalog.databases.some((item) => item.name === selectedDatabaseName)
+        ? selectedDatabaseName
+        : nextCatalog.databases[0]?.name;
       if (dbName) {
+        setSelectedDatabaseName(dbName);
         const userID = currentUser ? undefined : "demo-user";
         const [nextWorkflows, nextForms, nextWorkflowNodes] = await Promise.all([
           listWorkflows(dbName, userID),
@@ -276,7 +360,69 @@ export function App() {
     }
   }
 
+  async function createDatabaseFromSidebar() {
+    const name = newDatabaseName.trim();
+    if (!name) {
+      setStatus("Database name is required");
+      return;
+    }
+    try {
+      const userID = currentUser ? undefined : "demo-user";
+      const saved = await createDatabase({ name, sqlite_path: `./data/${name}.sqlite` }, userID);
+      const nextCatalog = await loadMetadata();
+      setCatalog(nextCatalog);
+      setSelectedDatabaseName(saved.name);
+      setSelectedTable(saved.tables[0]?.name ?? "");
+      setSelectedTableView("all");
+      setRows([]);
+      setRowsViewName("all");
+      setNewDatabaseName("");
+      setStatus(`Created database ${saved.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Database creation failed");
+    }
+  }
+
+  async function createTableFromSidebar() {
+    if (!database.name) {
+      setStatus("Select a database before creating a table");
+      return;
+    }
+    const name = newTableName.trim();
+    if (!name) {
+      setStatus("Table name is required");
+      return;
+    }
+    try {
+      const userID = currentUser ? undefined : "demo-user";
+      const saved = await createTable(
+        database.name,
+        {
+          name,
+          display_name: name,
+          fields: [{ name: "name", type: "text", required: true, deleted: false }],
+          views: []
+        },
+        userID
+      );
+      const nextCatalog = await loadMetadata();
+      setCatalog(nextCatalog);
+      setSelectedTable(saved.name);
+      setSelectedTableView("all");
+      setRows([]);
+      setRowsViewName("all");
+      setNewTableName("");
+      setStatus(`Created table ${database.name}.${saved.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Table creation failed");
+    }
+  }
+
   async function addDraftRow() {
+    if (!database.name || !table.name) {
+      setStatus("Create a table before adding rows");
+      return;
+    }
     const values = Object.fromEntries(activeFields.map((field) => [field.name, field.name === "status" ? "Review" : ""]));
     values.name = `New record ${rows.length + 1}`;
     try {
@@ -469,93 +615,241 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <DatabaseRegular />
-          <Text weight="semibold">codetable</Text>
+      <NavDrawer className="primary-sidebar" type="inline" open>
+        <NavDrawerHeader>
+          <AppItemStatic icon={<DatabaseRegular />}>codetable</AppItemStatic>
+        </NavDrawerHeader>
+        <NavDrawerBody>
+        <div className="sidebar-heading">
+          <Text size={200} weight="semibold">Databases</Text>
+          <Button size="small" icon={<AddRegular />} aria-label="Create database" onClick={createDatabaseFromSidebar} />
         </div>
-        <div className="auth-panel">
-          <Label htmlFor="auth-email">Email</Label>
-          <Input
-            id="auth-email"
-            type="email"
-            value={authEmail}
-            onChange={(_, data) => setAuthEmail(data.value)}
-            disabled={currentUser !== null}
-          />
-          <Label htmlFor="auth-password">Password</Label>
-          <Input
-            id="auth-password"
-            type="password"
-            value={authPassword}
-            onChange={(_, data) => setAuthPassword(data.value)}
-            disabled={currentUser !== null}
-          />
-          {currentUser ? (
-            <Button onClick={logoutUser}>{currentUser.email}</Button>
-          ) : (
-            <div className="auth-options">
-              <div className="auth-actions">
-                <Button onClick={loginUser}>Login</Button>
-                <Button appearance="primary" onClick={registerUser}>
-                  Register
-                </Button>
-              </div>
-              {oidcProviders.length > 0 && (
-                <div className="oidc-actions">
-                  {oidcProviders.map((provider) => (
-                    <Button key={provider.name} onClick={() => loginWithOIDC(provider.name)}>
-                      Continue with {provider.name}
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <Label htmlFor="table-select">Table</Label>
-        <Select
-          id="table-select"
-          value={selectedTable}
-          onChange={(_, data) => {
-            setSelectedTable(data.value);
+        <Nav
+          className="database-nav"
+          aria-label="Database list"
+          density="small"
+          selectedValue={`${database.name}:${view}`}
+          selectedCategoryValue={database.name}
+          openCategories={database.name ? [database.name] : []}
+          onNavCategoryItemToggle={(_, data) => {
+            const nextDatabase = catalog.databases.find((item) => item.name === data.value);
+            if (!nextDatabase) {
+              return;
+            }
+            setSelectedDatabaseName(nextDatabase.name);
+            setSelectedTable(nextDatabase.tables[0]?.name ?? "");
             setSelectedTableView("all");
           }}
+          onNavItemSelect={(_, data) => {
+            const [dbName, nextView] = data.value.split(":");
+            const nextDatabase = catalog.databases.find((item) => item.name === dbName);
+            if (!nextDatabase || !isView(nextView)) {
+              return;
+            }
+            setSelectedDatabaseName(dbName);
+            setView(nextView);
+            if (nextView === "table") {
+              setSelectedTable(nextDatabase.tables[0]?.name ?? "");
+              setSelectedTableView("all");
+            }
+          }}
         >
-          {database.tables.map((item) => (
-            <option key={item.name} value={item.name}>
-              {item.display_name || item.name}
-            </option>
+          {catalog.databases.map((item) => (
+            <NavCategory key={item.name} value={item.name}>
+              <NavCategoryItem icon={<DatabaseRegular />}>{item.name}</NavCategoryItem>
+              <NavSubItemGroup>
+                <NavSubItem value={`${item.name}:table`}>
+                  Table
+                </NavSubItem>
+                <NavSubItem value={`${item.name}:workflow`}>
+                  Workflow
+                </NavSubItem>
+                <NavSubItem value={`${item.name}:form`}>
+                  Form
+                </NavSubItem>
+                <NavSubItem value={`${item.name}:permission`}>
+                  Permission
+                </NavSubItem>
+              </NavSubItemGroup>
+            </NavCategory>
           ))}
-        </Select>
-        <Label htmlFor="view-select">View</Label>
-        <Select id="view-select" value={selectedTableView} onChange={(_, data) => setSelectedTableView(data.value)}>
-          <option value="all">All records</option>
-          {(table.views ?? []).map((item) => (
-            <option key={item.name} value={item.name}>
-              {item.display_name || item.name}
-            </option>
-          ))}
-        </Select>
-        <div className="metadata-block">
-          <Text size={200}>{database.name}</Text>
-          <Text size={200}>{database.sqlite_path}</Text>
+        </Nav>
+        <NavDivider />
+        <div className="primary-actions">
+          <Input
+            aria-label="New database name"
+            placeholder="new database"
+            value={newDatabaseName}
+            onChange={(_, data) => setNewDatabaseName(data.value)}
+          />
+          <Button onClick={createDatabaseFromSidebar}>Create DB</Button>
         </div>
-      </aside>
+        <div className="account-slot">
+          {currentUser ? (
+            <Button icon={<PersonRegular />} onClick={logoutUser}>
+              {currentUser.email}
+            </Button>
+          ) : (
+            <Button icon={<PersonRegular />} appearance="primary" onClick={() => setAuthDialogOpen(true)}>
+              Login
+            </Button>
+          )}
+        </div>
+        </NavDrawerBody>
+      </NavDrawer>
+
+      <NavDrawer className="secondary-sidebar" type="inline" open>
+        <NavDrawerHeader>
+        <div className="secondary-title">
+          <Text weight="semibold">
+            {view === "table" && "Tables"}
+            {view === "workflow" && "Workflows"}
+            {view === "form" && "Forms"}
+            {view === "permission" && "Roles"}
+          </Text>
+          <Text size={200}>{database.name || "No database"}</Text>
+        </div>
+        </NavDrawerHeader>
+        <NavDrawerBody>
+        {view === "table" && (
+          <>
+            <Nav
+              className="resource-nav"
+              aria-label="Table list"
+              density="small"
+              selectedValue={table.name}
+              onNavItemSelect={(_, data) => {
+                setSelectedTable(data.value);
+                setSelectedTableView("all");
+              }}
+            >
+              <NavSectionHeader>Tables</NavSectionHeader>
+              {database.tables.map((item) => (
+                <NavItem
+                  key={item.name}
+                  value={item.name}
+                  icon={<DocumentTableRegular />}
+                >
+                  {item.display_name || item.name}
+                </NavItem>
+              ))}
+            </Nav>
+            <div className="create-rowline">
+              <Input
+                aria-label="New table name"
+                placeholder="new table"
+                value={newTableName}
+                onChange={(_, data) => setNewTableName(data.value)}
+                disabled={!database.name}
+              />
+              <Button icon={<AddRegular />} aria-label="Create Table" onClick={createTableFromSidebar} disabled={!database.name} />
+            </div>
+            <div className="side-section">
+              <Text size={200} weight="semibold">Views</Text>
+              <Nav
+                className="resource-nav"
+                aria-label="View list"
+                density="small"
+                selectedValue={selectedTableView}
+                onNavItemSelect={(_, data) => setSelectedTableView(data.value)}
+              >
+                <NavItem value="all" icon={<AppsListRegular />}>
+                  All records
+                </NavItem>
+                {(table.views ?? []).map((item) => (
+                  <NavItem
+                    key={item.name}
+                    value={item.name}
+                    icon={<AppsListRegular />}
+                  >
+                    {item.display_name || item.name}
+                  </NavItem>
+                ))}
+              </Nav>
+            </div>
+          </>
+        )}
+        {view === "workflow" && (
+          <Nav
+            className="resource-nav"
+            aria-label="Workflow list"
+            density="small"
+            selectedValue={selectedWorkflow?.id ? String(selectedWorkflow.id) : ""}
+            onNavItemSelect={(_, data) => setSelectedWorkflowID(Number(data.value))}
+          >
+            <NavSectionHeader>Workflows</NavSectionHeader>
+            {workflows.map((item) => (
+              <NavItem
+                key={item.id ?? item.name}
+                value={String(item.id ?? 0)}
+                icon={<DocumentFlowchartRegular />}
+              >
+                {item.name}
+              </NavItem>
+            ))}
+          </Nav>
+        )}
+        {view === "form" && (
+          <Nav
+            className="resource-nav"
+            aria-label="Form list"
+            density="small"
+            selectedValue={selectedForm?.id ? String(selectedForm.id) : ""}
+            onNavItemSelect={(_, data) => setSelectedFormID(Number(data.value))}
+          >
+            <NavSectionHeader>Forms</NavSectionHeader>
+            {forms.map((item) => (
+              <NavItem
+                key={item.id ?? item.name}
+                value={String(item.id ?? 0)}
+                icon={<FormRegular />}
+              >
+                {item.name}
+              </NavItem>
+            ))}
+          </Nav>
+        )}
+        {view === "permission" && (
+          <Nav
+            className="resource-nav"
+            aria-label="Role list"
+            density="small"
+            selectedValue="owner"
+          >
+            <NavSectionHeader>Roles</NavSectionHeader>
+            {roleItems.map((role) => (
+              <NavItem key={role} value={role} icon={<PeopleRegular />}>
+                {role}
+              </NavItem>
+            ))}
+          </Nav>
+        )}
+        </NavDrawerBody>
+      </NavDrawer>
 
       <main className="workspace">
         <header className="topbar">
-          <TabList selectedValue={view} onTabSelect={(_, data) => setView(data.value as View)}>
-            <Tab value="table">Table</Tab>
-            <Tab value="workflow">Workflow</Tab>
-            <Tab value="form">Form</Tab>
-          </TabList>
+          <div className="workspace-title">
+            <Text weight="semibold">
+              {database.name || "No database"}
+              {view === "table" && table.name ? ` / ${table.display_name || table.name}` : ""}
+              {view === "workflow" && selectedWorkflow ? ` / ${selectedWorkflow.name}` : ""}
+              {view === "form" && selectedForm ? ` / ${selectedForm.name}` : ""}
+              {view === "permission" ? " / permissions" : ""}
+            </Text>
+            <Text size={200}>
+              {view === "table" && `${displayedRows.length} of ${rows.length} records`}
+              {view === "workflow" && `${workflows.length} workflows`}
+              {view === "form" && `${forms.length} forms`}
+              {view === "permission" && `${roleItems.length} roles`}
+            </Text>
+          </div>
           <Toolbar aria-label="Workspace actions">
             <Tooltip content="Refresh metadata" relationship="label">
               <ToolbarButton aria-label="Refresh metadata" icon={<ArrowClockwiseRegular />} onClick={refreshMetadata} />
             </Tooltip>
             <Tooltip content="Create row" relationship="label">
-              <ToolbarButton aria-label="Create row" icon={<AddRegular />} onClick={addDraftRow} />
+              <ToolbarButton aria-label="Create row" icon={<AddRegular />} onClick={addDraftRow} disabled={view !== "table"} />
             </Tooltip>
           </Toolbar>
         </header>
@@ -675,19 +969,6 @@ export function App() {
                 </div>
               </div>
               <div className="history-pane">
-                <Text weight="semibold">Workflows</Text>
-                <div className="resource-list">
-                  {workflows.map((item) => (
-                    <button
-                      key={item.id ?? item.name}
-                      className={item.id === selectedWorkflow?.id ? "resource-item selected" : "resource-item"}
-                      type="button"
-                      onClick={() => setSelectedWorkflowID(item.id ?? 0)}
-                    >
-                      {item.name}
-                    </button>
-                  ))}
-                </div>
                 <Text weight="semibold">Nodes</Text>
                 <div className="node-list">
                   {workflowNodes.map((node) => (
@@ -759,19 +1040,7 @@ export function App() {
                 />
               </div>
               <form className="form-preview" onSubmit={submitRenderedForm}>
-                <Text weight="semibold">Forms</Text>
-                <div className="resource-list">
-                  {forms.map((item) => (
-                    <button
-                      key={item.id ?? item.name}
-                      className={item.id === selectedForm?.id ? "resource-item selected" : "resource-item"}
-                      type="button"
-                      onClick={() => setSelectedFormID(item.id ?? 0)}
-                    >
-                      {item.name}
-                    </button>
-                  ))}
-                </div>
+                <Text weight="semibold">Preview</Text>
                 {renderedForm.error && <Text className="form-error">{renderedForm.error}</Text>}
                 {renderedForm.elements.map((element) => {
                   if (element.kind === "input") {
@@ -814,10 +1083,107 @@ export function App() {
               </form>
             </div>
           )}
+
+          {view === "permission" && (
+            <div className="permission-view">
+              <div className="section-header">
+                <div>
+                  <Text weight="semibold">Permission</Text>
+                  <Text size={200}>{database.name} role access matrix</Text>
+                </div>
+                <Button icon={<PeopleRegular />} disabled>
+                  Add role
+                </Button>
+              </div>
+              <div className="permission-grid">
+                <div className="permission-card">
+                  <Text weight="semibold">Tables</Text>
+                  {database.tables.map((item) => (
+                    <div key={item.name} className="permission-row">
+                      <span>{item.name}</span>
+                      <span>field read/write</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="permission-card">
+                  <Text weight="semibold">Workflows</Text>
+                  {workflows.map((item) => (
+                    <div key={item.id ?? item.name} className="permission-row">
+                      <span>{item.name}</span>
+                      <span>run/edit</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="permission-card">
+                  <Text weight="semibold">Forms</Text>
+                  {forms.map((item) => (
+                    <div key={item.id ?? item.name} className="permission-row">
+                      <span>{item.name}</span>
+                      <span>submit/edit</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         <footer className="statusbar">{status}</footer>
       </main>
+
+      <Dialog open={authDialogOpen} onOpenChange={(_, data) => setAuthDialogOpen(data.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Login</DialogTitle>
+            <DialogContent>
+              <div className="auth-modal">
+                <Label htmlFor="auth-email">Email</Label>
+                <Input
+                  id="auth-email"
+                  type="email"
+                  value={authEmail}
+                  onChange={(_, data) => setAuthEmail(data.value)}
+                />
+                <Label htmlFor="auth-password">Password</Label>
+                <Input
+                  id="auth-password"
+                  type="password"
+                  value={authPassword}
+                  onChange={(_, data) => setAuthPassword(data.value)}
+                />
+                {oidcProviders.length > 0 && (
+                  <div className="oidc-actions">
+                    {oidcProviders.map((provider) => (
+                      <Button key={provider.name} onClick={() => loginWithOIDC(provider.name)}>
+                        Continue with {provider.name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button
+                onClick={async () => {
+                  await loginUser();
+                  setAuthDialogOpen(false);
+                }}
+              >
+                Login
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={async () => {
+                  await registerUser();
+                  setAuthDialogOpen(false);
+                }}
+              >
+                Register
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }
@@ -830,6 +1196,10 @@ function replaceResource<T extends { id?: number }>(items: T[], saved: T): T[] {
     return [...items, saved];
   }
   return items.map((item) => (item.id === saved.id ? saved : item));
+}
+
+function isView(value: string): value is View {
+  return value === "table" || value === "workflow" || value === "form" || value === "permission";
 }
 
 function rowRecordToValues(row: RowRecord): Record<string, unknown> {

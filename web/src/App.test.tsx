@@ -33,9 +33,9 @@ describe("App", () => {
   it("renders table view first", () => {
     renderApp();
     expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Register" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Table" })).toHaveValue("contacts");
-    expect(screen.getByText("3 of 3 records")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Table" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Contacts/ })).toBeInTheDocument();
+    expect(screen.getAllByText("3 of 3 records").length).toBeGreaterThan(0);
   });
 
   it("shows configured OIDC providers as login actions", async () => {
@@ -54,6 +54,7 @@ describe("App", () => {
     });
 
     renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "Login" }));
     expect(await screen.findByRole("button", { name: "Continue with example" })).toBeInTheDocument();
   });
 
@@ -76,7 +77,105 @@ describe("App", () => {
     });
 
     renderApp();
-    await waitFor(() => expect(screen.getByText("1 of 1 records")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("1 of 1 records").length).toBeGreaterThan(0));
+  });
+
+  it("creates a database from the sidebar and selects it", async () => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/auth/me") {
+        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+      }
+      if (url === "/api/auth/oidc/providers") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.startsWith("/api/tables/workspace/contacts/rows")) {
+        return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
+      }
+      if (url === "/api/databases" && init?.method === "POST") {
+        return new Response(JSON.stringify({ name: "sales", sqlite_path: "./data/sales.sqlite", tables: [] }), {
+          status: 201
+        });
+      }
+      if (url === "/api/metadata") {
+        return new Response(
+          JSON.stringify({
+            databases: [
+              {
+                name: "sales",
+                sqlite_path: "./data/sales.sqlite",
+                tables: []
+              }
+            ]
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+    });
+
+    renderApp();
+    await userEvent.type(screen.getByRole("textbox", { name: "New database name" }), "sales");
+    await userEvent.click(screen.getByRole("button", { name: "Create DB" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "sales" })).toHaveAttribute("aria-expanded", "true"));
+    expect(screen.getByText("Created database sales")).toBeInTheDocument();
+  });
+
+  it("creates a table in the selected database", async () => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/auth/me") {
+        return new Response(JSON.stringify({ error: "not authenticated" }), { status: 401 });
+      }
+      if (url === "/api/auth/oidc/providers") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.startsWith("/api/tables/workspace/contacts/rows")) {
+        return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
+      }
+      if (url === "/api/tables/workspace/projects/rows") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url === "/api/databases/workspace/tables" && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            name: "projects",
+            display_name: "projects",
+            fields: [{ name: "name", type: "text", required: true, deleted: false }],
+            views: []
+          }),
+          { status: 201 }
+        );
+      }
+      if (url === "/api/metadata") {
+        return new Response(
+          JSON.stringify({
+            databases: [
+              {
+                name: "workspace",
+                sqlite_path: "./data/workspace.sqlite",
+                tables: [
+                  {
+                    name: "projects",
+                    display_name: "projects",
+                    fields: [{ name: "name", type: "text", required: true, deleted: false }],
+                    views: []
+                  }
+                ]
+              }
+            ]
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: `unhandled ${url}` }), { status: 404 });
+    });
+
+    renderApp();
+    await userEvent.type(screen.getByRole("textbox", { name: "New table name" }), "projects");
+    await userEvent.click(screen.getByRole("button", { name: "Create Table" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /projects/ })).toBeInTheDocument());
+    expect(screen.getByText("Created table workspace.projects")).toBeInTheDocument();
   });
 
   it("loads row history for the selected table record", async () => {
@@ -114,7 +213,7 @@ describe("App", () => {
     });
 
     renderApp();
-    await waitFor(() => expect(screen.getByText("1 of 1 records")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("1 of 1 records").length).toBeGreaterThan(0));
     await userEvent.click(screen.getByRole("button", { name: "History" }));
     expect(await screen.findByText("rhistory_workspace_contacts_00000000000000000042_00000000000000000100")).toBeInTheDocument();
     expect(screen.getByText(/Backend Row/)).toBeInTheDocument();
@@ -122,8 +221,8 @@ describe("App", () => {
 
   it("shows workflow JavaScript as the workflow view", async () => {
     renderApp();
-    await userEvent.click(screen.getByRole("tab", { name: "Workflow" }));
-    expect(screen.getByRole("button", { name: "welcome-contact" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Workflow" }));
+    expect(screen.getByRole("button", { name: /welcome-contact/ })).toBeInTheDocument();
     expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
       'info.node("echo"'
     );
@@ -171,24 +270,24 @@ describe("App", () => {
     });
 
     renderApp();
-    await userEvent.click(screen.getByRole("tab", { name: "Workflow" }));
+    await userEvent.click(screen.getByRole("button", { name: "Workflow" }));
     expect(await screen.findByText("whistory_00000000000000000001_00000000000000000100")).toBeInTheDocument();
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
   });
 
   it("shows form JavaScript and preview controls", async () => {
     renderApp();
-    await userEvent.click(screen.getByRole("tab", { name: "Form" }));
-    expect(screen.getByRole("button", { name: "quick-status" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Form" }));
+    expect(screen.getByRole("button", { name: /quick-status/ })).toBeInTheDocument();
     expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
     await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Margaret Hamilton");
     expect(screen.getByRole("button", { name: "Create record" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create record" }));
-    await userEvent.click(screen.getByRole("tab", { name: "Table" }));
-    await waitFor(() => expect(screen.getByText("4 of 4 records")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "Table" }));
+    await waitFor(() => expect(screen.getAllByText("4 of 4 records").length).toBeGreaterThan(0));
 
-    await userEvent.click(screen.getByRole("tab", { name: "Form" }));
-    await userEvent.click(screen.getByRole("button", { name: "quick-status" }));
+    await userEvent.click(screen.getByRole("button", { name: "Form" }));
+    await userEvent.click(screen.getByRole("button", { name: /quick-status/ }));
     expect(screen.getByRole("button", { name: "Update status" })).toBeInTheDocument();
   });
 });

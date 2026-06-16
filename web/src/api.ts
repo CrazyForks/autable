@@ -134,6 +134,35 @@ export async function loadMetadata(): Promise<Catalog> {
   return response.json() as Promise<Catalog>;
 }
 
+export async function createDatabase(
+  database: Pick<DatabaseMetadata, "name" | "sqlite_path">,
+  userID?: string
+): Promise<DatabaseMetadata> {
+  const response = await fetch("/api/databases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...userHeaders(userID) },
+    body: JSON.stringify(database)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "database creation failed");
+  }
+  return response.json() as Promise<DatabaseMetadata>;
+}
+
+export async function createTable(dbName: string, table: TableMetadata, userID?: string): Promise<TableMetadata> {
+  const response = await fetch(`/api/databases/${dbName}/tables`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...userHeaders(userID) },
+    body: JSON.stringify(table)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "table creation failed");
+  }
+  return response.json() as Promise<TableMetadata>;
+}
+
 export async function createRow(
   dbName: string,
   tableName: string,
