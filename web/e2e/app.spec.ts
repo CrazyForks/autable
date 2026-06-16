@@ -88,6 +88,13 @@ async function setupWorkspace(page: Page) {
   return user;
 }
 
+test("hides databases when the signed-in user has no permission", async ({ page }) => {
+  await registerUser(page);
+
+  await expect(page.getByRole("button", { name: "workspace" })).toHaveCount(0);
+  await expect(page.getByText("No database").first()).toBeVisible();
+});
+
 test("covers login modal and workspace navigation through the real backend", async ({ page }) => {
   await setupWorkspace(page);
 
@@ -115,6 +122,9 @@ test("covers database and table creation through the real backend", async ({ pag
   await page.getByRole("button", { name: "Create Table" }).click();
   await expect(page.getByRole("button", { name: tableName })).toBeVisible();
   await expect(page.getByText(`Created table ${databaseName}.${tableName}`)).toBeVisible();
+
+  await page.getByRole("button", { name: "workspace", exact: true }).click();
+  await expect(page.getByRole("button", { name: "workspace", exact: true })).toHaveAttribute("aria-expanded", "true");
 });
 
 test("covers table views, row creation, and row history through the real backend", async ({ page }) => {

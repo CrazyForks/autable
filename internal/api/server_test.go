@@ -485,6 +485,67 @@ func TestPermissionGrantAPISavesAuthenticatedGrant(t *testing.T) {
 	}
 }
 
+func TestMetadataAPIOnlyReturnsVisibleDatabasesAndTables(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{
+		{
+			Name:       "workspace",
+			SQLitePath: "./data/workspace.sqlite",
+			Tables: []metadata.Table{
+				{Name: "contacts", Fields: []metadata.Field{{Name: "name", Type: "text"}, {Name: "email", Type: "email"}}},
+				{Name: "private_notes", Fields: []metadata.Field{{Name: "body", Type: "text"}}},
+			},
+		},
+		{
+			Name:       "hidden",
+			SQLitePath: "./data/hidden.sqlite",
+			Tables:     []metadata.Table{{Name: "secrets", Fields: []metadata.Field{{Name: "value", Type: "text"}}}},
+		},
+	}}
+	server, system, _ := newTestServerWithMetadataFile(t, catalog)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "reader",
+		Scope:     permission.ScopeField,
+		Resource:  "workspace.contacts",
+		Field:     "email",
+		Level:     permission.Read,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/metadata", nil)
+	request.AddCookie(testSessionCookie(t, system, "reader"))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected metadata 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var visible metadata.Catalog
+	if err := json.NewDecoder(recorder.Body).Decode(&visible); err != nil {
+		t.Fatal(err)
+	}
+	if len(visible.Databases) != 1 || visible.Databases[0].Name != "workspace" {
+		t.Fatalf("expected only visible workspace database, got %#v", visible)
+	}
+	if len(visible.Databases[0].Tables) != 1 || visible.Databases[0].Tables[0].Name != "contacts" {
+		t.Fatalf("expected only visible contacts table, got %#v", visible.Databases[0].Tables)
+	}
+
+	anonymous := httptest.NewRequest(http.MethodGet, "/api/metadata", nil)
+	anonymousRecorder := httptest.NewRecorder()
+	server.ServeHTTP(anonymousRecorder, anonymous)
+	if anonymousRecorder.Code != http.StatusOK {
+		t.Fatalf("expected anonymous metadata 200, got %d: %s", anonymousRecorder.Code, anonymousRecorder.Body.String())
+	}
+	var anonymousCatalog metadata.Catalog
+	if err := json.NewDecoder(anonymousRecorder.Body).Decode(&anonymousCatalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(anonymousCatalog.Databases) != 0 {
+		t.Fatalf("expected anonymous metadata to be empty, got %#v", anonymousCatalog)
+	}
+}
+
 func TestCreateDatabaseAPIWritesMetadataAndGrantsOwner(t *testing.T) {
 	ctx := context.Background()
 	server, system, metadataPath := newTestServerWithMetadataFile(t, metadata.Catalog{})

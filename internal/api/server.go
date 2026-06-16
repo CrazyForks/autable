@@ -386,7 +386,26 @@ func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, server.catalogSnapshot())
+	actorID, ok, err := server.currentUserID(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusOK, metadata.Catalog{Databases: []metadata.Database{}})
+		return
+	}
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	catalog, err := server.visibleCatalog(r.Context(), actorID, perms)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 func (server *Server) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
@@ -1110,6 +1129,69 @@ func (server *Server) catalogSnapshot() metadata.Catalog {
 	server.catalogMu.RLock()
 	defer server.catalogMu.RUnlock()
 	return server.catalog
+}
+
+func (server *Server) visibleCatalog(ctx context.Context, actorID string, perms permission.Set) (metadata.Catalog, error) {
+	catalog := server.catalogSnapshot()
+	visible := metadata.Catalog{Databases: []metadata.Database{}}
+	for _, database := range catalog.Databases {
+		dbVisible := perms.ResourceLevel(actorID, permission.ScopeDatabase, database.Name) >= permission.Read
+		dbWritable := perms.ResourceLevel(actorID, permission.ScopeDatabase, database.Name) >= permission.Write
+		tables := make([]metadata.Table, 0, len(database.Tables))
+		for _, tableMeta := range database.Tables {
+			if dbWritable || canSeeTableMetadata(perms, actorID, database.Name, tableMeta) {
+				tables = append(tables, tableMeta)
+				dbVisible = true
+			}
+		}
+		if !dbVisible {
+			resourceVisible, err := server.hasVisibleDatabaseResource(ctx, actorID, perms, database.Name)
+			if err != nil {
+				return metadata.Catalog{}, err
+			}
+			dbVisible = resourceVisible
+		}
+		if dbVisible {
+			database.Tables = tables
+			visible.Databases = append(visible.Databases, database)
+		}
+	}
+	return visible, nil
+}
+
+func canSeeTableMetadata(perms permission.Set, actorID, dbName string, tableMeta metadata.Table) bool {
+	resource := dbName + "." + tableMeta.Name
+	if perms.ResourceLevel(actorID, permission.ScopeTable, resource) >= permission.Read {
+		return true
+	}
+	for _, field := range tableMeta.ActiveFields() {
+		if perms.FieldLevel(actorID, resource, field.Name) >= permission.Read {
+			return true
+		}
+	}
+	return false
+}
+
+func (server *Server) hasVisibleDatabaseResource(ctx context.Context, actorID string, perms permission.Set, dbName string) (bool, error) {
+	workflows, err := server.system.Workflows(ctx, dbName)
+	if err != nil {
+		return false, err
+	}
+	for _, workflow := range workflows {
+		if perms.CanReadResource(actorID, permission.ScopeWorkflow, resourceID(workflow.ID)) {
+			return true, nil
+		}
+	}
+	forms, err := server.system.Forms(ctx, dbName)
+	if err != nil {
+		return false, err
+	}
+	for _, form := range forms {
+		if perms.CanReadResource(actorID, permission.ScopeForm, resourceID(form.ID)) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (server *Server) createDatabase(ctx context.Context, database metadata.Database) error {

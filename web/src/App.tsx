@@ -333,12 +333,8 @@ export function App() {
   async function refreshMetadata() {
     try {
       const nextCatalog = await loadMetadata();
-      setCatalog(nextCatalog);
-      const dbName = nextCatalog.databases.some((item) => item.name === selectedDatabaseName)
-        ? selectedDatabaseName
-        : nextCatalog.databases[0]?.name;
+      const dbName = applyCatalogSelection(nextCatalog, selectedDatabaseName);
       if (dbName) {
-        setSelectedDatabaseName(dbName);
         const [nextWorkflows, nextForms, nextRoles, nextWorkflowNodes] = await Promise.all([
           listWorkflows(dbName),
           listForms(dbName),
@@ -357,6 +353,26 @@ export function App() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Metadata refresh failed");
     }
+  }
+
+  function applyCatalogSelection(nextCatalog: Catalog, preferredDatabaseName = selectedDatabaseName) {
+    setCatalog(nextCatalog);
+    const dbName = nextCatalog.databases.some((item) => item.name === preferredDatabaseName)
+      ? preferredDatabaseName
+      : nextCatalog.databases[0]?.name ?? "";
+    const nextDatabase = nextCatalog.databases.find((item) => item.name === dbName);
+    setSelectedDatabaseName(dbName);
+    setSelectedTable(nextDatabase?.tables[0]?.name ?? "");
+    setSelectedTableView("all");
+    setRows([]);
+    setRowsViewName("all");
+    setRowHistory([]);
+    return dbName;
+  }
+
+  async function refreshCatalogAfterAuth() {
+    const nextCatalog = await loadMetadata();
+    applyCatalogSelection(nextCatalog);
   }
 
   async function createDatabaseFromSidebar() {
@@ -551,6 +567,7 @@ export function App() {
     try {
       const user = await register(authEmail, authPassword);
       setCurrentUser(user);
+      await refreshCatalogAfterAuth();
       setStatus(`Signed in as ${user.email}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Registration failed");
@@ -561,6 +578,7 @@ export function App() {
     try {
       const user = await login(authEmail, authPassword);
       setCurrentUser(user);
+      await refreshCatalogAfterAuth();
       setStatus(`Signed in as ${user.email}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Login failed");
@@ -571,6 +589,7 @@ export function App() {
     try {
       await logout();
       setCurrentUser(null);
+      applyCatalogSelection(emptyCatalog, "");
       setStatus("Signed out");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Logout failed");

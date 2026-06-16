@@ -121,7 +121,8 @@ export function WorkspaceNavigation({
             selectedCategoryValue={database.name}
             openCategories={database.name ? [database.name] : []}
             onNavCategoryItemToggle={(_, data) => {
-              const nextDatabase = catalog.databases.find((item) => item.name === data.value);
+              const databaseName = data.categoryValue ?? data.value;
+              const nextDatabase = catalog.databases.find((item) => item.name === databaseName);
               if (nextDatabase) {
                 onSelectDatabaseSection(nextDatabase.name, "table");
               }
