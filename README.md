@@ -18,6 +18,7 @@ This repository currently contains the backend core primitives:
 - Hidden, auto-incrementing `record_id` handling.
 - Per-metadata-database SQLite row persistence through GORM.
 - Table views with composable `base_view`, filters, and sorts.
+- Password registration/login with HttpOnly session cookies.
 - Field-level permissions: none, read, write.
 - User identity model with email fallback for password and OIDC accounts.
 - History key generation and prefix scanning for row/workflow history.

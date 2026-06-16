@@ -15,6 +15,8 @@ function renderApp() {
 describe("App", () => {
   it("renders table view first", () => {
     renderApp();
+    expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Register" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Table" })).toHaveValue("contacts");
     expect(screen.getByText("3 of 3 records")).toBeInTheDocument();
   });
@@ -33,6 +35,6 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Form" }));
     expect(screen.getByRole("button", { name: "quick-status" })).toBeInTheDocument();
     expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create record" })).toBeInTheDocument();
   });
 });

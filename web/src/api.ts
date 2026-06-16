@@ -66,6 +66,12 @@ export type FormDefinition = {
   script: string;
 };
 
+export type AuthUser = {
+  id: string;
+  email: string;
+  provider: string;
+};
+
 export async function loadMetadata(): Promise<Catalog> {
   const response = await fetch("/api/metadata");
   if (!response.ok) {
@@ -78,14 +84,17 @@ export async function createRow(
   dbName: string,
   tableName: string,
   values: Record<string, unknown>,
-  userID = "demo-user"
+  userID?: string
 ): Promise<{ record_id: number; values: Record<string, unknown> }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (userID) {
+    headers["X-Codetable-User"] = userID;
+  }
   const response = await fetch(`/api/tables/${dbName}/${tableName}/rows`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Codetable-User": userID
-    },
+    headers,
     body: JSON.stringify({ values })
   });
   if (!response.ok) {
@@ -93,6 +102,39 @@ export async function createRow(
     throw new Error(error.error ?? "row creation failed");
   }
   return response.json() as Promise<{ record_id: number; values: Record<string, unknown> }>;
+}
+
+export async function register(email: string, password: string): Promise<AuthUser> {
+  const response = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "registration failed");
+  }
+  return response.json() as Promise<AuthUser>;
+}
+
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "login failed");
+  }
+  return response.json() as Promise<AuthUser>;
+}
+
+export async function logout(): Promise<void> {
+  const response = await fetch("/api/auth/logout", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`logout failed: ${response.status}`);
+  }
 }
 
 export async function listWorkflows(dbName: string): Promise<WorkflowDefinition[]> {

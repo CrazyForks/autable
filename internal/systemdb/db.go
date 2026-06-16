@@ -51,6 +51,14 @@ type userModel struct {
 	UpdatedAt    time.Time
 }
 
+type sessionModel struct {
+	TokenHash string    `gorm:"primaryKey"`
+	UserID    string    `gorm:"index;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type permissionGrantModel struct {
 	ID        int64            `gorm:"primaryKey;autoIncrement"`
 	SubjectID string           `gorm:"uniqueIndex:idx_permission_target;not null"`
@@ -107,6 +115,7 @@ func (db *DB) Close() error {
 func (db *DB) Migrate(ctx context.Context) error {
 	return db.orm.WithContext(ctx).AutoMigrate(
 		&userModel{},
+		&sessionModel{},
 		&permissionGrantModel{},
 		&workflowModel{},
 		&formModel{},
@@ -154,6 +163,57 @@ func (db *DB) UserByEmail(ctx context.Context, email string) (auth.User, error) 
 		return auth.User{}, err
 	}
 	return modelToUser(model), nil
+}
+
+func (db *DB) User(ctx context.Context, id string) (auth.User, error) {
+	var model userModel
+	if err := db.orm.WithContext(ctx).First(&model, &userModel{ID: id}).Error; err != nil {
+		return auth.User{}, err
+	}
+	return modelToUser(model), nil
+}
+
+func (db *DB) CreateSession(ctx context.Context, userID string, ttl time.Duration) (auth.Session, error) {
+	token, err := auth.NewSessionToken()
+	if err != nil {
+		return auth.Session{}, err
+	}
+	session := auth.Session{
+		Token:     token,
+		UserID:    userID,
+		ExpiresAt: time.Now().UTC().Add(ttl),
+	}
+	model := sessionModel{
+		TokenHash: auth.HashSessionToken(token),
+		UserID:    userID,
+		ExpiresAt: session.ExpiresAt,
+	}
+	if err := db.orm.WithContext(ctx).Create(&model).Error; err != nil {
+		return auth.Session{}, err
+	}
+	return session, nil
+}
+
+func (db *DB) UserBySessionToken(ctx context.Context, token string) (auth.User, auth.Session, error) {
+	var model sessionModel
+	err := db.orm.WithContext(ctx).First(&model, &sessionModel{TokenHash: auth.HashSessionToken(token)}).Error
+	if err != nil {
+		return auth.User{}, auth.Session{}, err
+	}
+	session := auth.Session{Token: token, UserID: model.UserID, ExpiresAt: model.ExpiresAt}
+	if !model.ExpiresAt.After(time.Now().UTC()) {
+		_ = db.DeleteSession(ctx, token)
+		return auth.User{}, session, gorm.ErrRecordNotFound
+	}
+	user, err := db.User(ctx, model.UserID)
+	if err != nil {
+		return auth.User{}, auth.Session{}, err
+	}
+	return user, session, nil
+}
+
+func (db *DB) DeleteSession(ctx context.Context, token string) error {
+	return db.orm.WithContext(ctx).Delete(&sessionModel{TokenHash: auth.HashSessionToken(token)}).Error
 }
 
 func (db *DB) SaveGrant(ctx context.Context, grant permission.Grant) error {

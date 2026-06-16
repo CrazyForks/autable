@@ -32,8 +32,12 @@ import {
   listForms,
   listWorkflows,
   loadMetadata,
+  login,
+  logout,
+  register,
   saveForm,
   saveWorkflow,
+  type AuthUser,
   type Catalog,
   type FormDefinition,
   type TableView,
@@ -52,6 +56,9 @@ export function App() {
   const [forms, setForms] = useState<FormDefinition[]>(initialForms);
   const [selectedWorkflowID, setSelectedWorkflowID] = useState(initialWorkflows[0]?.id ?? 0);
   const [selectedFormID, setSelectedFormID] = useState(initialForms[0]?.id ?? 0);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState("Ready");
 
   const database = catalog.databases[0];
@@ -110,7 +117,7 @@ export function App() {
     const values = Object.fromEntries(activeFields.map((field) => [field.name, field.name === "status" ? "Review" : ""]));
     values.name = `New record ${rows.length + 1}`;
     try {
-      const saved = await createRow(database.name, table.name, values);
+      const saved = await createRow(database.name, table.name, values, currentUser ? undefined : "demo-user");
       setRows((current) => [...current, { record_id: saved.record_id, ...saved.values }]);
       setStatus(`Created record ${saved.record_id}`);
     } catch (error) {
@@ -148,6 +155,36 @@ export function App() {
     }
   }
 
+  async function registerUser() {
+    try {
+      const user = await register(authEmail, authPassword);
+      setCurrentUser(user);
+      setStatus(`Signed in as ${user.email}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Registration failed");
+    }
+  }
+
+  async function loginUser() {
+    try {
+      const user = await login(authEmail, authPassword);
+      setCurrentUser(user);
+      setStatus(`Signed in as ${user.email}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Login failed");
+    }
+  }
+
+  async function logoutUser() {
+    try {
+      await logout();
+      setCurrentUser(null);
+      setStatus("Signed out");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Logout failed");
+    }
+  }
+
   function updateSelectedWorkflowScript(script: string) {
     setWorkflows((current) =>
       current.map((item) => (item.id === selectedWorkflow?.id ? { ...item, script } : item))
@@ -164,6 +201,34 @@ export function App() {
         <div className="brand">
           <DatabaseRegular />
           <Text weight="semibold">codetable</Text>
+        </div>
+        <div className="auth-panel">
+          <Label htmlFor="auth-email">Email</Label>
+          <Input
+            id="auth-email"
+            type="email"
+            value={authEmail}
+            onChange={(_, data) => setAuthEmail(data.value)}
+            disabled={currentUser !== null}
+          />
+          <Label htmlFor="auth-password">Password</Label>
+          <Input
+            id="auth-password"
+            type="password"
+            value={authPassword}
+            onChange={(_, data) => setAuthPassword(data.value)}
+            disabled={currentUser !== null}
+          />
+          {currentUser ? (
+            <Button onClick={logoutUser}>{currentUser.email}</Button>
+          ) : (
+            <div className="auth-actions">
+              <Button onClick={loginUser}>Login</Button>
+              <Button appearance="primary" onClick={registerUser}>
+                Register
+              </Button>
+            </div>
+          )}
         </div>
         <Label htmlFor="table-select">Table</Label>
         <Select id="table-select" value={selectedTable} onChange={(_, data) => setSelectedTable(data.value)}>

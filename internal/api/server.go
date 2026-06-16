@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"codetable/internal/auth"
 	"codetable/internal/history"
 	"codetable/internal/metadata"
 	"codetable/internal/permission"
@@ -32,6 +34,22 @@ type rowResponse struct {
 	Values   map[string]any `json:"values"`
 }
 
+type authRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type userResponse struct {
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	Provider string `json:"provider"`
+}
+
+const (
+	sessionCookieName = "codetable_session"
+	sessionTTL        = 14 * 24 * time.Hour
+)
+
 func NewServer(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store) *Server {
 	server := &Server{
 		catalog: catalog,
@@ -49,6 +67,10 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) routes() {
+	server.mux.HandleFunc("POST /api/auth/register", server.handleRegister)
+	server.mux.HandleFunc("POST /api/auth/login", server.handleLogin)
+	server.mux.HandleFunc("GET /api/auth/me", server.handleMe)
+	server.mux.HandleFunc("POST /api/auth/logout", server.handleLogout)
 	server.mux.HandleFunc("GET /api/metadata", server.handleMetadata)
 	server.mux.HandleFunc("POST /api/permissions/grants", server.handleSaveGrant)
 	server.mux.HandleFunc("POST /api/tables/", server.handleCreateRow)
@@ -59,6 +81,76 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/workflows/", server.handleGetWorkflow)
 	server.mux.HandleFunc("POST /api/forms", server.handleSaveForm)
 	server.mux.HandleFunc("GET /api/forms/", server.handleGetForm)
+}
+
+func (server *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	var request authRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
+		Email:    request.Email,
+		Password: request.Password,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	user, err = server.system.UpsertUserByEmail(r.Context(), user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	session, err := server.system.CreateSession(r.Context(), user.ID, sessionTTL)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	setSessionCookie(w, session)
+	writeJSON(w, http.StatusCreated, toUserResponse(user))
+}
+
+func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var request authRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	user, err := server.system.UserByEmail(r.Context(), request.Email)
+	if err != nil || !user.CheckPassword(request.Password) {
+		writeError(w, http.StatusUnauthorized, errors.New("invalid email or password"))
+		return
+	}
+	session, err := server.system.CreateSession(r.Context(), user.ID, sessionTTL)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	setSessionCookie(w, session)
+	writeJSON(w, http.StatusOK, toUserResponse(user))
+}
+
+func (server *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	user, ok, err := server.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("not authenticated"))
+		return
+	}
+	writeJSON(w, http.StatusOK, toUserResponse(user))
+}
+
+func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err == nil {
+		_ = server.system.DeleteSession(r.Context(), cookie.Value)
+	}
+	clearSessionCookie(w)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (server *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
@@ -84,9 +176,13 @@ func (server *Server) handleCreateRow(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	actorID := r.Header.Get("X-Codetable-User")
-	if actorID == "" {
-		writeError(w, http.StatusUnauthorized, errors.New("X-Codetable-User header is required"))
+	actorID, ok, err := server.currentUserID(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("authentication is required"))
 		return
 	}
 
@@ -121,9 +217,13 @@ func (server *Server) handleGetTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleListRows(w http.ResponseWriter, r *http.Request, dbName, tableName string) {
-	actorID := r.Header.Get("X-Codetable-User")
-	if actorID == "" {
-		writeError(w, http.StatusUnauthorized, errors.New("X-Codetable-User header is required"))
+	actorID, ok, err := server.currentUserID(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("authentication is required"))
 		return
 	}
 	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
@@ -345,6 +445,63 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+func (server *Server) currentUserID(r *http.Request) (string, bool, error) {
+	if userID := r.Header.Get("X-Codetable-User"); userID != "" {
+		return userID, true, nil
+	}
+	user, ok, err := server.currentUser(r)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	return user.ID, true, nil
+}
+
+func (server *Server) currentUser(r *http.Request) (auth.User, bool, error) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		if errors.Is(err, http.ErrNoCookie) {
+			return auth.User{}, false, nil
+		}
+		return auth.User{}, false, err
+	}
+	user, _, err := server.system.UserBySessionToken(r.Context(), cookie.Value)
+	if err != nil {
+		return auth.User{}, false, err
+	}
+	return user, true, nil
+}
+
+func setSessionCookie(w http.ResponseWriter, session auth.Session) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    session.Token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  session.ExpiresAt,
+	})
+}
+
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+	})
+}
+
+func toUserResponse(user auth.User) userResponse {
+	return userResponse{
+		ID:       user.ID,
+		Email:    user.Email,
+		Provider: string(user.Provider),
+	}
 }
 
 func ContextWithUser(ctx context.Context, userID string) context.Context {

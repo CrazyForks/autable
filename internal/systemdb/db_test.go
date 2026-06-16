@@ -2,11 +2,14 @@ package systemdb
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"codetable/internal/auth"
 	"codetable/internal/permission"
+	"gorm.io/gorm"
 )
 
 func TestUserUpsertUsesEmailFallback(t *testing.T) {
@@ -63,6 +66,66 @@ func TestOpenCreatesParentDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestSessionLifecycle(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
+		Email:    "person@example.com",
+		Password: "correct horse",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err = db.UpsertUserByEmail(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := db.CreateSession(ctx, user.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Token == "" {
+		t.Fatal("expected raw session token")
+	}
+	loaded, loadedSession, err := db.UserBySessionToken(ctx, session.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ID != user.ID || loadedSession.UserID != user.ID {
+		t.Fatalf("unexpected session user: %#v %#v", loaded, loadedSession)
+	}
+	if err := db.DeleteSession(ctx, session.Token); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.UserBySessionToken(ctx, session.Token); err == nil {
+		t.Fatal("expected deleted session to be unavailable")
+	}
+}
+
+func TestExpiredSessionIsRejected(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
+		Email:    "person@example.com",
+		Password: "correct horse",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err = db.UpsertUserByEmail(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := db.CreateSession(ctx, user.ID, -time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.UserBySessionToken(ctx, session.Token); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected expired session to be rejected, got %v", err)
+	}
 }
 
 func TestPermissionGrantPersistence(t *testing.T) {

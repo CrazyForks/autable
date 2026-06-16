@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"codetable/internal/history"
@@ -16,6 +17,109 @@ import (
 	"codetable/internal/systemdb"
 	"codetable/internal/table"
 )
+
+func TestPasswordAuthSessionLifecycle(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	register := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(`{
+		"email":"Person@Example.com",
+		"password":"correct horse"
+	}`))
+	registerRecorder := httptest.NewRecorder()
+	server.ServeHTTP(registerRecorder, register)
+	if registerRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected register 201, got %d: %s", registerRecorder.Code, registerRecorder.Body.String())
+	}
+	cookie := sessionCookie(t, registerRecorder)
+	if !cookie.HttpOnly || cookie.Value == "" {
+		t.Fatalf("expected HttpOnly session cookie, got %#v", cookie)
+	}
+	var registered userResponse
+	if err := json.NewDecoder(registerRecorder.Body).Decode(&registered); err != nil {
+		t.Fatal(err)
+	}
+	if registered.Email != "person@example.com" || registered.Provider != "password" {
+		t.Fatalf("unexpected registered user: %#v", registered)
+	}
+
+	me := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	me.AddCookie(cookie)
+	meRecorder := httptest.NewRecorder()
+	server.ServeHTTP(meRecorder, me)
+	if meRecorder.Code != http.StatusOK {
+		t.Fatalf("expected me 200, got %d: %s", meRecorder.Code, meRecorder.Body.String())
+	}
+
+	logout := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logout.AddCookie(cookie)
+	logoutRecorder := httptest.NewRecorder()
+	server.ServeHTTP(logoutRecorder, logout)
+	if logoutRecorder.Code != http.StatusOK {
+		t.Fatalf("expected logout 200, got %d: %s", logoutRecorder.Code, logoutRecorder.Body.String())
+	}
+
+	afterLogout := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	afterLogout.AddCookie(cookie)
+	afterLogoutRecorder := httptest.NewRecorder()
+	server.ServeHTTP(afterLogoutRecorder, afterLogout)
+	if afterLogoutRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected me 401 after logout, got %d: %s", afterLogoutRecorder.Code, afterLogoutRecorder.Body.String())
+	}
+}
+
+func TestLoginRejectsInvalidPassword(t *testing.T) {
+	server, _ := newTestServer(t)
+	register := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(`{
+		"email":"person@example.com",
+		"password":"correct horse"
+	}`))
+	server.ServeHTTP(httptest.NewRecorder(), register)
+
+	login := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{
+		"email":"person@example.com",
+		"password":"wrong horse"
+	}`))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, login)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected login 401, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCreateRowAPIUsesSessionUser(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	register := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(`{
+		"email":"person@example.com",
+		"password":"correct horse"
+	}`))
+	registerRecorder := httptest.NewRecorder()
+	server.ServeHTTP(registerRecorder, register)
+	if registerRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected register 201, got %d: %s", registerRecorder.Code, registerRecorder.Body.String())
+	}
+	cookie := sessionCookie(t, registerRecorder)
+	var user userResponse
+	if err := json.NewDecoder(registerRecorder.Body).Decode(&user); err != nil {
+		t.Fatal(err)
+	}
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: user.ID,
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{"values":{"name":"Ada"}}`))
+	request.AddCookie(cookie)
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
 
 func TestCreateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	ctx := context.Background()
@@ -290,4 +394,15 @@ func testCatalog(sqlitePath string) metadata.Catalog {
 			},
 		}},
 	}}}
+}
+
+func sessionCookie(t *testing.T, recorder *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, cookie := range recorder.Result().Cookies() {
+		if cookie.Name == sessionCookieName {
+			return cookie
+		}
+	}
+	t.Fatalf("missing session cookie in Set-Cookie headers: %s", strings.Join(recorder.Result().Header.Values("Set-Cookie"), ", "))
+	return nil
 }

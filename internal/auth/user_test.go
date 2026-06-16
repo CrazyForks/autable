@@ -43,3 +43,20 @@ func TestOIDCUserUsesEmailFallback(t *testing.T) {
 		t.Fatal("expected users to match by normalized email fallback")
 	}
 }
+
+func TestSessionTokenHashIsStableAndDoesNotExposeToken(t *testing.T) {
+	token, err := NewSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token == "" {
+		t.Fatal("expected token")
+	}
+	hash := HashSessionToken(token)
+	if hash == token {
+		t.Fatal("hash should not equal raw token")
+	}
+	if HashSessionToken(token) != hash {
+		t.Fatal("expected stable hash")
+	}
+}
