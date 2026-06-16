@@ -80,6 +80,30 @@ func (repository *Repository) CreateRow(ctx context.Context, dbName, tableName s
 	return table.Row{RecordID: record.RecordID, Values: record.Values.Plain()}, nil
 }
 
+func (repository *Repository) UpdateRow(ctx context.Context, dbName, tableName string, recordID int64, values map[string]any) (table.Row, error) {
+	db, err := repository.database(dbName)
+	if err != nil {
+		return table.Row{}, err
+	}
+	var record Record
+	err = db.WithContext(ctx).
+		Where(&Record{RecordID: recordID, TableName: tableName}).
+		First(&record).
+		Error
+	if err != nil {
+		return table.Row{}, err
+	}
+	nextValues := record.Values.Plain()
+	for key, value := range values {
+		nextValues[key] = value
+	}
+	record.Values = JSONMap(nextValues)
+	if err := db.WithContext(ctx).Save(&record).Error; err != nil {
+		return table.Row{}, err
+	}
+	return table.Row{RecordID: record.RecordID, Values: record.Values.Plain()}, nil
+}
+
 func (repository *Repository) Row(ctx context.Context, dbName, tableName string, recordID int64) (table.Row, error) {
 	db, err := repository.database(dbName)
 	if err != nil {

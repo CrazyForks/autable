@@ -168,6 +168,62 @@ func TestCreateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	}
 }
 
+func TestUpdateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{
+		"values":{"name":"Ada","email":"ada@example.com"}
+	}`))
+	createRequest.Header.Set("X-Codetable-User", "u1")
+	createRecorder := httptest.NewRecorder()
+	server.ServeHTTP(createRecorder, createRequest)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected create 201, got %d: %s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	updateRequest := httptest.NewRequest(http.MethodPatch, "/api/tables/db/contacts/rows/1", bytes.NewBufferString(`{
+		"values":{"email":"ada@codetable.test"}
+	}`))
+	updateRequest.Header.Set("X-Codetable-User", "u1")
+	updateRecorder := httptest.NewRecorder()
+	server.ServeHTTP(updateRecorder, updateRequest)
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected update 200, got %d: %s", updateRecorder.Code, updateRecorder.Body.String())
+	}
+	var updated rowResponse
+	if err := json.NewDecoder(updateRecorder.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Values["name"] != "Ada" || updated.Values["email"] != "ada@codetable.test" {
+		t.Fatalf("unexpected updated row: %#v", updated)
+	}
+
+	historyRequest := httptest.NewRequest(http.MethodGet, "/api/tables/db/contacts/rows/1/history", nil)
+	historyRecorder := httptest.NewRecorder()
+	server.ServeHTTP(historyRecorder, historyRequest)
+	if historyRecorder.Code != http.StatusOK {
+		t.Fatalf("expected history 200, got %d: %s", historyRecorder.Code, historyRecorder.Body.String())
+	}
+	var changes []history.RowChange
+	if err := json.NewDecoder(historyRecorder.Body).Decode(&changes); err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 2 {
+		t.Fatalf("expected create and update history entries, got %#v", changes)
+	}
+	if changes[1].Values["email"] != "ada@codetable.test" || changes[1].Values["name"] != "Ada" {
+		t.Fatalf("unexpected update history: %#v", changes[1])
+	}
+}
+
 func TestListRowsAPIAppliesView(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)

@@ -17,6 +17,7 @@ This repository currently contains the backend core primitives:
 - YAML metadata for databases and tables, including soft-deleted fields.
 - Hidden, auto-incrementing `record_id` handling.
 - Per-metadata-database SQLite row persistence through GORM.
+- Row create/update history written to LevelDB-compatible storage.
 - Table views with composable `base_view`, filters, and sorts.
 - Password registration/login with HttpOnly session cookies.
 - Field-level permissions: none, read, write.

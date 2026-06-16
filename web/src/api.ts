@@ -104,6 +104,31 @@ export async function createRow(
   return response.json() as Promise<{ record_id: number; values: Record<string, unknown> }>;
 }
 
+export async function updateRow(
+  dbName: string,
+  tableName: string,
+  recordID: number,
+  values: Record<string, unknown>,
+  userID?: string
+): Promise<{ record_id: number; values: Record<string, unknown> }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (userID) {
+    headers["X-Codetable-User"] = userID;
+  }
+  const response = await fetch(`/api/tables/${dbName}/${tableName}/rows/${recordID}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ values })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "row update failed");
+  }
+  return response.json() as Promise<{ record_id: number; values: Record<string, unknown> }>;
+}
+
 export async function register(email: string, password: string): Promise<AuthUser> {
   const response = await fetch("/api/auth/register", {
     method: "POST",

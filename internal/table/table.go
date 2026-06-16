@@ -26,6 +26,7 @@ type Row struct {
 
 type RowRepository interface {
 	CreateRow(ctx context.Context, dbName, tableName string, values map[string]any) (Row, error)
+	UpdateRow(ctx context.Context, dbName, tableName string, recordID int64, values map[string]any) (Row, error)
 	Rows(ctx context.Context, dbName, tableName string) ([]Row, error)
 }
 
@@ -51,17 +52,8 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	resource := dbName + "." + tableName
-	for fieldName := range values {
-		field, ok := tableMeta.Field(fieldName)
-		if !ok {
-			return Row{}, fmt.Errorf("%w: %s", metadata.ErrUnknownField, fieldName)
-		}
-		if field.Deleted {
-			return Row{}, fmt.Errorf("%w: %s", ErrDeletedField, fieldName)
-		}
-		if !perms.CanWriteField(actorID, resource, fieldName) {
-			return Row{}, fmt.Errorf("%w: %s", ErrPermissionDenied, fieldName)
-		}
+	if err := validateWritableFields(tableMeta, perms, actorID, resource, values); err != nil {
+		return Row{}, err
 	}
 	for _, field := range tableMeta.ActiveFields() {
 		if field.Required {
@@ -72,6 +64,34 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 	}
 
 	row, err := service.rows.CreateRow(ctx, dbName, tableName, cloneValues(values))
+	if err != nil {
+		return Row{}, err
+	}
+	_, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+		Database:  dbName,
+		Table:     tableName,
+		RecordID:  row.RecordID,
+		Timestamp: time.Now().UTC(),
+		Values:    cloneValues(row.Values),
+		ActorID:   actorID,
+	})
+	if err != nil {
+		return Row{}, err
+	}
+	return row, nil
+}
+
+func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName string, recordID int64, values map[string]any) (Row, error) {
+	tableMeta, ok := catalog.Table(dbName, tableName)
+	if !ok {
+		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
+	}
+	resource := dbName + "." + tableName
+	if err := validateWritableFields(tableMeta, perms, actorID, resource, values); err != nil {
+		return Row{}, err
+	}
+
+	row, err := service.rows.UpdateRow(ctx, dbName, tableName, recordID, cloneValues(values))
 	if err != nil {
 		return Row{}, err
 	}
@@ -122,6 +142,25 @@ func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perm
 	return filtered, nil
 }
 
+func validateWritableFields(tableMeta metadata.Table, perms permission.Set, actorID, resource string, values map[string]any) error {
+	for fieldName := range values {
+		field, ok := tableMeta.Field(fieldName)
+		if !ok {
+			return fmt.Errorf("%w: %s", metadata.ErrUnknownField, fieldName)
+		}
+		if field.Name == "record_id" {
+			return fmt.Errorf("%w: %s", ErrPermissionDenied, fieldName)
+		}
+		if field.Deleted {
+			return fmt.Errorf("%w: %s", ErrDeletedField, fieldName)
+		}
+		if !perms.CanWriteField(actorID, resource, fieldName) {
+			return fmt.Errorf("%w: %s", ErrPermissionDenied, fieldName)
+		}
+	}
+	return nil
+}
+
 type MemoryRowRepository struct {
 	mu     sync.Mutex
 	nextID map[string]int64
@@ -148,6 +187,24 @@ func (repository *MemoryRowRepository) CreateRow(_ context.Context, dbName, tabl
 	}
 	repository.rows[resource][recordID] = row
 	return row, nil
+}
+
+func (repository *MemoryRowRepository) UpdateRow(_ context.Context, dbName, tableName string, recordID int64, values map[string]any) (Row, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+
+	resource := dbName + "." + tableName
+	row, ok := repository.rows[resource][recordID]
+	if !ok {
+		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
+	}
+	nextValues := cloneValues(row.Values)
+	for key, value := range values {
+		nextValues[key] = value
+	}
+	row.Values = nextValues
+	repository.rows[resource][recordID] = row
+	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
 }
 
 func (repository *MemoryRowRepository) Rows(_ context.Context, dbName, tableName string) ([]Row, error) {

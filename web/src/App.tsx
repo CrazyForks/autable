@@ -20,6 +20,7 @@ import {
   SaveRegular
 } from "@fluentui/react-icons";
 import DataEditor, {
+  type EditableGridCell,
   type GridCell,
   GridCellKind,
   type GridColumn,
@@ -37,6 +38,7 @@ import {
   register,
   saveForm,
   saveWorkflow,
+  updateRow,
   type AuthUser,
   type Catalog,
   type FormDefinition,
@@ -94,6 +96,37 @@ export function App() {
       data: String(value)
     };
   };
+
+  async function editCell([columnIndex, rowIndex]: Item, newValue: EditableGridCell) {
+    const column = columns[columnIndex];
+    const field = String(column.id);
+    const row = displayedRows[rowIndex];
+    if (!row || field === "record_id" || newValue.kind !== GridCellKind.Text) {
+      return;
+    }
+    const recordID = Number(row.record_id);
+    const nextValue = newValue.data;
+    setRows((current) =>
+      current.map((item) => (Number(item.record_id) === recordID ? { ...item, [field]: nextValue } : item))
+    );
+    try {
+      const saved = await updateRow(
+        database.name,
+        table.name,
+        recordID,
+        { [field]: nextValue },
+        currentUser ? undefined : "demo-user"
+      );
+      setRows((current) =>
+        current.map((item) =>
+          Number(item.record_id) === saved.record_id ? { record_id: saved.record_id, ...saved.values } : item
+        )
+      );
+      setStatus(`Updated record ${saved.record_id}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? `Local edit: ${error.message}` : "Local edit saved");
+    }
+  }
 
   async function refreshMetadata() {
     try {
@@ -287,6 +320,7 @@ export function App() {
               <div className="grid-host">
                 <DataEditor
                   getCellContent={getCellContent}
+                  onCellEdited={editCell}
                   columns={columns}
                   rows={displayedRows.length}
                   rowMarkers="number"

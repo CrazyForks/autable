@@ -83,3 +83,50 @@ func TestRepositoryPersistsRowsAcrossReopen(t *testing.T) {
 		t.Fatalf("unexpected persisted row: %#v", loaded)
 	}
 }
+
+func TestRepositoryUpdateRowMergesValuesAcrossReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "workspace.sqlite")
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: path}}}
+
+	repository, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := repository.CreateRow(ctx, "workspace", "contacts", map[string]any{
+		"name":  "Ada",
+		"email": "ada@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := repository.UpdateRow(ctx, "workspace", "contacts", row.RecordID, map[string]any{
+		"email": "ada@codetable.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Values["name"] != "Ada" || updated.Values["email"] != "ada@codetable.test" {
+		t.Fatalf("unexpected merged row: %#v", updated)
+	}
+	if err := repository.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	loaded, err := reopened.Row(ctx, "workspace", "contacts", row.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Values["name"] != "Ada" || loaded.Values["email"] != "ada@codetable.test" {
+		t.Fatalf("unexpected persisted update: %#v", loaded)
+	}
+}

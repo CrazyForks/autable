@@ -110,6 +110,98 @@ func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 	}
 }
 
+func TestUpdateRowMergesValuesAndWritesHistory(t *testing.T) {
+	ctx := context.Background()
+	store := history.NewMemoryStore()
+	service := NewService(store)
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "db",
+		SQLitePath: "./db.sqlite",
+		Tables: []metadata.Table{{
+			Name: "contacts",
+			Fields: []metadata.Field{
+				{Name: "name", Type: "text"},
+				{Name: "email", Type: "email"},
+			},
+		}},
+	}}}
+	perms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	})
+
+	row, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{
+		"name":  "Ada",
+		"email": "ada@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.UpdateRow(ctx, catalog, perms, "u1", "db", "contacts", row.RecordID, map[string]any{
+		"email": "ada@codetable.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Values["name"] != "Ada" || updated.Values["email"] != "ada@codetable.test" {
+		t.Fatalf("expected merged values, got %#v", updated.Values)
+	}
+	entries, err := store.GetPrefix(ctx, history.RowPrefix("db", "contacts", row.RecordID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected create and update history entries, got %d", len(entries))
+	}
+	change, err := history.DecodeRowChange(entries[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if change.Values["email"] != "ada@codetable.test" || change.Values["name"] != "Ada" {
+		t.Fatalf("unexpected update history: %#v", change)
+	}
+}
+
+func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(history.NewMemoryStore())
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "db",
+		SQLitePath: "./db.sqlite",
+		Tables: []metadata.Table{{
+			Name:   "contacts",
+			Fields: []metadata.Field{{Name: "name", Type: "text"}},
+		}},
+	}}}
+	writePerms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	})
+	readPerms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Read,
+	})
+	row, err := service.CreateRow(ctx, catalog, writePerms, "u1", "db", "contacts", map[string]any{"name": "Ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.UpdateRow(ctx, catalog, writePerms, "u1", "db", "contacts", row.RecordID, map[string]any{"record_id": 99})
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("expected record_id permission error, got %v", err)
+	}
+	_, err = service.UpdateRow(ctx, catalog, readPerms, "u1", "db", "contacts", row.RecordID, map[string]any{"name": "Grace"})
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("expected read-only permission error, got %v", err)
+	}
+}
+
 func TestCreateRowUsesInjectedRepository(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()

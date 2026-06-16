@@ -74,6 +74,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/metadata", server.handleMetadata)
 	server.mux.HandleFunc("POST /api/permissions/grants", server.handleSaveGrant)
 	server.mux.HandleFunc("POST /api/tables/", server.handleCreateRow)
+	server.mux.HandleFunc("PATCH /api/tables/", server.handleUpdateRow)
 	server.mux.HandleFunc("GET /api/tables/", server.handleGetTable)
 	server.mux.HandleFunc("GET /api/databases/", server.handleGetDatabaseResource)
 	server.mux.HandleFunc("POST /api/databases/", server.handlePostDatabaseResource)
@@ -206,6 +207,44 @@ func (server *Server) handleCreateRow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, rowResponse{RecordID: row.RecordID, Values: row.Values})
+}
+
+func (server *Server) handleUpdateRow(w http.ResponseWriter, r *http.Request) {
+	dbName, tableName, recordID, ok := parseTableRowPath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	actorID, ok, err := server.currentUserID(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("authentication is required"))
+		return
+	}
+
+	var request createRowRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	perms, err := server.system.GrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	row, err := server.tables.UpdateRow(r.Context(), server.catalog, perms, actorID, dbName, tableName, recordID, request.Values)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, table.ErrPermissionDenied) {
+			status = http.StatusForbidden
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rowResponse{RecordID: row.RecordID, Values: row.Values})
 }
 
 func (server *Server) handleGetTable(w http.ResponseWriter, r *http.Request) {
@@ -401,6 +440,18 @@ func parseTableRowsPath(path string) (string, string, bool) {
 func parseRowHistoryPath(path string) (string, string, int64, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 7 || parts[0] != "api" || parts[1] != "tables" || parts[4] != "rows" || parts[6] != "history" {
+		return "", "", 0, false
+	}
+	recordID, err := strconv.ParseInt(parts[5], 10, 64)
+	if err != nil {
+		return "", "", 0, false
+	}
+	return parts[2], parts[3], recordID, true
+}
+
+func parseTableRowPath(path string) (string, string, int64, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 6 || parts[0] != "api" || parts[1] != "tables" || parts[4] != "rows" {
 		return "", "", 0, false
 	}
 	recordID, err := strconv.ParseInt(parts[5], 10, 64)
