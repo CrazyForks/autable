@@ -911,7 +911,7 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 	workspaceForm, err := system.SaveForm(ctx, systemdb.FormDefinition{
 		DatabaseName: "workspace",
 		Name:         "workspace-form",
-		Script:       "root.append()",
+		Script:       "function render(api, root) { root.append(api.input({ name: 'name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -919,7 +919,7 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 	otherForm, err := system.SaveForm(ctx, systemdb.FormDefinition{
 		DatabaseName: "other",
 		Name:         "other-form",
-		Script:       "root.append()",
+		Script:       "function render(api, root) { root.append(api.input({ name: 'name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1293,7 +1293,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 
 	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"contact-intake",
-		"script":"root.append(api.input({ name: 'email' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }"
 	}`))
 	formRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	formRecorder := httptest.NewRecorder()
@@ -1373,7 +1373,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 		t.Fatalf("expected workflow run to use repository script, got %#v", run.Run.Outputs)
 	}
 
-	fileFormScript := "root.append(api.input({ name: 'from_file' }))"
+	fileFormScript := "function render(api, root) { root.append(api.input({ name: 'from_file' }), api.submit('Save')); return { table: 'contacts', fields: { from_file: 'name' } }; }"
 	if err := os.WriteFile(filepath.Join(codeRoot, "forms", "db", "00000000000000000001-contact-intake.js"), []byte(fileFormScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1437,7 +1437,7 @@ func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
 	}
 	dbOwnerForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"allowed-by-db",
-		"script":"root.append(api.input({ name: 'email' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }"
 	}`))
 	dbOwnerForm.AddCookie(testSessionCookie(t, system, "db-owner"))
 	dbOwnerFormRecorder := httptest.NewRecorder()
@@ -1484,7 +1484,7 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 
 	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"owned-by-table",
-		"script":"root.append()"
+		"script":"function render(api, root) { root.append(api.input({ name: 'name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }"
 	}`))
 	formRequest.AddCookie(testSessionCookie(t, system, "table-owner"))
 	formRecorder := httptest.NewRecorder()
@@ -1558,7 +1558,7 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 	updateForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"id":1,
 		"name":"owned-by-table",
-		"script":"root.append(api.submit('Save'))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }"
 	}`))
 	updateForm.AddCookie(testSessionCookie(t, system, "db-owner"))
 	updateFormRecorder := httptest.NewRecorder()
@@ -1601,7 +1601,7 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 
 	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"intake",
-		"script":"root.append(api.input({ name: 'email' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }"
 	}`))
 	formRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	formRecorder := httptest.NewRecorder()
@@ -1642,7 +1642,7 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 	moveFormByPath := httptest.NewRequest(http.MethodPost, "/api/databases/other/forms", bytes.NewBufferString(`{
 		"id":1,
 		"name":"intake",
-		"script":"root.append(api.input({ name: 'moved' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'moved' }), api.submit('Save')); return { table: 'contacts', fields: { moved: 'name' } }; }"
 	}`))
 	moveFormByPath.AddCookie(testSessionCookie(t, system, "u1"))
 	moveFormByPathRecorder := httptest.NewRecorder()
@@ -1655,7 +1655,7 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 		"id":1,
 		"database_name":"other",
 		"name":"intake",
-		"script":"root.append(api.input({ name: 'moved' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'moved' }), api.submit('Save')); return { table: 'contacts', fields: { moved: 'name' } }; }"
 	}`))
 	moveFormByBody.AddCookie(testSessionCookie(t, system, "u1"))
 	moveFormByBodyRecorder := httptest.NewRecorder()
@@ -1845,7 +1845,7 @@ func TestWorkflowAndFormPermissions(t *testing.T) {
 
 	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"restricted-form",
-		"script":"root.append(api.input({ name: 'email' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }"
 	}`))
 	formRequest.AddCookie(testSessionCookie(t, system, "owner"))
 	formRecorder := httptest.NewRecorder()
@@ -1955,13 +1955,115 @@ func TestWorkflowAndFormPermissions(t *testing.T) {
 	updateForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"id":1,
 		"name":"restricted-form",
-		"script":"root.append(api.input({ name: 'other' }))"
+		"script":"function render(api, root) { root.append(api.input({ name: 'other' }), api.submit('Save')); return { table: 'contacts', fields: { other: 'name' } }; }"
 	}`))
 	updateForm.AddCookie(testSessionCookie(t, system, "other"))
 	updateFormRecorder := httptest.NewRecorder()
 	server.ServeHTTP(updateFormRecorder, updateForm)
 	if updateFormRecorder.Code != http.StatusForbidden {
 		t.Fatalf("expected read-only form update 403, got %d: %s", updateFormRecorder.Code, updateFormRecorder.Body.String())
+	}
+}
+
+func TestPublishedFormRequiresExplicitFormPermission(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
+		"name":"published-intake",
+		"script":"function render(api, root) { root.append(api.input({ name: 'person_name' }), api.submit('Submit')); return { table: 'contacts', fields: { person_name: 'name', person_email: 'email' } }; }"
+	}`))
+	formRequest.AddCookie(testSessionCookie(t, system, "owner"))
+	formRecorder := httptest.NewRecorder()
+	server.ServeHTTP(formRecorder, formRequest)
+	if formRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected form 201, got %d: %s", formRecorder.Code, formRecorder.Body.String())
+	}
+
+	publishRequest := httptest.NewRequest(http.MethodPost, "/api/forms/1/publish", nil)
+	publishRequest.AddCookie(testSessionCookie(t, system, "owner"))
+	publishRecorder := httptest.NewRecorder()
+	server.ServeHTTP(publishRecorder, publishRequest)
+	if publishRecorder.Code != http.StatusOK {
+		t.Fatalf("expected publish 200, got %d: %s", publishRecorder.Code, publishRecorder.Body.String())
+	}
+	var published systemdb.FormDefinition
+	if err := json.NewDecoder(publishRecorder.Body).Decode(&published); err != nil {
+		t.Fatal(err)
+	}
+	if published.PublishedToken == "" {
+		t.Fatalf("expected published token, got %#v", published)
+	}
+
+	anonymousRead := httptest.NewRequest(http.MethodGet, "/api/published/forms/"+published.PublishedToken, nil)
+	anonymousRecorder := httptest.NewRecorder()
+	server.ServeHTTP(anonymousRecorder, anonymousRead)
+	if anonymousRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected anonymous published form 401, got %d: %s", anonymousRecorder.Code, anonymousRecorder.Body.String())
+	}
+
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "db-owner",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dbOwnerRead := httptest.NewRequest(http.MethodGet, "/api/published/forms/"+published.PublishedToken, nil)
+	dbOwnerRead.AddCookie(testSessionCookie(t, system, "db-owner"))
+	dbOwnerRecorder := httptest.NewRecorder()
+	server.ServeHTTP(dbOwnerRecorder, dbOwnerRead)
+	if dbOwnerRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected db owner without form grant 403, got %d: %s", dbOwnerRecorder.Code, dbOwnerRecorder.Body.String())
+	}
+
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "reader",
+		Scope:     permission.ScopeForm,
+		Resource:  "1",
+		Level:     permission.Read,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	readerRead := httptest.NewRequest(http.MethodGet, "/api/published/forms/"+published.PublishedToken, nil)
+	readerRead.AddCookie(testSessionCookie(t, system, "reader"))
+	readerRecorder := httptest.NewRecorder()
+	server.ServeHTTP(readerRecorder, readerRead)
+	if readerRecorder.Code != http.StatusOK {
+		t.Fatalf("expected reader published form 200, got %d: %s", readerRecorder.Code, readerRecorder.Body.String())
+	}
+	var readableForm systemdb.FormDefinition
+	if err := json.NewDecoder(readerRecorder.Body).Decode(&readableForm); err != nil {
+		t.Fatal(err)
+	}
+	if readableForm.PermissionLevel != permission.Read {
+		t.Fatalf("expected read permission on published form, got %#v", readableForm)
+	}
+
+	submitRequest := httptest.NewRequest(http.MethodPost, "/api/published/forms/"+published.PublishedToken+"/submit", bytes.NewBufferString(`{
+		"values":{"person_name":"Published Reader","person_email":"reader@example.com"}
+	}`))
+	submitRequest.AddCookie(testSessionCookie(t, system, "reader"))
+	submitRecorder := httptest.NewRecorder()
+	server.ServeHTTP(submitRecorder, submitRequest)
+	if submitRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected reader published form submit 201, got %d: %s", submitRecorder.Code, submitRecorder.Body.String())
+	}
+	var row rowResponse
+	if err := json.NewDecoder(submitRecorder.Body).Decode(&row); err != nil {
+		t.Fatal(err)
+	}
+	if row.RecordID == 0 || row.Values["name"] != "Published Reader" {
+		t.Fatalf("unexpected published submit row: %#v", row)
 	}
 }
 

@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { Button, Input, Select, Text, Textarea } from "@fluentui/react-components";
-import { SaveRegular } from "@fluentui/react-icons";
+import { SaveRegular, TabDesktopLinkRegular } from "@fluentui/react-icons";
 import type { FormDefinition } from "../api";
 import type { FormElement, FormRenderResult } from "../formRuntime";
 
@@ -9,6 +9,7 @@ type FormWorkspaceProps = {
   form?: FormDefinition;
   formValues: Record<string, string>;
   onFormValueChange: (name: string, value: string) => void;
+  onPublish: () => void;
   onSave: () => void;
   onSubmit: (submitElement?: Extract<FormElement, { kind: "submit" }>, event?: FormEvent<HTMLFormElement>) => void | Promise<void>;
   onUpdateScript: (script: string) => void;
@@ -20,12 +21,14 @@ export function FormWorkspace({
   form,
   formValues,
   onFormValueChange,
+  onPublish,
   onSave,
   onSubmit,
   onUpdateScript,
   renderedForm
 }: FormWorkspaceProps) {
   const canWriteForm = (form?.permission_level ?? 2) >= 2;
+  const publishedLink = form?.published_token ? `${window.location.origin}/forms/${form.published_token}` : "";
 
   return (
     <div className="split-view">
@@ -35,18 +38,28 @@ export function FormWorkspace({
             <Text weight="semibold">{form?.name ?? "form"}.js</Text>
             <Text size={200}>{databaseName} form</Text>
           </div>
-          <Button icon={<SaveRegular />} appearance="primary" onClick={onSave} disabled={!canWriteForm}>
-            Save
-          </Button>
+          <div className="form-actions">
+            <Button icon={<TabDesktopLinkRegular />} onClick={onPublish} disabled={!canWriteForm || !form?.id}>
+              Publish
+            </Button>
+            <Button icon={<SaveRegular />} appearance="primary" onClick={onSave} disabled={!canWriteForm}>
+              Save
+            </Button>
+          </div>
         </div>
-        <Textarea
-          className="code-editor"
-          value={form?.script ?? ""}
-          onChange={(_, data) => onUpdateScript(data.value)}
-          resize="none"
-          disabled={!canWriteForm}
-          aria-label="Form JavaScript"
-        />
+        <div className="form-editor-body">
+          {publishedLink && (
+            <Input aria-label="Published form link" readOnly value={publishedLink} />
+          )}
+          <Textarea
+            className="code-editor"
+            value={form?.script ?? ""}
+            onChange={(_, data) => onUpdateScript(data.value)}
+            resize="none"
+            disabled={!canWriteForm}
+            aria-label="Form JavaScript"
+          />
+        </div>
       </div>
       <form className="form-preview" onSubmit={(event) => onSubmit(undefined, event)}>
         <Text weight="semibold">Preview</Text>

@@ -34,7 +34,7 @@ func TestStoreWritesWorkflowAndFormScripts(t *testing.T) {
 		ID:           2,
 		DatabaseName: "workspace",
 		Name:         "quick status",
-		Script:       "root.append(api.input({ name: 'email' }))",
+		Script:       "function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }",
 	}
 	if err := store.SaveFormScript(ctx, form); err != nil {
 		t.Fatal(err)

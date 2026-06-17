@@ -6,6 +6,7 @@ import {
   listWorkflowRuns,
   listWorkflows,
   loadWorkflowNodes,
+  publishForm,
   runWorkflow,
   saveForm,
   saveWorkflow,
@@ -230,6 +231,21 @@ export function useWorkflowFormWorkspace({
     }
   }
 
+  async function publishSelectedForm() {
+    if (!selectedForm?.id) {
+      onStatus("Save form before publishing");
+      return;
+    }
+    try {
+      const saved = await publishForm(selectedForm.id);
+      setForms((current) => replaceResource(current, saved));
+      setSelectedFormID(saved.id ?? 0);
+      onStatus(`Published form ${saved.name}`);
+    } catch (error) {
+      onStatus(error instanceof Error ? error.message : "Form publish failed");
+    }
+  }
+
   async function createForm() {
     const name = newFormName.trim();
     if (!databaseName) {
@@ -241,11 +257,11 @@ export function useWorkflowFormWorkspace({
       return;
     }
     try {
-      const targetTable = tableName ? JSON.stringify(tableName) : "undefined";
+      const targetTable = tableName ? JSON.stringify(tableName) : '""';
       const saved = await saveForm(databaseName, {
         database_name: databaseName,
         name,
-        script: `root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit', { table: ${targetTable} }));`
+        script: `function render(api, root) {\n  root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit'));\n  return { table: ${targetTable}, fields: { name: 'name' } };\n}`
       });
       setForms((current) => replaceResource(current, saved));
       setSelectedFormID(saved.id ?? 0);
@@ -259,12 +275,14 @@ export function useWorkflowFormWorkspace({
 
   async function submitRenderedForm(submitElement?: Extract<FormElement, { kind: "submit" }>, event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    const targetTableName = submitElement?.tableName || tableName;
-    if (!databaseName || !targetTableName) {
-      onStatus("Select a target table before submitting the form");
+    if (!submitElement && !renderedForm.elements.some((element) => element.kind === "submit")) {
       return;
     }
-    const values = Object.fromEntries(
+    if (!databaseName || !renderedForm.table || !renderedForm.fields) {
+      onStatus("Form render must return a target table and fields");
+      return;
+    }
+    const inputValues = Object.fromEntries(
       renderedForm.elements.flatMap((element) => {
         if (element.kind === "input") {
           return [[element.name, formValues[element.name] ?? ""]];
@@ -275,10 +293,13 @@ export function useWorkflowFormWorkspace({
         return [];
       })
     );
+    const values = Object.fromEntries(
+      Object.entries(renderedForm.fields).map(([inputID, fieldName]) => [fieldName, inputValues[inputID] ?? ""])
+    );
     try {
-      const saved = await createRow(databaseName, targetTableName, values);
-      onSubmittedRow(targetTableName, rowRecordToValues(saved));
-      onStatus(`Form created ${targetTableName} record ${saved.record_id}`);
+      const saved = await createRow(databaseName, renderedForm.table, values);
+      onSubmittedRow(renderedForm.table, rowRecordToValues(saved));
+      onStatus(`Form created ${renderedForm.table} record ${saved.record_id}`);
     } catch (error) {
       onStatus(error instanceof Error ? error.message : "Form submit failed");
     }
@@ -345,6 +366,7 @@ export function useWorkflowFormWorkspace({
     createWorkflow,
     executeWorkflow,
     persistForm,
+    publishSelectedForm,
     persistWorkflow,
     refreshResources,
     setNewFormName,

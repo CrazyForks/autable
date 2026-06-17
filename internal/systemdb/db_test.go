@@ -195,7 +195,7 @@ func TestFormDefinitionAutoincrementsID(t *testing.T) {
 	saved, err := db.SaveForm(ctx, FormDefinition{
 		DatabaseName: "workspace",
 		Name:         "contact-intake",
-		Script:       "root.append(api.input({ name: 'email' }))",
+		Script:       "function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -209,6 +209,53 @@ func TestFormDefinitionAutoincrementsID(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != saved.ID {
 		t.Fatalf("unexpected form list: %#v", list)
+	}
+}
+
+func TestFormPublishTokenPersists(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	saved, err := db.SaveForm(ctx, FormDefinition{
+		DatabaseName: "workspace",
+		Name:         "contact-intake",
+		Script:       "function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := db.PublishForm(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.PublishedToken == "" {
+		t.Fatal("expected published token")
+	}
+	republished, err := db.PublishForm(ctx, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if republished.PublishedToken != published.PublishedToken {
+		t.Fatalf("expected publish to be stable, got %q then %q", published.PublishedToken, republished.PublishedToken)
+	}
+	loaded, err := db.FormByPublishedToken(ctx, published.PublishedToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ID != saved.ID {
+		t.Fatalf("unexpected published form lookup: %#v", loaded)
+	}
+	updated, err := db.SaveForm(ctx, FormDefinition{
+		ID:           saved.ID,
+		DatabaseName: "workspace",
+		Name:         "contact-intake",
+		Script:       "function render(api, root) { root.append(api.input({ name: 'name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.PublishedToken != published.PublishedToken {
+		t.Fatalf("expected update to preserve published token, got %#v", updated)
 	}
 }
 

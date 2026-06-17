@@ -130,7 +130,7 @@ async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
     database_name: databaseName,
     name: `quick-status-${suffix}`,
     script:
-      "root.append(api.input({ name: 'name', label: 'Name', required: true }), api.input({ name: 'email', label: 'Email', type: 'email' }), api.select({ name: 'status', label: 'Status', options: ['Active', 'Review'] }), api.submit('Create record', { table: 'contacts' }));"
+      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name', required: true }), api.input({ name: 'email', label: 'Email', type: 'email' }), api.select({ name: 'status', label: 'Status', options: ['Active', 'Review'] }), api.submit('Create record')); return { table: 'contacts', fields: { name: 'name', email: 'email', status: 'status' } }; }"
   });
   await page.reload();
   await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
@@ -194,7 +194,8 @@ test("shows database-owned workflow and form lists across table owners", async (
   });
   await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     name: formName,
-    script: "root.append(api.submit('Save'));"
+    script:
+      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }"
   });
 
   await api(page, "POST", "/api/auth/logout");
@@ -234,7 +235,8 @@ test("hides workflow and form resources without resource permission", async ({ p
   });
   await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     name: formName,
-    script: "root.append(api.submit('Save'));"
+    script:
+      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }"
   });
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: resourceUser.id,
@@ -287,7 +289,8 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
   })) as { id: number };
   const form = (await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     name: formName,
-    script: "root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit record'));"
+    script:
+      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit record')); return { table: 'contacts', fields: { name: 'name' } }; }"
   })) as { id: number };
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: readOnlyUser.id,
@@ -525,7 +528,8 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
   expect(run.run.outputs.source).toBe("file");
 
   const formName = `repo-form-${suffix}`;
-  const formScript = "root.append(api.input({ name: 'email' }))";
+  const formScript =
+    "function render(api, root) { root.append(api.input({ name: 'email', label: 'Email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }";
   const form = (await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     database_name: databaseName,
     name: formName,
@@ -539,7 +543,8 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
     `${String(form.id).padStart(20, "0")}-${formName}.js`
   );
   expect(readFileSync(formPath, "utf8")).toBe(formScript);
-  const editedFormScript = "root.append(api.input({ name: 'from_file' }))";
+  const editedFormScript =
+    "function render(api, root) { root.append(api.input({ name: 'from_file', label: 'From file' }), api.submit('Save')); return { table: 'contacts', fields: { from_file: 'name' } }; }";
   writeFileSync(formPath, editedFormScript);
   const loadedForm = (await api(page, "GET", `/api/forms/${form.id}`)) as { script: string };
   expect(loadedForm.script).toBe(editedFormScript);
@@ -557,6 +562,58 @@ test("covers form runtime preview and submit through the real backend", async ({
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("Margaret Hamilton");
   await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByText(/Form created contacts record \d+/)).toBeVisible();
+});
+
+test("publishes form links that require login and explicit form permission", async ({ page }) => {
+  const workspace = await setupWorkspace(page);
+  await page.getByRole("button", { name: "Form", exact: true }).click();
+  await page.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByText(/Published form/)).toBeVisible();
+  const link = await page.getByLabel("Published form link").inputValue();
+  expect(link).toContain("/forms/");
+  const token = link.split("/forms/").at(-1) ?? "";
+  const forms = (await api(page, "GET", `/api/databases/${workspace.databaseName}/forms`)) as Array<{ id: number; published_token?: string }>;
+  const form = forms.find((item) => item.published_token === token);
+  expect(form?.id).toBeTruthy();
+
+  const readerEmail = `form-reader-${Date.now()}-${sequence}@example.com`;
+  const reader = (await api(page, "POST", "/api/auth/register", {
+    email: readerEmail,
+    password: "correct horse"
+  })) as AuthUser;
+  await loginUser(page, workspace.user.email);
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: reader.id,
+    scope: "form",
+    resource: String(form?.id),
+    field: "",
+    level: 1
+  });
+
+  await page.context().clearCookies();
+  await page.goto(link);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Login" })).toBeVisible();
+  await dialog.getByLabel("Email").fill(readerEmail);
+  await dialog.getByLabel("Password").fill("correct horse");
+  await dialog.getByRole("button", { name: "Login" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(/Opened/)).toBeVisible();
+  await page.getByLabel("Name").fill("Published User");
+  await page.getByLabel("Email").fill("published@example.com");
+  await page.getByLabel("Status").selectOption("Review");
+  await page.getByRole("button", { name: "Create record" }).click();
+  await expect(page.getByText(/Form submitted as record \d+/)).toBeVisible();
+
+  await loginUser(page, workspace.user.email);
+  const rows = (await api(page, "GET", `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows`)) as Array<{
+    values: { name?: string; email?: string; status?: string };
+  }>;
+  expect(rows.map((row) => row.values)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "Published User", email: "published@example.com", status: "Review" })
+    ])
+  );
 });
 
 test("covers role members and resource permission grants through the real backend", async ({ page }) => {

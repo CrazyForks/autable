@@ -394,6 +394,21 @@ select {
   line-height: 1.45;
 }
 
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.form-editor-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
 .history-pane,
 .form-preview {
   display: flex;
@@ -404,6 +419,28 @@ select {
   padding: 16px;
   border: 1px solid var(--colorNeutralStroke2);
   background: var(--colorNeutralBackground1);
+}
+
+.published-form-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 32px;
+  min-width: 0;
+  min-height: 100vh;
+  background: var(--colorNeutralBackground2);
+}
+
+.published-form-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(720px, calc(100% - 32px));
+  min-width: 0;
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.published-form-card {
+  min-height: auto;
 }
 
 .flow-line {

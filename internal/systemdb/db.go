@@ -11,6 +11,7 @@ import (
 	"codetable/internal/auth"
 	"codetable/internal/permission"
 
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,6 +38,7 @@ type FormDefinition struct {
 	DatabaseName    string           `json:"database_name"`
 	Name            string           `json:"name"`
 	Script          string           `json:"script"`
+	PublishedToken  string           `json:"published_token,omitempty"`
 	PermissionLevel permission.Level `json:"permission_level,omitempty" gorm:"-"`
 	CreatedAt       time.Time        `json:"created_at"`
 	UpdatedAt       time.Time        `json:"updated_at"`
@@ -93,12 +95,13 @@ type workflowModel struct {
 }
 
 type formModel struct {
-	ID           int64  `gorm:"primaryKey;autoIncrement"`
-	DatabaseName string `gorm:"uniqueIndex:idx_form_database_name;not null"`
-	Name         string `gorm:"uniqueIndex:idx_form_database_name;not null"`
-	Script       string `gorm:"not null"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID             int64  `gorm:"primaryKey;autoIncrement"`
+	DatabaseName   string `gorm:"uniqueIndex:idx_form_database_name;not null"`
+	Name           string `gorm:"uniqueIndex:idx_form_database_name;not null"`
+	Script         string `gorm:"not null"`
+	PublishedToken string `gorm:"index"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type roleModel struct {
@@ -362,6 +365,13 @@ func (db *DB) SaveForm(ctx context.Context, form FormDefinition) (FormDefinition
 	if form.DatabaseName == "" {
 		return FormDefinition{}, errors.New("database_name is required")
 	}
+	if form.ID != 0 && form.PublishedToken == "" {
+		existing, err := db.Form(ctx, form.ID)
+		if err != nil {
+			return FormDefinition{}, err
+		}
+		form.PublishedToken = existing.PublishedToken
+	}
 	model := formToModel(form)
 	if form.ID == 0 {
 		if err := db.orm.WithContext(ctx).Create(&model).Error; err != nil {
@@ -381,6 +391,28 @@ func (db *DB) Form(ctx context.Context, id int64) (FormDefinition, error) {
 		return FormDefinition{}, err
 	}
 	return modelToForm(model), nil
+}
+
+func (db *DB) FormByPublishedToken(ctx context.Context, token string) (FormDefinition, error) {
+	if token == "" {
+		return FormDefinition{}, gorm.ErrRecordNotFound
+	}
+	var model formModel
+	if err := db.orm.WithContext(ctx).Where(&formModel{PublishedToken: token}).First(&model).Error; err != nil {
+		return FormDefinition{}, err
+	}
+	return modelToForm(model), nil
+}
+
+func (db *DB) PublishForm(ctx context.Context, id int64) (FormDefinition, error) {
+	form, err := db.Form(ctx, id)
+	if err != nil {
+		return FormDefinition{}, err
+	}
+	if form.PublishedToken == "" {
+		form.PublishedToken = uuid.NewString()
+	}
+	return db.SaveForm(ctx, form)
 }
 
 func (db *DB) Forms(ctx context.Context, databaseName string) ([]FormDefinition, error) {
@@ -625,23 +657,25 @@ func modelToWorkflow(model workflowModel) (WorkflowDefinition, error) {
 
 func formToModel(form FormDefinition) formModel {
 	return formModel{
-		ID:           form.ID,
-		DatabaseName: form.DatabaseName,
-		Name:         form.Name,
-		Script:       form.Script,
-		CreatedAt:    form.CreatedAt,
-		UpdatedAt:    form.UpdatedAt,
+		ID:             form.ID,
+		DatabaseName:   form.DatabaseName,
+		Name:           form.Name,
+		Script:         form.Script,
+		PublishedToken: form.PublishedToken,
+		CreatedAt:      form.CreatedAt,
+		UpdatedAt:      form.UpdatedAt,
 	}
 }
 
 func modelToForm(model formModel) FormDefinition {
 	return FormDefinition{
-		ID:           model.ID,
-		DatabaseName: model.DatabaseName,
-		Name:         model.Name,
-		Script:       model.Script,
-		CreatedAt:    model.CreatedAt,
-		UpdatedAt:    model.UpdatedAt,
+		ID:             model.ID,
+		DatabaseName:   model.DatabaseName,
+		Name:           model.Name,
+		Script:         model.Script,
+		PublishedToken: model.PublishedToken,
+		CreatedAt:      model.CreatedAt,
+		UpdatedAt:      model.UpdatedAt,
 	}
 }
 

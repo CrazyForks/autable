@@ -32,8 +32,15 @@ This repository currently contains the backend core primitives:
 - A `table.record.changed` trigger node that accepts an `rhistory_db_table_record_id_timestamp` key and exposes the decoded row change.
 - Workflow JavaScript editing with JSON editors for GitHub Actions-style secrets and variables.
 - Workflow and form JavaScript files saved to and read from `repository.path` for git-managed code artifacts.
-- A frontend form JavaScript runtime with `api.input`, `api.select`, `api.submit`, and `root.append(...)` preview rendering.
-- Form preview submissions collect script-created controls and use the authenticated row API.
+- A form JavaScript runtime that requires `function render(api, root)` to render controls and return `{ table, fields }`.
+- Form submissions send input JSON; the backend executes the form JavaScript to resolve the target table and input-to-field mapping before writing records.
+
+## Development Rules
+
+- This project is in active development; breaking changes are allowed.
+- Do not preserve backward-compatible or legacy behavior unless explicitly requested.
+- When changing a contract, update callers, tests, and docs to the new contract and remove the old path.
+- Use the ORM for database access; do not hand-write SQL in application code.
 
 ## Development
 

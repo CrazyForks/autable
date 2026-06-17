@@ -4,6 +4,7 @@ import { ArrowClockwiseRegular } from "@fluentui/react-icons";
 import { AuthDialog } from "./components/AuthDialog";
 import { FormWorkspace } from "./components/FormWorkspace";
 import { PermissionPanel } from "./components/PermissionPanel";
+import { PublishedFormPage } from "./components/PublishedFormPage";
 import { TableWorkspace } from "./components/TableWorkspace";
 import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
 import { WorkspaceNavigation, type WorkspaceView } from "./components/WorkspaceNavigation";
@@ -34,6 +35,11 @@ const emptyTable: TableMetadata = { name: "", display_name: "", fields: [], view
 const emptyCatalog: Catalog = { databases: [] };
 
 export function App() {
+  const publishedFormToken = publishedFormTokenFromPath();
+  return publishedFormToken ? <PublishedFormPage token={publishedFormToken} /> : <WorkspaceApp />;
+}
+
+function WorkspaceApp() {
   const [catalog, setCatalog] = useState<Catalog>(emptyCatalog);
   const [view, setView] = useState<View>("table");
   const [selectedDatabaseName, setSelectedDatabaseName] = useState("");
@@ -474,6 +480,7 @@ export function App() {
               form={selectedForm}
               formValues={formValues}
               onFormValueChange={workflowFormWorkspace.updateFormValue}
+              onPublish={workflowFormWorkspace.publishSelectedForm}
               onSave={workflowFormWorkspace.persistForm}
               onSubmit={workflowFormWorkspace.submitRenderedForm}
               onUpdateScript={workflowFormWorkspace.updateSelectedFormScript}
@@ -516,4 +523,9 @@ export function App() {
       />
     </div>
   );
+}
+
+function publishedFormTokenFromPath(): string {
+  const match = /^\/forms\/([^/]+)$/.exec(window.location.pathname);
+  return match ? decodeURIComponent(match[1]) : "";
 }

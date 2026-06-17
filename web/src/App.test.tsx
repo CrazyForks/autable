@@ -61,7 +61,7 @@ const formFixture = [
     database_name: "workspace",
     name: "contact-intake",
     script:
-      'root.append(api.input({ name: "name", label: "Name", required: true }), api.submit("Create record"));',
+      'function render(api, root) { root.append(api.input({ name: "name", label: "Name", required: true }), api.submit("Create record")); return { table: "contacts", fields: { name: "name" } }; }',
     permission_level: 2
   },
   {
@@ -69,7 +69,7 @@ const formFixture = [
     database_name: "workspace",
     name: "quick-status",
     script:
-      'root.append(api.select({ name: "status", label: "Status", options: ["Active", "Review"] }), api.submit("Update status"));',
+      'function render(api, root) { root.append(api.select({ name: "status", label: "Status", options: ["Active", "Review"] }), api.submit("Update status")); return { table: "contacts", fields: { status: "status" } }; }',
     permission_level: 2
   }
 ];
@@ -505,7 +505,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Update status" })).toBeInTheDocument();
   });
 
-  it("submits forms to the table declared by the submit element", async () => {
+  it("submits forms to the table declared by the render definition", async () => {
     let submittedURL = "";
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
@@ -555,7 +555,7 @@ describe("App", () => {
             id: 9,
             database_name: "workspace",
             name: "targeted-contact",
-            script: "root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Create contact', { table: 'contacts' }));"
+            script: "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Create contact')); return { table: 'contacts', fields: { name: 'name' } }; }"
           }
         ]);
       }

@@ -107,6 +107,7 @@ export type FormDefinition = {
   database_name: string;
   name: string;
   script: string;
+  published_token?: string;
   permission_level?: 0 | 1 | 2;
 };
 
@@ -400,6 +401,40 @@ export async function saveForm(dbName: string, form: FormDefinition): Promise<Fo
     throw new Error(`form save failed: ${response.status}`);
   }
   return response.json() as Promise<FormDefinition>;
+}
+
+export async function publishForm(formID: number): Promise<FormDefinition> {
+  const response = await fetch(`/api/forms/${formID}/publish`, { method: "POST" });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? `form publish failed: ${response.status}`);
+  }
+  return response.json() as Promise<FormDefinition>;
+}
+
+export async function loadPublishedForm(token: string): Promise<FormDefinition> {
+  const response = await fetch(`/api/published/forms/${encodeURIComponent(token)}`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? `published form load failed: ${response.status}`);
+  }
+  return response.json() as Promise<FormDefinition>;
+}
+
+export async function submitPublishedForm(
+  token: string,
+  values: Record<string, unknown>
+): Promise<RowRecord> {
+  const response = await fetch(`/api/published/forms/${encodeURIComponent(token)}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? `published form submit failed: ${response.status}`);
+  }
+  return response.json() as Promise<RowRecord>;
 }
 
 export async function listRoles(dbName: string): Promise<RoleDefinition[]> {

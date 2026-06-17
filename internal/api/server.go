@@ -17,6 +17,7 @@ import (
 
 	"codetable/internal/auth"
 	"codetable/internal/config"
+	"codetable/internal/formruntime"
 	"codetable/internal/history"
 	"codetable/internal/metadata"
 	"codetable/internal/permission"
@@ -104,6 +105,10 @@ type roleMembersRequest struct {
 	Members []string `json:"members"`
 }
 
+type publishedFormSubmitRequest struct {
+	Values map[string]any `json:"values"`
+}
+
 const (
 	sessionCookieName   = "codetable_session"
 	oidcStateCookieName = "codetable_oidc_state"
@@ -188,7 +193,10 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("POST /api/workflows/", server.handleRunWorkflow)
 	server.mux.HandleFunc("GET /api/workflows/", server.handleGetWorkflow)
 	server.mux.HandleFunc("POST /api/forms", server.handleSaveForm)
+	server.mux.HandleFunc("POST /api/forms/", server.handlePostFormAction)
 	server.mux.HandleFunc("GET /api/forms/", server.handleGetForm)
+	server.mux.HandleFunc("GET /api/published/forms/", server.handleGetPublishedForm)
+	server.mux.HandleFunc("POST /api/published/forms/", server.handleSubmitPublishedForm)
 }
 
 func (server *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -1084,6 +1092,33 @@ func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, saved)
 }
 
+func (server *Server) handlePostFormAction(w http.ResponseWriter, r *http.Request) {
+	id, action, ok := parseFormActionPath(r.URL.Path)
+	if !ok || action != "publish" {
+		http.NotFound(w, r)
+		return
+	}
+	actorID, ok := server.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, id) {
+		return
+	}
+	form, err := server.system.PublishForm(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	form, err = server.formDefinitionWithFileScript(r.Context(), form)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	form = server.formWithPermissionLevel(r.Context(), actorID, form)
+	writeJSON(w, http.StatusOK, form)
+}
+
 func (server *Server) handleGetForm(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDPath(r.URL.Path, "/api/forms/")
 	if !ok {
@@ -1111,12 +1146,129 @@ func (server *Server) handleGetForm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, form)
 }
 
+func (server *Server) handleGetPublishedForm(w http.ResponseWriter, r *http.Request) {
+	token, ok := parsePublishedFormPath(r.URL.Path, false)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	actorID, ok := server.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	form, err := server.system.FormByPublishedToken(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if !server.requireExplicitResourceRead(w, r, actorID, permission.ScopeForm, form.ID) {
+		return
+	}
+	form, err = server.formDefinitionWithFileScript(r.Context(), form)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	form = server.formWithPermissionLevel(r.Context(), actorID, form)
+	writeJSON(w, http.StatusOK, form)
+}
+
+func (server *Server) handleSubmitPublishedForm(w http.ResponseWriter, r *http.Request) {
+	token, ok := parsePublishedFormPath(r.URL.Path, true)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	actorID, ok := server.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	form, err := server.system.FormByPublishedToken(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if !server.requireExplicitResourceRead(w, r, actorID, permission.ScopeForm, form.ID) {
+		return
+	}
+	var request publishedFormSubmitRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	form, err = server.formDefinitionWithFileScript(r.Context(), form)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	definition, err := formruntime.Evaluate(form.Script)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if _, ok := server.catalogSnapshot().Table(form.DatabaseName, definition.Table); !ok {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("table %s.%s not found", form.DatabaseName, definition.Table))
+		return
+	}
+	rowValues := make(map[string]any, len(definition.Fields))
+	for inputID, fieldName := range definition.Fields {
+		rowValues[fieldName] = request.Values[inputID]
+	}
+	formSubmitPerms := permission.New(permission.Grant{
+		SubjectID: actorID,
+		Scope:     permission.ScopeTable,
+		Resource:  form.DatabaseName + "." + definition.Table,
+		Level:     permission.Write,
+	})
+	row, err := server.tables.CreateRow(r.Context(), server.catalogSnapshot(), formSubmitPerms, actorID, form.DatabaseName, definition.Table, rowValues)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, table.ErrPermissionDenied) {
+			status = http.StatusForbidden
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, rowResponse{RecordID: row.RecordID, Values: row.Values})
+}
+
 func parseTableRowsPath(path string) (string, string, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 5 || parts[0] != "api" || parts[1] != "tables" || parts[4] != "rows" {
 		return "", "", false
 	}
 	return parts[2], parts[3], true
+}
+
+func parseFormActionPath(path string) (int64, string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "forms" {
+		return 0, "", false
+	}
+	id, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return 0, "", false
+	}
+	return id, parts[3], true
+}
+
+func parsePublishedFormPath(path string, submit bool) (string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	expectedLen := 4
+	if submit {
+		expectedLen = 5
+	}
+	if len(parts) != expectedLen || parts[0] != "api" || parts[1] != "published" || parts[2] != "forms" {
+		return "", false
+	}
+	if submit && parts[4] != "submit" {
+		return "", false
+	}
+	token, err := url.PathUnescape(parts[3])
+	if err != nil || token == "" {
+		return "", false
+	}
+	return token, true
 }
 
 func parseOIDCPath(path string) (string, string, bool) {
@@ -1429,6 +1581,19 @@ func (server *Server) requireUserID(w http.ResponseWriter, r *http.Request) (str
 
 func (server *Server) requireResourceRead(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {
 	return server.requireResourceLevel(w, r, actorID, scope, id, permission.Read)
+}
+
+func (server *Server) requireExplicitResourceRead(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return false
+	}
+	if perms.ResourceLevel(actorID, scope, resourceID(id)) < permission.Read {
+		writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
+		return false
+	}
+	return true
 }
 
 func (server *Server) requireDatabaseWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {

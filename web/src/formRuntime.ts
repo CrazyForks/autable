@@ -7,13 +7,15 @@ export type FormElement =
       required: boolean;
     }
   | { kind: "select"; name: string; label: string; options: string[] }
-  | { kind: "submit"; label: string; tableName?: string }
+  | { kind: "submit"; label: string }
   | { kind: "html"; html: string };
 
 type InputType = Extract<FormElement, { kind: "input" }>["inputType"];
 
 export type FormRenderResult = {
   elements: FormElement[];
+  table?: string;
+  fields?: Record<string, string>;
   error?: string;
 };
 
@@ -28,10 +30,6 @@ type SelectConfig = {
   name: string;
   label?: string;
   options?: string[];
-};
-
-type SubmitConfig = {
-  table?: string;
 };
 
 const inputTypes = new Set<InputType>(["text", "email", "search", "tel", "url", "password"]);
@@ -64,29 +62,45 @@ export function renderFormScript(script: string): FormRenderResult {
       label: config.label ?? config.name,
       options: Array.isArray(config.options) ? config.options.map(String) : []
     }),
-    submit: (label: string, config?: SubmitConfig): FormElement => ({
+    submit: (label: string): FormElement => ({
       kind: "submit",
-      label: String(label),
-      tableName: config?.table ? String(config.table) : undefined
+      label: String(label)
     })
   };
 
   try {
-    const run = new Function("api", "root", `"use strict";\n${script}`);
+    const run = new Function("api", "root", `"use strict";\n${script}\nreturn render(api, root);`);
     const returned = run(api, root);
-    if (isFormElement(returned)) {
-      root.append(returned);
-    }
+    const definition = formDefinitionFromValue(returned);
     if (rootElement && rootElement.childNodes.length > 0) {
       elements.push({ kind: "html", html: rootElement.innerHTML });
     }
-    return { elements };
+    return { elements, table: definition.table, fields: definition.fields };
   } catch (error) {
     return {
       elements: [],
       error: error instanceof Error ? error.message : "Form script failed"
     };
   }
+}
+
+function formDefinitionFromValue(value: unknown): Required<Pick<FormRenderResult, "table" | "fields">> {
+  if (!value || typeof value !== "object") {
+    throw new Error("form render must return a definition object");
+  }
+  const maybeDefinition = value as { table?: unknown; fields?: unknown };
+  if (typeof maybeDefinition.table !== "string" || !maybeDefinition.fields || typeof maybeDefinition.fields !== "object") {
+    throw new Error("form render must return table and fields");
+  }
+  const fields = Object.fromEntries(
+    Object.entries(maybeDefinition.fields as Record<string, unknown>)
+      .filter(([, fieldName]) => typeof fieldName === "string")
+      .map(([inputID, fieldName]) => [inputID, String(fieldName)])
+  );
+  if (maybeDefinition.table === "" || Object.keys(fields).length === 0) {
+    throw new Error("form render must return table and fields");
+  }
+  return { table: maybeDefinition.table, fields };
 }
 
 function normalizeInputType(value: string | undefined): InputType {
