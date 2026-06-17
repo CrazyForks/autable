@@ -662,12 +662,14 @@ test("covers workflow editor, node list, and run history through the real backen
   );
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
+  await page.getByRole("tab", { name: "History" }).click();
   await expect(page.getByRole("button", { name: /whistory_/ })).toBeVisible();
   const runFlow = page.getByLabel("Workflow run flow");
+  const runInspector = page.getByLabel("Workflow node inspector");
   await expect(runFlow.getByText("Run input")).toBeVisible();
   await expect(runFlow.getByText("Run output")).toBeVisible();
-  await expect(runFlow.getByText(rowHistory[0].history_key).first()).toBeVisible();
-  await expect(runFlow.getByText(/"record_id": 1/).first()).toBeVisible();
+  await expect(runInspector.getByText(rowHistory[0].history_key).first()).toBeVisible();
+  await expect(runInspector.getByText(/"record_id": 1/).first()).toBeVisible();
   const workflowRuns = (await api(page, "GET", `/api/workflows/${savedWorkflow?.id}/runs`)) as Array<{
     run: { timestamp: number };
   }>;
@@ -693,6 +695,7 @@ test("runs table row workflow nodes through the real backend", async ({ page }) 
   );
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
+  await page.getByRole("tab", { name: "History" }).click();
 
   const rows = (await api(
     page,
@@ -701,12 +704,15 @@ test("runs table row workflow nodes through the real backend", async ({ page }) 
   )) as Array<{ record_id: number; values: Record<string, unknown> }>;
   expect(rows.some((row) => row.values.name === "Grace Hopper")).toBe(false);
   const runFlow = page.getByLabel("Workflow run flow");
+  const runInspector = page.getByLabel("Workflow node inspector");
   await expect(runFlow.getByText("table.row.create")).toBeVisible();
   await expect(runFlow.getByText("table.row.list")).toBeVisible();
   await expect(runFlow.getByText("table.row.update")).toBeVisible();
   await expect(runFlow.getByText("table.row.delete")).toBeVisible();
-  await expect(runFlow.getByText(/Grace Hopper/).first()).toBeVisible();
-  await expect(runFlow.getByText(/"updated_status": "Active"/).first()).toBeVisible();
+  await runFlow.locator(".react-flow__node", { hasText: "create_contact" }).click({ force: true });
+  await expect(runInspector.getByText(/Grace Hopper/).first()).toBeVisible();
+  await runFlow.locator(".react-flow__node", { hasText: "Run output" }).click({ force: true });
+  await expect(runInspector.getByText(/"updated_status": "Active"/).first()).toBeVisible();
 });
 
 test("persists workflow and form JavaScript into the repository path", async ({ page }) => {

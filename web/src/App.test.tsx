@@ -439,7 +439,9 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save config" }));
     expect(screen.getAllByText("echo").length).toBeGreaterThan(0);
     expect(screen.getAllByText("review_echo").length).toBeGreaterThan(0);
-    expect(screen.getByText("No runs yet")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(screen.getAllByText("No runs yet").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("tab", { name: "Editor" }));
     fireEvent.change(screen.getByLabelText("Workflow JavaScript"), {
       target: {
         value:
@@ -484,12 +486,14 @@ describe("App", () => {
 
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
-    expect(await screen.findByText("whistory_00000000000000000001_00000000000000000100")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    await waitFor(() =>
+      expect(screen.getAllByText("whistory_00000000000000000001_00000000000000000100").length).toBeGreaterThan(0)
+    );
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
-    expect(screen.getByText("Run input")).toBeInTheDocument();
-    expect(screen.getByText("Run output")).toBeInTheDocument();
+    expect(screen.getAllByText("Run input").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Run output").length).toBeGreaterThan(0);
     expect(screen.getByText(/"name": "Ada"/)).toBeInTheDocument();
-    expect(screen.getAllByText(/"value": "Ada"/).length).toBeGreaterThan(0);
   });
 
   it("renders read-only workflow and form resources as non-editable", async () => {

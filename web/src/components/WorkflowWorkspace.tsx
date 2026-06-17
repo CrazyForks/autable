@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -12,10 +12,13 @@ import {
   Popover,
   PopoverSurface,
   PopoverTrigger,
+  Tab,
+  TabList,
   Text,
   Textarea
 } from "@fluentui/react-components";
 import { EditRegular, InfoRegular, PlayRegular, SaveRegular } from "@fluentui/react-icons";
+import { Background, Controls, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import type {
   WorkflowDefinition,
   WorkflowInstanceDeclaration,
@@ -47,6 +50,19 @@ type WorkflowWorkspaceProps = {
   workflowRuns: WorkflowRunResponse[];
 };
 
+type WorkflowTab = "editor" | "history";
+
+type WorkflowFlowNodeData = {
+  label: ReactNode;
+  title: string;
+  subtitle?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  error?: string;
+};
+
+type WorkflowFlowNode = Node<WorkflowFlowNodeData>;
+
 export function WorkflowWorkspace({
   databaseName,
   language,
@@ -65,119 +81,176 @@ export function WorkflowWorkspace({
 }: WorkflowWorkspaceProps) {
   const canWriteWorkflow = (workflow?.permission_level ?? 2) >= 2;
   const workflowNodesByType = new Map(workflowNodes.map((node) => [node.type, node]));
+  const [activeTab, setActiveTab] = useState<WorkflowTab>("editor");
 
   return (
-    <div className="split-view">
-      <div className="editor-pane">
-        <div className="section-header">
-          <div>
-            <Text weight="semibold">{workflow?.name ?? "workflow"}.js</Text>
-            <Text size={200}>{databaseName} workflow</Text>
-          </div>
-          <div className="workflow-header-actions">
-            <NodeCatalogDialog language={language} workflowNodes={workflowNodes} />
-            <Button icon={<SaveRegular />} appearance="primary" onClick={onSave} disabled={!canWriteWorkflow}>
-              Save
-            </Button>
-          </div>
+    <div className="workflow-workspace">
+      <div className="section-header workflow-section-header">
+        <div>
+          <Text weight="semibold">{workflow?.name ?? "workflow"}.js</Text>
+          <Text size={200}>{databaseName} workflow</Text>
         </div>
-        <Textarea
-          className="code-editor"
-          value={workflow?.script ?? ""}
-          onChange={(_, data) => onUpdateScript(data.value)}
-          resize="none"
-          disabled={!canWriteWorkflow}
-          aria-label="Workflow JavaScript"
-        />
-        <div className="workflow-config-grid">
-          <label className="field-stack">
-            <span>Inputs JSON</span>
-            <Textarea
-              className="json-editor"
-              value={inputsText}
-              onChange={(_, data) => onUpdateInputsJSON(data.value)}
-              resize="none"
-              aria-label="Workflow Inputs JSON"
-            />
-          </label>
+        <div className="workflow-header-actions">
+          <NodeCatalogDialog language={language} workflowNodes={workflowNodes} />
+          <Button icon={<PlayRegular />} onClick={onExecute} disabled={!workflow?.id || !canWriteWorkflow}>
+            Run
+          </Button>
+          <Button icon={<SaveRegular />} appearance="primary" onClick={onSave} disabled={!canWriteWorkflow}>
+            Save
+          </Button>
         </div>
       </div>
-      <div className="history-pane">
-        <Text weight="semibold">Instances</Text>
-        <div className="node-list" aria-label="Workflow instances">
-          {workflowInstances.ok ? (
-            Object.entries(workflowInstances.value).map(([instanceID, instance]) => {
-              const ports = effectiveInstancePorts(instance, workflowNodesByType);
-              return (
-                <div key={instanceID} className="node-item">
-                  <div className="node-title">
-                    <span>{instanceID}</span>
-                    <span>{instance.node}</span>
-                  </div>
-                  <div className="node-ports">
-                    <span>vars {formatPorts(ports.variables)}</span>
-                    <span>secrets {formatPorts(ports.secrets)}</span>
-                  </div>
-                  {(ports.variables.length > 0 || ports.secrets.length > 0) && (
-                    <InstanceConfigPopover
-                      canWriteWorkflow={canWriteWorkflow}
-                      instanceID={instanceID}
-                      instanceNode={instance.node}
-                      onSaveInstanceConfig={onSaveInstanceConfig}
-                      ports={ports}
-                      workflow={workflow}
-                    />
-                  )}
-                </div>
-              );
-            })
-          ) : (
-            <Text size={200}>{workflowInstances.error}</Text>
-          )}
-        </div>
-        <Text weight="semibold">Run flow</Text>
-        {workflowRuns.length > 0 && (
-          <div className="run-history-list" aria-label="Workflow run history">
-            {workflowRuns.map((run) => (
-              <button
-                key={run.history_key}
-                className={run.history_key === selectedRun?.history_key ? "run-history-item selected" : "run-history-item"}
-                type="button"
-                onClick={() => onSelectRunKey(run.history_key)}
-              >
-                <span>{run.history_key}</span>
-                <span>{new Date(run.run.timestamp).toLocaleString()}</span>
-              </button>
-            ))}
+
+      <TabList
+        selectedValue={activeTab}
+        onTabSelect={(_, data) => setActiveTab(data.value as WorkflowTab)}
+        aria-label="Workflow workspace tabs"
+      >
+        <Tab value="editor">Editor</Tab>
+        <Tab value="history">History</Tab>
+      </TabList>
+
+      {activeTab === "editor" ? (
+        <div className="split-view workflow-editor-tab">
+          <div className="editor-pane">
+            <Textarea
+              className="code-editor"
+              value={workflow?.script ?? ""}
+              onChange={(_, data) => onUpdateScript(data.value)}
+              resize="none"
+              disabled={!canWriteWorkflow}
+              aria-label="Workflow JavaScript"
+            />
+            <div className="workflow-config-grid">
+              <label className="field-stack">
+                <span>Inputs JSON</span>
+                <Textarea
+                  className="json-editor"
+                  value={inputsText}
+                  onChange={(_, data) => onUpdateInputsJSON(data.value)}
+                  resize="none"
+                  aria-label="Workflow Inputs JSON"
+                />
+              </label>
+            </div>
           </div>
+          <div className="history-pane">
+            <Text weight="semibold">Instances</Text>
+            <div className="node-list" aria-label="Workflow instances">
+              {workflowInstances.ok ? (
+                Object.entries(workflowInstances.value).map(([instanceID, instance]) => {
+                  const ports = effectiveInstancePorts(instance, workflowNodesByType);
+                  return (
+                    <div key={instanceID} className="node-item">
+                      <div className="node-title">
+                        <span>{instanceID}</span>
+                        <span>{instance.node}</span>
+                      </div>
+                      <div className="node-ports">
+                        <span>vars {formatPorts(ports.variables)}</span>
+                        <span>secrets {formatPorts(ports.secrets)}</span>
+                      </div>
+                      {(ports.variables.length > 0 || ports.secrets.length > 0) && (
+                        <InstanceConfigPopover
+                          canWriteWorkflow={canWriteWorkflow}
+                          instanceID={instanceID}
+                          instanceNode={instance.node}
+                          onSaveInstanceConfig={onSaveInstanceConfig}
+                          ports={ports}
+                          workflow={workflow}
+                        />
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <Text size={200}>{workflowInstances.error}</Text>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <WorkflowHistoryView
+          onSelectRunKey={onSelectRunKey}
+          selectedRun={selectedRun}
+          workflowRuns={workflowRuns}
+        />
+      )}
+    </div>
+  );
+}
+
+function WorkflowHistoryView({
+  onSelectRunKey,
+  selectedRun,
+  workflowRuns
+}: {
+  onSelectRunKey: (historyKey: string) => void;
+  selectedRun: WorkflowRunResponse | null;
+  workflowRuns: WorkflowRunResponse[];
+}) {
+  const [selectedNodeID, setSelectedNodeID] = useState("run-input");
+  const { nodes, edges } = useMemo(() => runFlowElements(selectedRun), [selectedRun]);
+  const selectedNode = nodes.find((node) => node.id === selectedNodeID) ?? nodes[0];
+
+  return (
+    <div className="workflow-history-tab">
+      <div className="run-history-list" aria-label="Workflow run history">
+        {workflowRuns.length > 0 ? (
+          workflowRuns.map((run) => (
+            <button
+              key={run.history_key}
+              className={run.history_key === selectedRun?.history_key ? "run-history-item selected" : "run-history-item"}
+              type="button"
+              onClick={() => {
+                onSelectRunKey(run.history_key);
+                setSelectedNodeID("run-input");
+              }}
+            >
+              <span>{run.history_key}</span>
+              <span>{new Date(run.run.timestamp).toLocaleString()}</span>
+            </button>
+          ))
+        ) : (
+          <span className="flow-empty">No runs yet</span>
         )}
-        <div className="flow-line" aria-label="Workflow run flow">
+      </div>
+      <div className="workflow-run-flow-shell">
+        <div className="workflow-run-flow" aria-label="Workflow run flow">
           {selectedRun ? (
-            <>
-              <RunPayload title="Run input" value={selectedRun.run.inputs ?? {}} />
-              {selectedRun.run.steps.map((step, index) => (
-                <div key={`${step.node_id}-${index}`} className={step.error ? "flow-step error" : "flow-step"}>
-                  <div className="flow-step-title">
-                    <Text weight="semibold">{step.node_id}</Text>
-                    {step.node_type && <Text size={200}>{step.node_type}</Text>}
-                    {step.error && <Text size={200}>{step.error}</Text>}
-                  </div>
-                  <div className="flow-step-payloads">
-                    <RunPayload title="Input" value={step.input ?? {}} />
-                    <RunPayload title="Output" value={step.output ?? {}} />
-                  </div>
-                </div>
-              ))}
-              <RunPayload title="Run output" value={selectedRun.run.outputs ?? {}} />
-              {selectedRun.run.error && <div className="flow-step error">{selectedRun.run.error}</div>}
-            </>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              fitView
+              nodesDraggable={false}
+              nodesConnectable={false}
+              onNodeClick={(_, node) => setSelectedNodeID(node.id)}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background />
+              <Controls showInteractive={false} />
+            </ReactFlow>
           ) : (
             <span className="flow-empty">No runs yet</span>
           )}
         </div>
-        <Button icon={<PlayRegular />} onClick={onExecute} disabled={!workflow?.id || !canWriteWorkflow}>
-          Run
-        </Button>
+        <div className="workflow-run-inspector" aria-label="Workflow node inspector">
+          {selectedNode ? (
+            <>
+              <div className="workflow-run-inspector-header">
+                <Text weight="semibold">{selectedNode.data.title}</Text>
+                {selectedNode.data.subtitle && <Text size={200}>{selectedNode.data.subtitle}</Text>}
+                {selectedNode.data.error && <Text size={200}>{selectedNode.data.error}</Text>}
+              </div>
+              <div className="flow-step-payloads">
+                {selectedNode.data.input && <RunPayload title="Input" value={selectedNode.data.input} />}
+                {selectedNode.data.output && <RunPayload title="Output" value={selectedNode.data.output} />}
+              </div>
+            </>
+          ) : (
+            <Text size={200}>Select a node</Text>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -235,6 +308,69 @@ function NodeCatalogDialog({ language, workflowNodes }: { language: string; work
         </DialogBody>
       </DialogSurface>
     </Dialog>
+  );
+}
+
+function runFlowElements(runResponse: WorkflowRunResponse | null): { nodes: WorkflowFlowNode[]; edges: Edge[] } {
+  if (!runResponse) {
+    return { nodes: [], edges: [] };
+  }
+  const nodes: WorkflowFlowNode[] = [
+    {
+      id: "run-input",
+      type: "input",
+      position: { x: 0, y: 0 },
+      data: {
+        title: "Run input",
+        input: runResponse.run.inputs ?? {},
+        label: <FlowNodeLabel title="Run input" subtitle={runResponse.history_key} />
+      }
+    },
+    ...runResponse.run.steps.map((step, index): WorkflowFlowNode => {
+      const id = `step-${index}`;
+      return {
+        id,
+        position: { x: 260 * (index + 1), y: 0 },
+        className: step.error ? "workflow-flow-node-error" : undefined,
+        data: {
+          title: step.node_id,
+          subtitle: step.node_type,
+          input: step.input ?? {},
+          output: step.output ?? {},
+          error: step.error,
+          label: <FlowNodeLabel title={step.node_id} subtitle={step.node_type} error={step.error} />
+        }
+      };
+    }),
+    {
+      id: "run-output",
+      type: "output",
+      position: { x: 260 * (runResponse.run.steps.length + 1), y: 0 },
+      className: runResponse.run.error ? "workflow-flow-node-error" : undefined,
+      data: {
+        title: "Run output",
+        output: runResponse.run.outputs ?? {},
+        error: runResponse.run.error,
+        label: <FlowNodeLabel title="Run output" subtitle={runResponse.run.error} error={runResponse.run.error} />
+      }
+    }
+  ];
+  const edges = nodes.slice(0, -1).map((node, index): Edge => ({
+    id: `${node.id}-${nodes[index + 1].id}`,
+    source: node.id,
+    target: nodes[index + 1].id,
+    type: "smoothstep"
+  }));
+  return { nodes, edges };
+}
+
+function FlowNodeLabel({ title, subtitle, error }: { title: string; subtitle?: string; error?: string }) {
+  return (
+    <div className="workflow-flow-node-label">
+      <span>{title}</span>
+      {subtitle && <span>{subtitle}</span>}
+      {error && <span>{error}</span>}
+    </div>
   );
 }
 
