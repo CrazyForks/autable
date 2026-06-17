@@ -54,7 +54,7 @@ func (node RecordChangedTriggerNode) Run(ctx context.Context, input map[string]a
 		Database:   change.Database,
 		Table:      change.Table,
 		RecordID:   change.RecordID,
-		Timestamp:  change.Timestamp.UTC().UnixMilli(),
+		Timestamp:  change.Timestamp,
 	}
 	return map[string]any{
 		"record":   record,

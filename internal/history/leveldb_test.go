@@ -22,7 +22,7 @@ func TestLevelDBStorePersistsPrefixScannableHistory(t *testing.T) {
 		Database:  "db",
 		Table:     "contacts",
 		RecordID:  1,
-		Timestamp: time.Unix(1, 0).UTC(),
+		Timestamp: time.Unix(1, 0).UTC().UnixMilli(),
 		Values:    map[string]any{"name": "Ada"},
 	})
 	if err != nil {

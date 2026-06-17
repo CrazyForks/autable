@@ -27,7 +27,7 @@ type RowChange struct {
 	Database  string         `json:"database"`
 	Table     string         `json:"table"`
 	RecordID  int64          `json:"record_id"`
-	Timestamp time.Time      `json:"timestamp"`
+	Timestamp int64          `json:"timestamp"`
 	Operation string         `json:"operation,omitempty"`
 	Values    map[string]any `json:"values"`
 	Diff      RowDiff        `json:"diff,omitempty"`
@@ -43,7 +43,7 @@ type FieldDiff struct {
 
 type WorkflowRun struct {
 	WorkflowID int64          `json:"workflow_id"`
-	Timestamp  time.Time      `json:"timestamp"`
+	Timestamp  int64          `json:"timestamp"`
 	Inputs     map[string]any `json:"inputs,omitempty"`
 	Outputs    map[string]any `json:"outputs,omitempty"`
 	Steps      []StepRecord   `json:"steps"`
@@ -58,16 +58,16 @@ type StepRecord struct {
 	Error    string         `json:"error,omitempty"`
 }
 
-func RowKey(database, table string, recordID int64, ts time.Time) string {
-	return fmt.Sprintf("rhistory_%s_%s_%020d_%020d", clean(database), clean(table), recordID, ts.UTC().UnixNano())
+func RowKey(database, table string, recordID int64, timestamp int64) string {
+	return fmt.Sprintf("rhistory_%s_%s_%020d_%020d", clean(database), clean(table), recordID, timestamp)
 }
 
 func RowPrefix(database, table string, recordID int64) string {
 	return fmt.Sprintf("rhistory_%s_%s_%020d_", clean(database), clean(table), recordID)
 }
 
-func WorkflowKey(workflowID int64, ts time.Time) string {
-	return fmt.Sprintf("whistory_%020d_%020d", workflowID, ts.UTC().UnixNano())
+func WorkflowKey(workflowID int64, timestamp int64) string {
+	return fmt.Sprintf("whistory_%020d_%020d", workflowID, timestamp)
 }
 
 func WorkflowPrefix(workflowID int64) string {
@@ -75,10 +75,16 @@ func WorkflowPrefix(workflowID int64) string {
 }
 
 func SaveRowChange(ctx context.Context, store Store, change RowChange) (string, error) {
-	if change.Timestamp.IsZero() {
-		change.Timestamp = time.Now().UTC()
+	if change.Timestamp == 0 {
+		change.Timestamp = time.Now().UTC().UnixMilli()
 	}
-	key := RowKey(change.Database, change.Table, change.RecordID, change.Timestamp)
+	key, timestamp, err := uniqueHistoryKey(ctx, store, change.Timestamp, func(timestamp int64) string {
+		return RowKey(change.Database, change.Table, change.RecordID, timestamp)
+	})
+	if err != nil {
+		return "", err
+	}
+	change.Timestamp = timestamp
 	value, err := json.Marshal(change)
 	if err != nil {
 		return "", err
@@ -87,15 +93,33 @@ func SaveRowChange(ctx context.Context, store Store, change RowChange) (string, 
 }
 
 func SaveWorkflowRun(ctx context.Context, store Store, run WorkflowRun) (string, error) {
-	if run.Timestamp.IsZero() {
-		run.Timestamp = time.Now().UTC()
+	if run.Timestamp == 0 {
+		run.Timestamp = time.Now().UTC().UnixMilli()
 	}
-	key := WorkflowKey(run.WorkflowID, run.Timestamp)
+	key, timestamp, err := uniqueHistoryKey(ctx, store, run.Timestamp, func(timestamp int64) string {
+		return WorkflowKey(run.WorkflowID, timestamp)
+	})
+	if err != nil {
+		return "", err
+	}
+	run.Timestamp = timestamp
 	value, err := json.Marshal(run)
 	if err != nil {
 		return "", err
 	}
 	return key, store.Put(ctx, key, value)
+}
+
+func uniqueHistoryKey(ctx context.Context, store Store, timestamp int64, keyForTimestamp func(int64) string) (string, int64, error) {
+	for {
+		key := keyForTimestamp(timestamp)
+		if _, err := store.Get(ctx, key); errors.Is(err, ErrNotFound) {
+			return key, timestamp, nil
+		} else if err != nil {
+			return "", 0, err
+		}
+		timestamp++
+	}
 }
 
 func DecodeRowChange(entry Entry) (RowChange, error) {

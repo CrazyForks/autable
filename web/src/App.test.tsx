@@ -353,7 +353,7 @@ describe("App", () => {
               database: "workspace",
               table: "contacts",
               record_id: 42,
-              timestamp: "2026-06-16T10:00:00Z",
+              timestamp: 1781604000000,
               values: { name: "Backend Row" },
               actor_id: "test-user"
             }
@@ -411,7 +411,7 @@ describe("App", () => {
               history_key: "whistory_00000000000000000001_00000000000000000100",
               run: {
                 workflow_id: 1,
-                timestamp: "2026-06-16T10:00:00Z",
+                timestamp: 1781604000000,
                 inputs: { name: "Ada" },
                 outputs: { message: "Ada" },
                 steps: [{ node_id: "echo", input: { value: "Ada" }, output: { value: "Ada" } }]
@@ -472,7 +472,7 @@ describe("App", () => {
             history_key: "whistory_00000000000000000001_00000000000000000101",
             run: {
               workflow_id: 1,
-              timestamp: "2026-06-16T10:00:00Z",
+              timestamp: 1781604000000,
               inputs: {},
               outputs: {},
               steps: []

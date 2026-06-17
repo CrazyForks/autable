@@ -48,7 +48,7 @@ export type RowChange = {
   database: string;
   table: string;
   record_id: number;
-  timestamp: string;
+  timestamp: number;
   operation?: string;
   values: Record<string, unknown>;
   diff?: Record<string, { old: unknown; new: unknown }>;
@@ -99,7 +99,7 @@ export type WorkflowStepRecord = {
 
 export type WorkflowRun = {
   workflow_id: number;
-  timestamp: string;
+  timestamp: number;
   inputs?: Record<string, unknown>;
   outputs?: Record<string, unknown>;
   steps: WorkflowStepRecord[];

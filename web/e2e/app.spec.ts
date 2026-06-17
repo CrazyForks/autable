@@ -475,6 +475,13 @@ test("covers table views, row creation, and row history through the real backend
 
   await page.getByRole("button", { name: "Active", exact: true }).click();
   await expect(page.getByText(/\d+ of \d+ records/).first()).toBeVisible();
+  const graceRows = (await api(
+    page,
+    "GET",
+    `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows`
+  )) as Array<{ record_id: number; values: { name?: string } }>;
+  const graceRow = graceRows.find((row) => row.values.name === "Grace Hopper");
+  expect(graceRow?.record_id).toBeTruthy();
   await recordsGrid.getByRole("gridcell", { name: "Grace Hopper", exact: true }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "View details" }).click();
   const detailsPanel = page.getByLabel("Record panel");
@@ -488,6 +495,12 @@ test("covers table views, row creation, and row history through the real backend
   const recordPanel = page.getByLabel("Record panel");
   await expect(recordPanel.getByRole("tab", { name: "History" })).toHaveAttribute("aria-selected", "true");
   await expect(recordPanel.getByLabel("Row history").getByText(/Created|Updated|Record change/).first()).toBeVisible();
+  const rowHistory = (await api(
+    page,
+    "GET",
+    `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows/${graceRow?.record_id}/history`
+  )) as Array<{ timestamp: number }>;
+  expect(typeof rowHistory[0]?.timestamp).toBe("number");
   await expect(page.getByText(new RegExp(`rhistory_${workspace.databaseName}_contacts_`))).toHaveCount(0);
   await recordPanel.getByRole("button", { name: "Close record panel" }).click();
 
@@ -558,7 +571,7 @@ test("covers workflow editor, node list, and run history through the real backen
     page,
     "GET",
     `/api/databases/${workspace.databaseName}/workflows`
-  )) as Array<{ name: string; variables: Record<string, string>; secrets: Record<string, string> }>;
+  )) as Array<{ id: number; name: string; variables: Record<string, string>; secrets: Record<string, string> }>;
   const savedWorkflow = savedWorkflows.find((item) => item.name === workflowName);
   expect(savedWorkflow?.variables["row_change.label"]).toBe("review");
   expect(savedWorkflow?.secrets["row_change.token"]).toBe("hidden-token");
@@ -572,6 +585,10 @@ test("covers workflow editor, node list, and run history through the real backen
   await expect(runFlow.getByText("Run output")).toBeVisible();
   await expect(runFlow.getByText(rowHistory[0].history_key).first()).toBeVisible();
   await expect(runFlow.getByText(/"record_id": 1/).first()).toBeVisible();
+  const workflowRuns = (await api(page, "GET", `/api/workflows/${savedWorkflow?.id}/runs`)) as Array<{
+    run: { timestamp: number };
+  }>;
+  expect(typeof workflowRuns[0]?.run.timestamp).toBe("number");
 });
 
 test("runs table row workflow nodes through the real backend", async ({ page }) => {

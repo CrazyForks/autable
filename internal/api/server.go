@@ -1209,17 +1209,20 @@ func (server *Server) latestWorkflowRunTimestamp(ctx context.Context, workflowID
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	var latest time.Time
+	var latest int64
 	for _, entry := range entries {
 		run, err := history.DecodeWorkflowRun(entry)
 		if err != nil {
 			return time.Time{}, false, err
 		}
-		if run.Timestamp.After(latest) {
+		if run.Timestamp > latest {
 			latest = run.Timestamp
 		}
 	}
-	return latest, !latest.IsZero(), nil
+	if latest == 0 {
+		return time.Time{}, false, nil
+	}
+	return time.UnixMilli(latest).UTC(), true, nil
 }
 
 func dailyScheduleDue(scheduledAt, latestRun time.Time, hasLatestRun bool, dailyAt string) bool {

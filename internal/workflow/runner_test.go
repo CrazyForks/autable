@@ -308,7 +308,7 @@ func TestRunnerExecutesRecordChangedTriggerNode(t *testing.T) {
 		Database:  "db",
 		Table:     "contacts",
 		RecordID:  5,
-		Timestamp: time.Unix(99, 0).UTC(),
+		Timestamp: time.Unix(99, 0).UTC().UnixMilli(),
 		Values:    map[string]any{"name": "Ada"},
 		Diff:      history.RowDiff{"name": {Old: nil, New: "Ada"}},
 		ActorID:   "u1",

@@ -16,7 +16,7 @@ func TestRecordChangedTriggerNodeLoadsRowHistory(t *testing.T) {
 		Database:  "db",
 		Table:     "contacts",
 		RecordID:  12,
-		Timestamp: ts,
+		Timestamp: ts.UnixMilli(),
 		Values:    map[string]any{"name": "Ada"},
 		Diff:      history.RowDiff{"name": {Old: nil, New: "Ada"}},
 		ActorID:   "u1",

@@ -81,7 +81,7 @@ func (runner *Runner) RunAt(ctx context.Context, definition Definition, inputs m
 	runID := uuid.NewString()
 	run := history.WorkflowRun{
 		WorkflowID: definition.ID,
-		Timestamp:  timestamp.UTC(),
+		Timestamp:  timestamp.UTC().UnixMilli(),
 		Inputs:     cloneAnyMap(inputs),
 		Steps:      []history.StepRecord{},
 	}

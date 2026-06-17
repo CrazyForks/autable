@@ -797,10 +797,10 @@ function friendlyHistoryOperation(operation?: string): string {
   return "Record change";
 }
 
-function formatHistoryTime(timestamp: string): string {
+function formatHistoryTime(timestamp: number): string {
   const parsed = new Date(timestamp);
   if (Number.isNaN(parsed.getTime())) {
-    return timestamp;
+    return String(timestamp);
   }
   return parsed.toLocaleString();
 }
