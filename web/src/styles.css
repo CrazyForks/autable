@@ -500,6 +500,15 @@ select {
   min-height: 0;
 }
 
+.form-editor-pane {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.form-section-header {
+  min-height: 0;
+  padding-block: 0;
+}
+
 .javascript-editor-shell {
   min-width: 0;
   min-height: 520px;
@@ -541,11 +550,26 @@ select {
   gap: 8px;
 }
 
+.section-header > .form-actions {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-actions > * {
+  flex: 0 0 auto;
+}
+
 .form-editor-body {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-width: 0;
+  min-height: 0;
+}
+
+.form-editor-body > .javascript-editor-shell {
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -591,7 +615,9 @@ select {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 10px;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .workflow-section-header {
@@ -600,6 +626,14 @@ select {
 
 .workflow-editor-tab,
 .workflow-history-tab {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workflow-editor-tab > .editor-pane,
+.workflow-editor-tab .javascript-editor-shell {
+  height: 100%;
   min-height: 0;
 }
 

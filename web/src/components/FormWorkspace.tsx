@@ -37,8 +37,8 @@ export function FormWorkspace({
 
   return (
     <div className="split-view">
-      <div className="editor-pane">
-        <div className="section-header">
+      <div className="editor-pane form-editor-pane">
+        <div className="section-header form-section-header">
           <div>
             <Text weight="semibold">{form?.name ?? "form"}.js</Text>
             <Text size={200}>{databaseName} form</Text>
