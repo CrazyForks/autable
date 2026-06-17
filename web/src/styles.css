@@ -395,18 +395,24 @@ select {
 
 .editor-pane {
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr) auto;
+  grid-template-rows: minmax(320px, 1fr) auto;
   gap: 12px;
   min-width: 0;
   min-height: 0;
 }
 
-.code-editor textarea {
-  min-height: 100%;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1.55;
-  tab-size: 2;
+.javascript-editor-shell {
+  min-width: 0;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--colorNeutralStroke2);
+  border-radius: 6px;
+  background: var(--colorNeutralBackground1);
+}
+
+.javascript-editor {
+  min-width: 0;
+  min-height: 0;
 }
 
 .workflow-config-grid {

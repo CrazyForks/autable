@@ -89,6 +89,55 @@ async function api(page: Page, method: string, path: string, body?: unknown) {
   );
 }
 
+async function fillMonacoEditor(page: Page, label: string, value: string) {
+  const testID = label === "Workflow JavaScript" ? "workflow-js-editor" : "form-js-editor";
+  const editor = page.getByTestId(testID);
+  await expect(editor).toBeVisible();
+  await expect(editor.locator(".monaco-editor")).toBeVisible();
+  await editor.evaluate((element, nextValue) => {
+    const win = element.ownerDocument.defaultView as Window & {
+      monaco?: {
+        editor: {
+          getEditors: () => Array<{
+            getContainerDomNode: () => HTMLElement;
+            getValue: () => string;
+            setValue: (value: string) => void;
+          }>;
+        };
+      };
+    };
+    const monacoEditor = win.monaco?.editor
+      .getEditors()
+      .find((candidate) => element.contains(candidate.getContainerDomNode()));
+    if (!monacoEditor) {
+      throw new Error("Monaco editor instance not found");
+    }
+    monacoEditor.setValue(nextValue);
+  }, value);
+  await expect
+    .poll(() =>
+      editor.evaluate((element) => {
+        const win = element.ownerDocument.defaultView as Window & {
+          monaco?: {
+            editor: {
+              getEditors: () => Array<{
+                getContainerDomNode: () => HTMLElement;
+                getValue: () => string;
+              }>;
+            };
+          };
+        };
+        return (
+          win.monaco?.editor
+            .getEditors()
+            .find((candidate) => element.contains(candidate.getContainerDomNode()))
+            ?.getValue() ?? ""
+        );
+      })
+    )
+    .toBe(value);
+}
+
 async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
   const user = await registerUser(page);
   const suffix = `${Date.now()}-${sequence}`;
@@ -322,7 +371,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
 
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
-  await expect(page.getByLabel("Workflow JavaScript")).toBeDisabled();
+  await expect(page.getByTestId("workflow-js-editor")).toHaveAttribute("aria-disabled", "true");
   await expect(page.getByRole("button", { name: "Edit config notifier" })).toBeDisabled();
   await expect(page.getByLabel("Workflow Inputs JSON")).toBeEnabled();
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -330,7 +379,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
 
   await page.getByRole("button", { name: "Form", exact: true }).click();
   await expect(page.getByRole("button", { name: formName })).toBeVisible();
-  await expect(page.getByLabel("Form JavaScript")).toBeDisabled();
+  await expect(page.getByTestId("form-js-editor")).toHaveAttribute("aria-disabled", "true");
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Submit record" })).toBeEnabled();
 });
@@ -546,8 +595,8 @@ test("covers workflow editor, node list, and run history through the real backen
   await page.getByRole("button", { name: "Create Workflow" }).click();
   await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
-  await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/function trigger\(info\)/);
-  await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/table\.record\.changed/);
+  await expect(page.getByTestId("workflow-js-editor")).toContainText("function trigger(info)");
+  await expect(page.getByTestId("workflow-js-editor")).toContainText("table.record.changed");
   const workflowNodes = (await api(page, "GET", "/api/workflow/nodes")) as Array<{
     type: string;
     documentation?: Record<string, string>;
@@ -604,7 +653,9 @@ test("covers workflow editor, node list, and run history through the real backen
   await expect(page.getByText("DingTalk robot").first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByLabel("Workflow instances").getByText("row_change")).toBeVisible();
-  await page.getByLabel("Workflow JavaScript").fill(
+  await fillMonacoEditor(
+    page,
+    "Workflow JavaScript",
     "function instances(info) {\n  return { ding: { node: 'dingtalk.robot.send' } };\n}\n\nfunction run(info) {\n  return info.instance('ding').exec({ content: 'hello' });\n}"
   );
   await page.getByRole("button", { name: "Edit config ding" }).click();
@@ -615,7 +666,9 @@ test("covers workflow editor, node list, and run history through the real backen
     "GET",
     `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows/1/history`
   )) as Array<{ history_key: string }>;
-  await page.getByLabel("Workflow JavaScript").fill(
+  await fillMonacoEditor(
+    page,
+    "Workflow JavaScript",
     "function instances(info) {\n  return { row_change: { node: 'table.record.changed', variables: [{ name: 'label', type: 'string' }], secrets: [{ name: 'token', type: 'string' }] } };\n}\n\nfunction trigger(info) {\n  return { instance: 'row_change', params: { table: 'contacts', operations: ['create', 'update', 'delete'] } };\n}\n\nfunction run(info) {\n  return { record_id: info.inputs.record.record_id, name: info.inputs.values.name };\n}"
   );
   await page.getByRole("button", { name: "Edit config row_change" }).click();
@@ -685,9 +738,12 @@ test("runs table row workflow nodes through the real backend", async ({ page }) 
   await page.getByRole("button", { name: "Create Workflow" }).click();
   await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
-  await page.getByLabel("Workflow JavaScript").fill(
+  await fillMonacoEditor(
+    page,
+    "Workflow JavaScript",
     "function instances(info) {\n  return {\n    create_contact: 'table.row.create',\n    list_contacts: 'table.row.list',\n    update_contact: 'table.row.update',\n    delete_contact: 'table.row.delete'\n  };\n}\n\nfunction run(info) {\n  const created = info.instance('create_contact').exec({\n    table: 'contacts',\n    values: { name: info.inputs.name, email: info.inputs.email, status: 'Review' }\n  });\n  const beforeUpdate = info.instance('list_contacts').exec({ table: 'contacts' });\n  const updated = info.instance('update_contact').exec({\n    table: 'contacts',\n    record_id: created.record.record_id,\n    values: { status: 'Active' }\n  });\n  const deleted = info.instance('delete_contact').exec({\n    table: 'contacts',\n    record_id: created.record.record_id\n  });\n  return {\n    created_id: created.record.record_id,\n    before_count: beforeUpdate.rows.length,\n    updated_status: updated.record.values.status,\n    deleted_name: deleted.record.values.name\n  };\n}"
   );
+  await expect(page.getByLabel("Workflow instances").getByText("create_contact")).toBeVisible();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(/Workflow saved as #/)).toBeVisible();
   await page.getByLabel("Workflow Inputs JSON").fill(
@@ -782,7 +838,16 @@ test("covers form runtime preview and submit through the real backend", async ({
   await page.getByRole("button", { name: "Create Form" }).click();
   await expect(page.getByText(`Created form ${formName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: formName })).toBeVisible();
+  await fillMonacoEditor(
+    page,
+    "Form JavaScript",
+    "function render(api, root) {\n  root.append(\n    api.input({ name: 'name', label: 'Name' }),\n    api.input({ name: 'email', label: 'Email', type: 'email' }),\n    api.submit('Submit')\n  );\n  return { table: 'contacts', fields: { name: 'name', email: 'email' } };\n}"
+  );
+  await expect(page.getByRole("textbox", { name: "Email", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(/Form saved as #/)).toBeVisible();
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("Margaret Hamilton");
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill("margaret@example.com");
   await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByText(/Form created contacts record \d+/)).toBeVisible();
 });

@@ -1,8 +1,9 @@
 import type { FormEvent } from "react";
-import { Button, Input, Select, Text, Textarea } from "@fluentui/react-components";
+import { Button, Input, Select, Text } from "@fluentui/react-components";
 import { SaveRegular, TabDesktopLinkRegular } from "@fluentui/react-icons";
 import type { FormDefinition } from "../api";
 import type { FormElement, FormRenderResult } from "../formRuntime";
+import { JavaScriptEditor } from "./JavaScriptEditor";
 
 type FormWorkspaceProps = {
   databaseName: string;
@@ -51,13 +52,13 @@ export function FormWorkspace({
           {publishedLink && (
             <Input aria-label="Published form link" readOnly value={publishedLink} />
           )}
-          <Textarea
-            className="code-editor"
+          <JavaScriptEditor
+            canWrite={canWriteForm}
+            label="Form JavaScript"
+            onChange={onUpdateScript}
+            path={`form-${form?.id || "new"}.js`}
+            testID="form-js-editor"
             value={form?.script ?? ""}
-            onChange={(_, data) => onUpdateScript(data.value)}
-            resize="none"
-            disabled={!canWriteForm}
-            aria-label="Form JavaScript"
           />
         </div>
       </div>

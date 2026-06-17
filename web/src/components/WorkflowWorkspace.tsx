@@ -26,6 +26,7 @@ import type {
   WorkflowPort,
   WorkflowRunResponse
 } from "../api";
+import { JavaScriptEditor } from "./JavaScriptEditor";
 
 type WorkflowWorkspaceProps = {
   databaseName: string;
@@ -113,13 +114,13 @@ export function WorkflowWorkspace({
       {activeTab === "editor" ? (
         <div className="split-view workflow-editor-tab">
           <div className="editor-pane">
-            <Textarea
-              className="code-editor"
+            <JavaScriptEditor
+              canWrite={canWriteWorkflow}
+              label="Workflow JavaScript"
+              onChange={onUpdateScript}
+              path={`workflow-${workflow?.id || "new"}.js`}
+              testID="workflow-js-editor"
               value={workflow?.script ?? ""}
-              onChange={(_, data) => onUpdateScript(data.value)}
-              resize="none"
-              disabled={!canWriteWorkflow}
-              aria-label="Workflow JavaScript"
             />
             <div className="workflow-config-grid">
               <label className="field-stack">

@@ -1,6 +1,31 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import React from "react";
+import { afterEach, vi } from "vitest";
+
+vi.mock("@monaco-editor/react", () => ({
+  default: ({
+    className,
+    onChange,
+    options,
+    value,
+    wrapperProps
+  }: {
+    className?: string;
+    onChange?: (value: string) => void;
+    options?: { ariaLabel?: string; readOnly?: boolean };
+    value?: string;
+    wrapperProps?: Record<string, unknown>;
+  }) =>
+    React.createElement("textarea", {
+      ...wrapperProps,
+      "aria-label": options?.ariaLabel ?? String(wrapperProps?.["aria-label"] ?? ""),
+      className,
+      disabled: Boolean(options?.readOnly),
+      onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => onChange?.(event.currentTarget.value),
+      value: value ?? ""
+    })
+}));
 
 afterEach(() => {
   cleanup();
