@@ -252,9 +252,7 @@ test("hides workflow and form resources without resource permission", async ({ p
   const tableCanvas = page.locator(".table-view");
   const tableActions = tableCanvas.getByRole("toolbar", { name: "Table canvas actions" });
   await expect(tableActions.getByRole("button", { name: "Fields" })).toBeDisabled();
-  await expect(tableActions.getByRole("button", { name: "View", exact: true })).toBeDisabled();
   await expect(tableActions.getByRole("button", { name: "Edit Row" })).toBeDisabled();
-  await expect(tableActions.getByRole("button", { name: "Delete Row" })).toBeDisabled();
   await expect(tableActions.getByRole("button", { name: "Row", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
   await expect(page.getByRole("button", { name: workflowName })).toHaveCount(0);
@@ -362,7 +360,6 @@ test("covers table views, row creation, and row history through the real backend
   const tableActions = tableCanvas.getByRole("toolbar", { name: "Table canvas actions" });
   const canvasPanel = tableCanvas.getByLabel("Table canvas panel");
   await expect(tableActions.getByRole("button", { name: "Fields" })).toBeVisible();
-  await expect(tableActions.getByRole("button", { name: "View", exact: true })).toBeVisible();
   await expect(tableActions.getByRole("button", { name: "Row", exact: true })).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Workspace actions" }).getByRole("button", { name: "Create row" })).toHaveCount(0);
 
@@ -389,7 +386,8 @@ test("covers table views, row creation, and row history through the real backend
   await page.keyboard.press("Enter");
   await expect(page.getByText(/Updated record \d+/)).toBeVisible();
 
-  await tableActions.getByRole("button", { name: "View", exact: true }).click();
+  await page.getByRole("button", { name: workspace.tableName }).click();
+  await page.getByRole("button", { name: "+ View" }).click();
   await canvasPanel.getByLabel("New view name").fill("active-desc");
   await canvasPanel.getByLabel("Base view").selectOption("active");
   await canvasPanel.getByLabel("View sort field").selectOption("name");
@@ -404,11 +402,12 @@ test("covers table views, row creation, and row history through the real backend
   )) as Array<{ values: { name?: string } }>;
   expect(viewRows.map((row) => row.values.name)).toEqual(["Grace Hopper", "Ada Lovelace"]);
 
-  await tableActions.getByLabel("Table view", { exact: true }).selectOption("active");
+  await page.getByRole("button", { name: "Active", exact: true }).click();
   await expect(page.getByText(/\d+ of \d+ records/).first()).toBeVisible();
   await tableActions.getByRole("button", { name: "History" }).click();
   await expect(page.getByText(new RegExp(`rhistory_${workspace.databaseName}_contacts_`)).first()).toBeVisible();
-  await tableActions.getByRole("button", { name: "Delete Row" }).click();
+  await recordsGrid.getByRole("gridcell", { name: "Grace Hopper" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete record" }).click();
   await expect(page.getByText(/Deleted record \d+/)).toBeVisible();
 
   const metadata = (await api(page, "GET", "/api/metadata")) as {

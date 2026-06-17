@@ -1,5 +1,8 @@
 import {
-  Select,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
   Text,
   Toolbar,
   ToolbarButton,
@@ -7,7 +10,7 @@ import {
 } from "@fluentui/react-components";
 import { AddRegular, DeleteRegular, EditRegular, HistoryRegular, TableRegular } from "@fluentui/react-icons";
 import DataGrid, { type CellSelectArgs, type Column, type RowsChangeData } from "react-data-grid";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Field, RowChange, TableMetadata, TableViewFilter, TableViewSort } from "../api";
 import type { TableGridRow } from "../tableGrid";
 import { TableCanvasPanel, type CanvasPanel } from "./TableCanvasPanel";
@@ -16,12 +19,13 @@ type TableWorkspaceProps = {
   columns: Column<TableGridRow>[];
   displayedRecordIDs: number[];
   displayedRows: TableGridRow[];
+  openViewPanelRequest: number;
   onAddRow: () => void;
   onAddField: () => void;
   onRowsChange: (rows: TableGridRow[], data: RowsChangeData<TableGridRow>) => void | Promise<void>;
   onCreateView: () => void;
   onDeleteField: (fieldName: string) => void;
-  onDeleteSelectedRow: () => void;
+  onDeleteSelectedRow: (recordID?: number) => void;
   onLoadHistory: () => void;
   onNewFieldNameChange: (value: string) => void;
   onNewFieldRequiredChange: (value: boolean) => void;
@@ -60,6 +64,7 @@ export function TableWorkspace({
   columns,
   displayedRecordIDs,
   displayedRows,
+  openViewPanelRequest,
   onAddRow,
   onAddField,
   onRowsChange,
@@ -106,6 +111,7 @@ export function TableWorkspace({
   const hasWritableFields = activeFields.some(canWriteField);
   const [canvasPanel, setCanvasPanel] = useState<CanvasPanel>("record");
   const [selectedFieldName, setSelectedFieldName] = useState(activeFields[0]?.name ?? "");
+  const [recordMenu, setRecordMenu] = useState<{ x: number; y: number; recordID: number } | null>(null);
   const selectedField = useMemo(
     () => activeFields.find((field) => field.name === selectedFieldName) ?? activeFields[0],
     [activeFields, selectedFieldName]
@@ -114,6 +120,21 @@ export function TableWorkspace({
     () => (table.views ?? []).find((viewDef) => viewDef.name === selectedTableView),
     [selectedTableView, table.views]
   );
+  const recordMenuTarget = useMemo(
+    () =>
+      recordMenu
+        ? {
+            getBoundingClientRect: () => new DOMRect(recordMenu.x, recordMenu.y, 0, 0)
+          }
+        : undefined,
+    [recordMenu]
+  );
+
+  useEffect(() => {
+    if (openViewPanelRequest > 0) {
+      setCanvasPanel("view");
+    }
+  }, [openViewPanelRequest]);
 
   function openFieldPanel(fieldName?: string) {
     if (fieldName) {
@@ -144,36 +165,14 @@ export function TableWorkspace({
           </Text>
         </div>
         <Toolbar aria-label="Table canvas actions" className="table-actions">
-          <Select
-            aria-label="Table view"
-            value={selectedTableView}
-            onChange={(_, data) => {
-              onSelectTableView(data.value);
-              setCanvasPanel("view");
-            }}
-          >
-            <option value="all">All records</option>
-            {(table.views ?? []).map((viewDef) => (
-              <option key={viewDef.name} value={viewDef.name}>
-                {viewDef.display_name || viewDef.name}
-              </option>
-            ))}
-          </Select>
           <ToolbarButton icon={<TableRegular />} onClick={() => openFieldPanel()} disabled={!canWriteTable}>
             Fields
           </ToolbarButton>
-          <ToolbarButton icon={<AddRegular />} onClick={() => setCanvasPanel("view")} disabled={!canWriteTable}>
-            View
-          </ToolbarButton>
-          <ToolbarDivider />
           <ToolbarButton icon={<EditRegular />} onClick={() => openRecordPanel()} disabled={!selectedRecordID || !hasWritableFields}>
             Edit Row
           </ToolbarButton>
           <ToolbarButton icon={<HistoryRegular />} onClick={loadHistoryFromCanvas} disabled={!selectedRecordID}>
             History
-          </ToolbarButton>
-          <ToolbarButton icon={<DeleteRegular />} onClick={onDeleteSelectedRow} disabled={!selectedRecordID || !canWriteTable}>
-            Delete Row
           </ToolbarButton>
           <ToolbarButton
             icon={<AddRegular />}
@@ -215,13 +214,41 @@ export function TableWorkspace({
           }}
           onCellContextMenu={(args, event) => {
             event.preventGridDefault();
-            const field = activeFields.find((item) => item.name === args.column.key);
-            if (field) {
-              openFieldPanel(field.name);
+            event.preventDefault();
+            const recordID = Number(args.row?.record_id);
+            if (Number.isFinite(recordID)) {
+              onSelectRecordID(recordID);
+              setRecordMenu({ x: event.clientX, y: event.clientY, recordID });
             }
           }}
           defaultColumnOptions={{ resizable: true }}
         />
+        <Menu
+          open={Boolean(recordMenu)}
+          onOpenChange={(_, data) => {
+            if (!data.open) {
+              setRecordMenu(null);
+            }
+          }}
+          positioning={recordMenuTarget ? { target: recordMenuTarget } : undefined}
+        >
+          <MenuPopover>
+            <MenuList>
+              <MenuItem
+                icon={<DeleteRegular />}
+                disabled={!canWriteTable}
+                onClick={() => {
+                  if (recordMenu) {
+                    onDeleteSelectedRow(recordMenu.recordID);
+                  }
+                  setRecordMenu(null);
+                }}
+              >
+                Delete record
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
         <TableCanvasPanel
           activeFields={activeFields}
           activePanel={canvasPanel}

@@ -58,6 +58,7 @@ type WorkspaceNavigationProps = {
   onNewTableNameChange: (value: string) => void;
   onNewWorkflowNameChange: (value: string) => void;
   onOpenLogin: () => void;
+  onOpenTableViewPanel: (tableName: string) => void;
   onSelectDatabaseSection: (databaseName: string, view: WorkspaceView) => void;
   onSelectFormID: (id: number) => void;
   onSelectRoleName: (name: string) => void;
@@ -96,6 +97,7 @@ export function WorkspaceNavigation({
   onNewTableNameChange,
   onNewWorkflowNameChange,
   onOpenLogin,
+  onOpenTableViewPanel,
   onSelectDatabaseSection,
   onSelectFormID,
   onSelectRoleName,
@@ -212,7 +214,9 @@ export function WorkspaceNavigation({
                 onNewTableNameChange={onNewTableNameChange}
                 onSelectTable={onSelectTable}
                 onSelectTableView={onSelectTableView}
+                onOpenTableViewPanel={onOpenTableViewPanel}
                 newTableName={newTableName}
+                selectedTableView={selectedTableView}
                 table={table}
               />
             </>
@@ -333,8 +337,10 @@ function TableNav(props: {
   newTableName: string;
   onCreateTable: () => void;
   onNewTableNameChange: (value: string) => void;
+  onOpenTableViewPanel: (tableName: string) => void;
   onSelectTable: (name: string) => void;
   onSelectTableView: (name: string) => void;
+  selectedTableView: string;
   table: TableMetadata;
 }) {
   return (
@@ -343,17 +349,45 @@ function TableNav(props: {
         className="resource-nav"
         aria-label="Table list"
         density="small"
-        selectedValue={props.table.name}
+        selectedValue={props.table.name ? `${props.table.name}:view:${props.selectedTableView}` : ""}
+        selectedCategoryValue={props.table.name}
+        openCategories={props.table.name ? [props.table.name] : []}
+        onNavCategoryItemToggle={(_, data) => {
+          const tableName = data.categoryValue ?? data.value;
+          if (tableName) {
+            props.onSelectTable(tableName);
+            props.onSelectTableView("all");
+          }
+        }}
         onNavItemSelect={(_, data) => {
-          props.onSelectTable(data.value);
-          props.onSelectTableView("all");
+          const [tableName, action, viewName] = data.value.split(":");
+          if (!tableName) {
+            return;
+          }
+          props.onSelectTable(tableName);
+          if (action === "view") {
+            props.onSelectTableView(viewName || "all");
+          }
+          if (action === "add-view") {
+            props.onSelectTableView("all");
+            props.onOpenTableViewPanel(tableName);
+          }
         }}
       >
         <NavSectionHeader>Tables</NavSectionHeader>
         {props.database.tables.map((item) => (
-          <NavItem key={item.name} value={item.name} icon={<DocumentTableRegular />}>
-            {item.display_name || item.name}
-          </NavItem>
+          <NavCategory key={item.name} value={item.name}>
+            <NavCategoryItem icon={<DocumentTableRegular />}>{item.display_name || item.name}</NavCategoryItem>
+            <NavSubItemGroup>
+              <NavSubItem value={`${item.name}:view:all`}>All records</NavSubItem>
+              {(item.views ?? []).map((viewDef) => (
+                <NavSubItem key={viewDef.name} value={`${item.name}:view:${viewDef.name}`}>
+                  {viewDef.display_name || viewDef.name}
+                </NavSubItem>
+              ))}
+              <NavSubItem value={`${item.name}:add-view`}>+ View</NavSubItem>
+            </NavSubItemGroup>
+          </NavCategory>
         ))}
       </Nav>
       <div className="create-rowline">

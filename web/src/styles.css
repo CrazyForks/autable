@@ -145,7 +145,7 @@ select {
 
 .section-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
@@ -158,14 +158,19 @@ select {
 
 .table-actions {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
 }
 
 .table-actions[role="toolbar"] {
-  row-gap: 6px;
+  flex-direction: row;
+}
+
+.table-actions > * {
+  flex: 0 0 auto;
 }
 
 .grid-host {

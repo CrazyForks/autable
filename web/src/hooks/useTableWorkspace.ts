@@ -288,13 +288,13 @@ export function useTableWorkspace({
     }
   }
 
-  async function deleteSelectedRow() {
-    if (!selectedRecordID) {
+  async function deleteSelectedRow(recordID = selectedRecordID) {
+    if (!recordID) {
       onStatus("Select a row before deleting");
       return;
     }
     try {
-      const deleted = await deleteRow(databaseName, table.name, selectedRecordID);
+      const deleted = await deleteRow(databaseName, table.name, recordID);
       setRows((current) => current.filter((item) => Number(item.record_id) !== deleted.record_id));
       setRowsViewName("local");
       setSelectedRecordID(0);

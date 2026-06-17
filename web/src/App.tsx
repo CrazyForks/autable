@@ -39,6 +39,7 @@ export function App() {
   const [selectedDatabaseName, setSelectedDatabaseName] = useState("");
   const [selectedTable, setSelectedTable] = useState("");
   const [selectedTableView, setSelectedTableView] = useState("all");
+  const [openViewPanelRequest, setOpenViewPanelRequest] = useState(0);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -321,6 +322,13 @@ export function App() {
     }
   }
 
+  function openTableViewPanelFromSidebar(tableName: string) {
+    setView("table");
+    setSelectedTable(tableName);
+    setSelectedTableView("all");
+    setOpenViewPanelRequest((current) => current + 1);
+  }
+
   return (
     <div className="app-shell">
       <WorkspaceNavigation
@@ -345,6 +353,7 @@ export function App() {
         onNewTableNameChange={setNewTableName}
         onNewWorkflowNameChange={workflowFormWorkspace.setNewWorkflowName}
         onOpenLogin={() => setAuthDialogOpen(true)}
+        onOpenTableViewPanel={openTableViewPanelFromSidebar}
         onSelectDatabaseSection={selectDatabaseSection}
         onSelectFormID={workflowFormWorkspace.setSelectedFormID}
         onSelectRoleName={permissionWorkspace.setSelectedRoleName}
@@ -434,6 +443,7 @@ export function App() {
               selectedRowDraft={tableWorkspace.selectedRowDraft}
               selectedTableView={selectedTableView}
               table={table}
+              openViewPanelRequest={openViewPanelRequest}
             />
           )}
 
