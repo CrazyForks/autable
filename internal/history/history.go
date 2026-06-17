@@ -74,6 +74,22 @@ func WorkflowPrefix(workflowID int64) string {
 	return fmt.Sprintf("whistory_%020d_", workflowID)
 }
 
+func ParseWorkflowKey(key string) (int64, int64, error) {
+	parts := strings.Split(key, "_")
+	if len(parts) != 3 || parts[0] != "whistory" {
+		return 0, 0, fmt.Errorf("invalid workflow history key %q", key)
+	}
+	workflowID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid workflow id in key %q: %w", key, err)
+	}
+	timestamp, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid workflow timestamp in key %q: %w", key, err)
+	}
+	return workflowID, timestamp, nil
+}
+
 func SaveRowChange(ctx context.Context, store Store, change RowChange) (string, error) {
 	if change.Timestamp == 0 {
 		change.Timestamp = time.Now().UTC().UnixMilli()
