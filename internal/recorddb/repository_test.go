@@ -4,7 +4,6 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"codetable/internal/metadata"
 	"codetable/internal/table"
@@ -18,8 +17,8 @@ type oldRecordTimestampModel struct {
 	RecordID  int64  `gorm:"column:record_id"`
 	Table     string `gorm:"column:table_name"`
 	Values    JSONMap
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt string `gorm:"type:integer"`
+	UpdatedAt string `gorm:"type:integer"`
 }
 
 func (oldRecordTimestampModel) TableName() string {
@@ -124,9 +123,11 @@ func TestRepositoryDropsIncompatibleTimestampTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := raw.WithContext(ctx).Create(&oldRecordTimestampModel{
-		RecordID: 1,
-		Table:    "contacts",
-		Values:   JSONMap{"name": "Legacy"},
+		RecordID:  1,
+		Table:     "contacts",
+		Values:    JSONMap{"name": "Legacy"},
+		CreatedAt: "2026-06-17 08:25:13.733763+08:00",
+		UpdatedAt: "2026-06-17 08:25:13.733763+08:00",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

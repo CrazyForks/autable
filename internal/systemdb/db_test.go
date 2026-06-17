@@ -21,8 +21,8 @@ type oldWorkflowTimestampModel struct {
 	CreatorID     string
 	SecretsJSON   string
 	VariablesJSON string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	CreatedAt     string `gorm:"type:integer"`
+	UpdatedAt     string `gorm:"type:integer"`
 }
 
 func (oldWorkflowTimestampModel) TableName() string {
@@ -101,6 +101,8 @@ func TestOpenDropsIncompatibleTimestampTables(t *testing.T) {
 		Script:        "function run() {}",
 		SecretsJSON:   "{}",
 		VariablesJSON: "{}",
+		CreatedAt:     "2026-06-17 08:25:13.733763+08:00",
+		UpdatedAt:     "2026-06-17 08:25:13.733763+08:00",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

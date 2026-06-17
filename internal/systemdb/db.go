@@ -211,7 +211,71 @@ func (db *DB) hasIncompatibleTimestampColumn(ctx context.Context, model any, col
 			return true, nil
 		}
 	}
+	tableName, err := db.tableName(model)
+	if err != nil {
+		return false, err
+	}
+	row, err := db.firstRowValues(ctx, tableName, columns)
+	if err != nil {
+		return false, err
+	}
+	if row == nil {
+		return false, nil
+	}
+	for column := range wanted {
+		if hasIncompatibleTimestampValue(row[column]) {
+			return true, nil
+		}
+	}
 	return false, nil
+}
+
+func (db *DB) firstRowValues(ctx context.Context, tableName string, columns []string) (map[string]any, error) {
+	rows, err := db.orm.WithContext(ctx).Table(tableName).Select(columns).Limit(1).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	names, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	values := make([]any, len(names))
+	destinations := make([]any, len(names))
+	for index := range values {
+		destinations[index] = &values[index]
+	}
+	if err := rows.Scan(destinations...); err != nil {
+		return nil, err
+	}
+	result := map[string]any{}
+	for index, name := range names {
+		result[strings.ToLower(name)] = values[index]
+	}
+	return result, rows.Err()
+}
+
+func (db *DB) tableName(model any) (string, error) {
+	statement := &gorm.Statement{DB: db.orm}
+	if err := statement.Parse(model); err != nil {
+		return "", err
+	}
+	return statement.Schema.Table, nil
+}
+
+func hasIncompatibleTimestampValue(value any) bool {
+	if value == nil {
+		return false
+	}
+	switch value.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return false
+	default:
+		return true
+	}
 }
 
 func (db *DB) UpsertUserByEmail(ctx context.Context, user auth.User) (auth.User, error) {
