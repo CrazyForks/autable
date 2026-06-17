@@ -25,11 +25,12 @@ type Node interface {
 }
 
 type RuntimeInfo struct {
-	WorkflowID int64
-	RunID      string
-	CreatorID  string
-	Secrets    map[string]string
-	Variables  map[string]string
+	WorkflowID   int64
+	DatabaseName string
+	RunID        string
+	CreatorID    string
+	Secrets      map[string]string
+	Variables    map[string]string
 }
 
 type TriggerRecord struct {

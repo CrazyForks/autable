@@ -1742,6 +1742,104 @@ func TestWorkflowRunAPI(t *testing.T) {
 	}
 }
 
+func TestWorkflowTableCreateNodeUsesCreatorPermissions(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "creator",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"create-contact",
+		"script":"function run(info) { const created = info.node(\"table.row.create\", { table: \"contacts\", values: { name: info.inputs.name } }); return { record_id: created.record.record_id, name: created.record.values.name, database: info.database_name }; }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "creator"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+
+	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"name":"Ada"}}`))
+	runRequest.AddCookie(testSessionCookie(t, system, "creator"))
+	runRecorder := httptest.NewRecorder()
+	server.ServeHTTP(runRecorder, runRequest)
+	if runRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow run 201, got %d: %s", runRecorder.Code, runRecorder.Body.String())
+	}
+	var response workflowRunResponse
+	if err := json.NewDecoder(runRecorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Run.Outputs["record_id"] != float64(1) || response.Run.Outputs["name"] != "Ada" || response.Run.Outputs["database"] != "db" {
+		t.Fatalf("unexpected table node outputs: %#v", response.Run.Outputs)
+	}
+	if len(response.Run.Steps) != 1 || response.Run.Steps[0].NodeID != "table.row.create" {
+		t.Fatalf("unexpected table node steps: %#v", response.Run.Steps)
+	}
+}
+
+func TestWorkflowTableCreateNodeIgnoresRunnerPermissions(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "creator",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"create-contact",
+		"script":"function run(info) { return info.node(\"table.row.create\", { table: \"contacts\", values: { name: \"Ada\" } }); }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "creator"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "runner",
+		Scope:     permission.ScopeWorkflow,
+		Resource:  "1",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "creator",
+		Scope:     permission.ScopeField,
+		Resource:  "db.contacts",
+		Field:     "name",
+		Level:     permission.None,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{}}`))
+	runRequest.AddCookie(testSessionCookie(t, system, "runner"))
+	runRecorder := httptest.NewRecorder()
+	server.ServeHTTP(runRecorder, runRequest)
+	if runRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected workflow run 400, got %d: %s", runRecorder.Code, runRecorder.Body.String())
+	}
+	var response workflowRunResponse
+	if err := json.NewDecoder(runRecorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Run.Error == "" || len(response.Run.Steps) != 1 || response.Run.Steps[0].Error == "" {
+		t.Fatalf("expected creator permission failure in run history, got %#v", response.Run)
+	}
+}
+
 func TestWorkflowNodesAPI(t *testing.T) {
 	server, _ := newTestServer(t)
 
@@ -1755,10 +1853,24 @@ func TestWorkflowNodesAPI(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&nodes); err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 3 || nodes[0].Type != "echo" || nodes[1].Type != "table.record.changed" || nodes[2].Type != "time.schedule" {
+	expectedTypes := []string{
+		"echo",
+		"table.record.changed",
+		"table.row.create",
+		"table.row.delete",
+		"table.row.list",
+		"table.row.update",
+		"time.schedule",
+	}
+	if len(nodes) != len(expectedTypes) {
 		t.Fatalf("unexpected nodes: %#v", nodes)
 	}
-	if !nodes[1].Trigger || len(nodes[1].Inputs) == 0 || len(nodes[1].Outputs) == 0 || !nodes[2].Trigger {
+	for i, expectedType := range expectedTypes {
+		if nodes[i].Type != expectedType {
+			t.Fatalf("unexpected nodes: %#v", nodes)
+		}
+	}
+	if !nodes[1].Trigger || len(nodes[1].Inputs) == 0 || len(nodes[1].Outputs) == 0 || !nodes[6].Trigger {
 		t.Fatalf("expected trigger node ports: %#v", nodes[1])
 	}
 }

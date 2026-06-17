@@ -460,7 +460,8 @@ test("covers workflow editor, node list, and run history through the real backen
   await page.getByRole("button", { name: "Create Workflow" }).click();
   await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
-  await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/info\.node/);
+  await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/function trigger\(info\)/);
+  await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/table\.record\.changed/);
   await expect(page.getByText("echo").first()).toBeVisible();
   const rowHistory = (await api(
     page,

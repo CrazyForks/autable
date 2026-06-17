@@ -152,6 +152,7 @@ func NewServerWithWorkflowRunnerAndOIDC(catalog metadata.Catalog, system *system
 		mux:     http.NewServeMux(),
 	}
 	server.tables.SetRowChangeHandler(server.dispatchRowChangeEvent)
+	server.registerWorkflowTableNodes()
 	server.routes()
 	return server
 }
@@ -1021,11 +1022,12 @@ func (server *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	run, key, err := server.runner.Run(r.Context(), workflow.Definition{
-		ID:        workflowDefinition.ID,
-		Script:    workflowDefinition.Script,
-		CreatorID: workflowDefinition.CreatorID,
-		Secrets:   workflowDefinition.Secrets,
-		Variables: workflowDefinition.Variables,
+		ID:           workflowDefinition.ID,
+		DatabaseName: workflowDefinition.DatabaseName,
+		Script:       workflowDefinition.Script,
+		CreatorID:    workflowDefinition.CreatorID,
+		Secrets:      workflowDefinition.Secrets,
+		Variables:    workflowDefinition.Variables,
 	}, request.Inputs)
 	status := http.StatusCreated
 	if err != nil {
@@ -1098,11 +1100,12 @@ func (server *Server) dispatchScheduleTick(ctx context.Context, dbName string, s
 	}
 	for _, workflowDefinition := range workflows {
 		definition := workflow.Definition{
-			ID:        workflowDefinition.ID,
-			Script:    workflowDefinition.Script,
-			CreatorID: workflowDefinition.CreatorID,
-			Secrets:   workflowDefinition.Secrets,
-			Variables: workflowDefinition.Variables,
+			ID:           workflowDefinition.ID,
+			DatabaseName: workflowDefinition.DatabaseName,
+			Script:       workflowDefinition.Script,
+			CreatorID:    workflowDefinition.CreatorID,
+			Secrets:      workflowDefinition.Secrets,
+			Variables:    workflowDefinition.Variables,
 		}
 		declaration, err := server.runner.Trigger(ctx, definition)
 		if errors.Is(err, workflow.ErrMissingTrigger) {
@@ -1185,11 +1188,12 @@ func (server *Server) dispatchRowChangeEvent(ctx context.Context, historyKey str
 	}
 	for _, workflowDefinition := range workflows {
 		definition := workflow.Definition{
-			ID:        workflowDefinition.ID,
-			Script:    workflowDefinition.Script,
-			CreatorID: workflowDefinition.CreatorID,
-			Secrets:   workflowDefinition.Secrets,
-			Variables: workflowDefinition.Variables,
+			ID:           workflowDefinition.ID,
+			DatabaseName: workflowDefinition.DatabaseName,
+			Script:       workflowDefinition.Script,
+			CreatorID:    workflowDefinition.CreatorID,
+			Secrets:      workflowDefinition.Secrets,
+			Variables:    workflowDefinition.Variables,
 		}
 		declaration, err := server.runner.Trigger(ctx, definition)
 		if errors.Is(err, workflow.ErrMissingTrigger) {

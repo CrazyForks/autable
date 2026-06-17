@@ -14,11 +14,12 @@ import (
 )
 
 type Definition struct {
-	ID        int64
-	Script    string
-	CreatorID string
-	Secrets   map[string]string
-	Variables map[string]string
+	ID           int64
+	DatabaseName string
+	Script       string
+	CreatorID    string
+	Secrets      map[string]string
+	Variables    map[string]string
 }
 
 var ErrMissingTrigger = errors.New("workflow script must define function trigger(info)")
@@ -143,11 +144,12 @@ func (runner *Runner) runNode(ctx context.Context, definition Definition, runID,
 		return nil, fmt.Errorf("node %q is not registered", nodeType)
 	}
 	output, err := node.Run(ctx, input, RuntimeInfo{
-		WorkflowID: definition.ID,
-		RunID:      runID,
-		CreatorID:  definition.CreatorID,
-		Secrets:    cloneStringMap(definition.Secrets),
-		Variables:  cloneStringMap(definition.Variables),
+		WorkflowID:   definition.ID,
+		DatabaseName: definition.DatabaseName,
+		RunID:        runID,
+		CreatorID:    definition.CreatorID,
+		Secrets:      cloneStringMap(definition.Secrets),
+		Variables:    cloneStringMap(definition.Variables),
 	})
 	if err != nil {
 		step.Error = err.Error()
@@ -179,11 +181,12 @@ func newRuntime() *goja.Runtime {
 
 func workflowInfo(definition Definition, runID string, inputs map[string]any) map[string]any {
 	return map[string]any{
-		"workflow_id": definition.ID,
-		"run_id":      runID,
-		"inputs":      cloneAnyMap(inputs),
-		"secrets":     cloneStringMap(definition.Secrets),
-		"variables":   cloneStringMap(definition.Variables),
+		"workflow_id":   definition.ID,
+		"database_name": definition.DatabaseName,
+		"run_id":        runID,
+		"inputs":        cloneAnyMap(inputs),
+		"secrets":       cloneStringMap(definition.Secrets),
+		"variables":     cloneStringMap(definition.Variables),
 	}
 }
 
