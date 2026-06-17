@@ -91,9 +91,7 @@ function WorkspaceApp() {
     workflowInstances,
     workflowNodes,
     workflowRuns,
-    workflowSecretsText,
     workflows,
-    workflowVariablesText
   } = workflowFormWorkspace;
   const permissionWorkspace = usePermissionWorkspace({
     currentUserID: currentUser?.id,
@@ -462,14 +460,12 @@ function WorkspaceApp() {
               onExecute={workflowFormWorkspace.executeWorkflow}
               onSave={workflowFormWorkspace.persistWorkflow}
               onSelectRunKey={workflowFormWorkspace.setSelectedWorkflowRunKey}
-              onUpdateConfigJSON={workflowFormWorkspace.updateSelectedWorkflowJSON}
+              onUpdateInstanceConfig={workflowFormWorkspace.updateSelectedWorkflowInstanceConfig}
               onUpdateInputsJSON={workflowFormWorkspace.updateWorkflowInputsJSON}
               onUpdateScript={workflowFormWorkspace.updateSelectedWorkflowScript}
               inputsText={workflowInputsText}
               workflowInstances={workflowInstances}
               selectedRun={selectedWorkflowRun}
-              secretsText={workflowSecretsText}
-              variablesText={workflowVariablesText}
               workflow={selectedWorkflow}
               workflowNodes={workflowNodes}
               workflowRuns={workflowRuns}

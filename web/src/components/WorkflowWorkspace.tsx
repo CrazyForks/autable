@@ -1,4 +1,4 @@
-import { Button, Text, Textarea } from "@fluentui/react-components";
+import { Button, Field as FluentField, Input, Text, Textarea } from "@fluentui/react-components";
 import { PlayRegular, SaveRegular } from "@fluentui/react-icons";
 import type { WorkflowDefinition, WorkflowInstanceDeclaration, WorkflowNodeInfo, WorkflowRunResponse } from "../api";
 
@@ -8,12 +8,15 @@ type WorkflowWorkspaceProps = {
   onSave: () => void;
   onUpdateInputsJSON: (text: string) => void;
   onSelectRunKey: (historyKey: string) => void;
-  onUpdateConfigJSON: (kind: "secrets" | "variables", text: string) => void;
+  onUpdateInstanceConfig: (
+    kind: "secrets" | "variables",
+    instanceID: string,
+    name: string,
+    value: string
+  ) => void;
   onUpdateScript: (script: string) => void;
   selectedRun: WorkflowRunResponse | null;
   inputsText: string;
-  variablesText: string;
-  secretsText: string;
   workflow?: WorkflowDefinition;
   workflowInstances:
     | { ok: true; value: Record<string, WorkflowInstanceDeclaration> }
@@ -28,12 +31,10 @@ export function WorkflowWorkspace({
   onSave,
   onUpdateInputsJSON,
   onSelectRunKey,
-  onUpdateConfigJSON,
+  onUpdateInstanceConfig,
   onUpdateScript,
   selectedRun,
   inputsText,
-  secretsText,
-  variablesText,
   workflow,
   workflowInstances,
   workflowNodes,
@@ -72,28 +73,12 @@ export function WorkflowWorkspace({
               aria-label="Workflow Inputs JSON"
             />
           </label>
-          <label className="field-stack">
-            <span>Variables JSON</span>
-            <Textarea
-              className="json-editor"
-              value={variablesText}
-              onChange={(_, data) => onUpdateConfigJSON("variables", data.value)}
-              resize="none"
-              disabled={!canWriteWorkflow}
-              aria-label="Workflow Variables JSON"
-            />
-          </label>
-          <label className="field-stack">
-            <span>Secrets JSON</span>
-            <Textarea
-              className="json-editor"
-              value={secretsText}
-              onChange={(_, data) => onUpdateConfigJSON("secrets", data.value)}
-              resize="none"
-              disabled={!canWriteWorkflow}
-              aria-label="Workflow Secrets JSON"
-            />
-          </label>
+          <InstanceConfigEditor
+            canWriteWorkflow={canWriteWorkflow}
+            onUpdateInstanceConfig={onUpdateInstanceConfig}
+            workflow={workflow}
+            workflowInstances={workflowInstances}
+          />
         </div>
       </div>
       <div className="history-pane">
@@ -180,11 +165,88 @@ export function WorkflowWorkspace({
   );
 }
 
+function InstanceConfigEditor({
+  canWriteWorkflow,
+  onUpdateInstanceConfig,
+  workflow,
+  workflowInstances
+}: {
+  canWriteWorkflow: boolean;
+  onUpdateInstanceConfig: (
+    kind: "secrets" | "variables",
+    instanceID: string,
+    name: string,
+    value: string
+  ) => void;
+  workflow?: WorkflowDefinition;
+  workflowInstances:
+    | { ok: true; value: Record<string, WorkflowInstanceDeclaration> }
+    | { ok: false; error: string };
+}) {
+  if (!workflowInstances.ok) {
+    return (
+      <div className="instance-config-panel">
+        <Text weight="semibold">Instance config</Text>
+        <Text size={200}>{workflowInstances.error}</Text>
+      </div>
+    );
+  }
+  const entries = Object.entries(workflowInstances.value).filter(
+    ([, instance]) => (instance.variables?.length ?? 0) > 0 || (instance.secrets?.length ?? 0) > 0
+  );
+  if (entries.length === 0) {
+    return (
+      <div className="instance-config-panel">
+        <Text weight="semibold">Instance config</Text>
+        <Text size={200}>No variables or secrets declared</Text>
+      </div>
+    );
+  }
+  return (
+    <div className="instance-config-panel" aria-label="Workflow instance config">
+      <Text weight="semibold">Instance config</Text>
+      {entries.map(([instanceID, instance]) => (
+        <div className="instance-config-group" key={instanceID}>
+          <div className="node-title">
+            <span>{instanceID}</span>
+            <span>{instance.node}</span>
+          </div>
+          {(instance.variables ?? []).map((port) => (
+            <FluentField key={`variable-${instanceID}-${port.name}`} label={port.name}>
+              <Input
+                aria-label={`Variable ${instanceID}.${port.name}`}
+                value={workflow?.variables?.[instanceConfigKey(instanceID, port.name)] ?? ""}
+                onChange={(_, data) => onUpdateInstanceConfig("variables", instanceID, port.name, data.value)}
+                disabled={!canWriteWorkflow}
+              />
+            </FluentField>
+          ))}
+          {(instance.secrets ?? []).map((port) => (
+            <FluentField key={`secret-${instanceID}-${port.name}`} label={port.name}>
+              <Input
+                aria-label={`Secret ${instanceID}.${port.name}`}
+                type="password"
+                value={workflow?.secrets?.[instanceConfigKey(instanceID, port.name)] ?? ""}
+                onChange={(_, data) => onUpdateInstanceConfig("secrets", instanceID, port.name, data.value)}
+                disabled={!canWriteWorkflow}
+              />
+            </FluentField>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatPorts(ports: Array<{ name: string; type: string }>): string {
   if (ports.length === 0) {
     return "none";
   }
   return ports.map((port) => `${port.name}:${port.type}`).join(", ");
+}
+
+function instanceConfigKey(instanceID: string, name: string): string {
+  return `${instanceID}.${name}`;
 }
 
 function RunPayload({ title, value }: { title: string; value: Record<string, unknown> }) {

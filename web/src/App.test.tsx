@@ -380,15 +380,13 @@ describe("App", () => {
     expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
       'info.instance("review_echo").exec'
     );
-    expect((screen.getByLabelText("Workflow Variables JSON") as HTMLTextAreaElement).value).toContain(
-      '"review_echo.CHANNEL": "ops"'
-    );
-    expect((screen.getByLabelText("Workflow Secrets JSON") as HTMLTextAreaElement).value).toContain('"review_echo.TOKEN": ""');
-    await userEvent.clear(screen.getByLabelText("Workflow Variables JSON"));
-    fireEvent.change(screen.getByLabelText("Workflow Variables JSON"), { target: { value: '{"review_echo.CHANNEL":"support"}' } });
-    expect((screen.getByLabelText("Workflow Variables JSON") as HTMLTextAreaElement).value).toContain("support");
+    expect(screen.getByLabelText("Variable review_echo.CHANNEL")).toHaveValue("ops");
+    expect(screen.getByLabelText("Secret review_echo.TOKEN")).toHaveValue("");
+    await userEvent.clear(screen.getByLabelText("Variable review_echo.CHANNEL"));
+    fireEvent.change(screen.getByLabelText("Variable review_echo.CHANNEL"), { target: { value: "support" } });
+    expect(screen.getByLabelText("Variable review_echo.CHANNEL")).toHaveValue("support");
     expect(screen.getAllByText("echo").length).toBeGreaterThan(0);
-    expect(screen.getByText("review_echo")).toBeInTheDocument();
+    expect(screen.getAllByText("review_echo").length).toBeGreaterThan(0);
     expect(screen.getByText("table.record.changed")).toBeInTheDocument();
     expect(screen.getByText(/history_key:string/)).toBeInTheDocument();
     expect(screen.getByText("No runs yet")).toBeInTheDocument();
@@ -453,8 +451,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
     expect(screen.getByLabelText("Workflow JavaScript")).toBeDisabled();
-    expect(screen.getByLabelText("Workflow Variables JSON")).toBeDisabled();
-    expect(screen.getByLabelText("Workflow Secrets JSON")).toBeDisabled();
+    expect(screen.getByLabelText("Variable review_echo.CHANNEL")).toBeDisabled();
+    expect(screen.getByLabelText("Secret review_echo.TOKEN")).toBeDisabled();
     expect(screen.getByLabelText("Workflow Inputs JSON")).not.toBeDisabled();
 
     await userEvent.click(screen.getByRole("button", { name: /^Form$/ }));

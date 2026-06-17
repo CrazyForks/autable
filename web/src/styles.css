@@ -413,6 +413,8 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  min-width: 0;
+  min-height: 0;
 }
 
 .json-editor textarea {
@@ -420,6 +422,24 @@ select {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.instance-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.instance-config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--colorNeutralStroke2);
 }
 
 .form-actions {

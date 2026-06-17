@@ -17,7 +17,7 @@ import {
 } from "../api";
 import { renderFormScript, type FormElement } from "../formRuntime";
 import { rowRecordToValues } from "../tableGrid";
-import { parseAnyMap, parseStringMap, stringMapToJSON } from "../workflowConfig";
+import { parseAnyMap } from "../workflowConfig";
 import { evaluateWorkflowInstances } from "../workflowInstances";
 
 type UseWorkflowFormWorkspaceOptions = {
@@ -44,8 +44,6 @@ export function useWorkflowFormWorkspace({
   const [selectedWorkflowRunKey, setSelectedWorkflowRunKey] = useState("");
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [workflowInputsText, setWorkflowInputsText] = useState("{}");
-  const [workflowSecretsText, setWorkflowSecretsText] = useState("{}");
-  const [workflowVariablesText, setWorkflowVariablesText] = useState("{}");
   const [newWorkflowName, setNewWorkflowName] = useState("");
   const [newFormName, setNewFormName] = useState("");
 
@@ -69,8 +67,6 @@ export function useWorkflowFormWorkspace({
 
   useEffect(() => {
     setWorkflowInputsText("{}");
-    setWorkflowSecretsText(stringMapToJSON(selectedWorkflow?.secrets ?? {}));
-    setWorkflowVariablesText(stringMapToJSON(selectedWorkflow?.variables ?? {}));
   }, [selectedWorkflow?.id]);
 
   useEffect(() => {
@@ -320,21 +316,28 @@ export function useWorkflowFormWorkspace({
     );
   }
 
-  function updateSelectedWorkflowJSON(kind: "secrets" | "variables", text: string) {
-    if (kind === "secrets") {
-      setWorkflowSecretsText(text);
-    } else {
-      setWorkflowVariablesText(text);
-    }
-    const parsed = parseStringMap(text);
-    if (!parsed.ok) {
-      onStatus(parsed.error);
-      return;
-    }
-    onStatus("Workflow config updated");
+  function updateSelectedWorkflowInstanceConfig(
+    kind: "secrets" | "variables",
+    instanceID: string,
+    name: string,
+    value: string
+  ) {
+    const key = `${instanceID}.${name}`;
     setWorkflows((current) =>
-      current.map((item) => (item.id === selectedWorkflow?.id ? { ...item, [kind]: parsed.value } : item))
+      current.map((item) => {
+        if (item.id !== selectedWorkflow?.id) {
+          return item;
+        }
+        return {
+          ...item,
+          [kind]: {
+            ...(item[kind] ?? {}),
+            [key]: value
+          }
+        };
+      })
     );
+    onStatus("Workflow config updated");
   }
 
   function updateWorkflowInputsJSON(text: string) {
@@ -368,9 +371,7 @@ export function useWorkflowFormWorkspace({
     workflowInstances,
     workflowNodes,
     workflowRuns,
-    workflowSecretsText,
     workflows,
-    workflowVariablesText,
     clearResources,
     createForm,
     createWorkflow,
@@ -387,7 +388,7 @@ export function useWorkflowFormWorkspace({
     submitRenderedForm,
     updateFormValue,
     updateSelectedFormScript,
-    updateSelectedWorkflowJSON,
+    updateSelectedWorkflowInstanceConfig,
     updateSelectedWorkflowScript,
     updateWorkflowInputsJSON
   };
