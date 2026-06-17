@@ -39,6 +39,7 @@ This repository currently contains the backend core primitives:
 
 - This project is in active development; breaking changes are allowed.
 - Do not preserve backward-compatible or legacy behavior unless explicitly requested.
+- Data/schema upgrades do not get compatibility code or runtime migrations. During demo development, delete the old generated data manually, including individual SQLite files, the LevelDB directory, or the whole `data/` directory.
 - When changing a contract, update callers, tests, and docs to the new contract and remove the old path.
 - Use the ORM for database access; do not hand-write SQL in application code.
 - All system timestamps are millisecond-precision 64-bit Unix timestamps.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -444,7 +445,7 @@ func TestRunnerDoesNotNormalizeExportDefaultScripts(t *testing.T) {
 	}
 }
 
-func TestRunnerExecutesRecordChangedTriggerNode(t *testing.T) {
+func TestRunnerRejectsTriggerNodeExecInRun(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
 	historyKey, err := history.SaveRowChange(ctx, store, history.RowChange{
@@ -465,13 +466,13 @@ func TestRunnerExecutesRecordChangedTriggerNode(t *testing.T) {
 		ID:     10,
 		Script: `function instances(info) { return { changed: "table.record.changed" }; } function run(info) { const changed = info.instance("changed").exec({ history_key: info.inputs.history_key }); return { record_id: changed.record.record_id, name: changed.values.name, actor: changed.actor_id, diff_name: changed.diff.name.new }; }`,
 	}, map[string]any{"history_key": historyKey})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected trigger node exec to fail")
 	}
-	if run.Outputs["record_id"] != int64(5) || run.Outputs["name"] != "Ada" || run.Outputs["actor"] != "u1" || run.Outputs["diff_name"] != "Ada" {
-		t.Fatalf("unexpected trigger workflow outputs: %#v", run.Outputs)
+	if !strings.Contains(err.Error(), `trigger node "table.record.changed" cannot be executed from run`) {
+		t.Fatalf("unexpected trigger exec error: %v", err)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].NodeID != "changed" || run.Steps[0].NodeType != "table.record.changed" {
+	if len(run.Steps) != 1 || run.Steps[0].NodeID != "changed" || run.Steps[0].Error == "" {
 		t.Fatalf("unexpected trigger workflow steps: %#v", run.Steps)
 	}
 }

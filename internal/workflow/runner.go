@@ -246,6 +246,11 @@ func (runner *Runner) runInstance(ctx context.Context, definition Definition, ru
 		run.Steps = append(run.Steps, step)
 		return nil, fmt.Errorf("node %q is not registered", declaration.Node)
 	}
+	if node.Info().Trigger {
+		step.Error = "trigger node cannot be executed from run"
+		run.Steps = append(run.Steps, step)
+		return nil, fmt.Errorf("trigger node %q cannot be executed from run; declare it in trigger(info) and read its output from info.inputs", declaration.Node)
+	}
 	output, err := node.Run(ctx, input, RuntimeInfo{
 		WorkflowID:   definition.ID,
 		DatabaseName: definition.DatabaseName,

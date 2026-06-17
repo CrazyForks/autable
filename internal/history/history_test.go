@@ -59,16 +59,6 @@ func TestWorkflowHistoryKey(t *testing.T) {
 	if key != "whistory_00000000000000000007_00000000000000020000" {
 		t.Fatalf("unexpected key: %s", key)
 	}
-	workflowID, timestamp, err := ParseWorkflowKey(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if workflowID != 7 || timestamp != time.Unix(20, 0).UTC().UnixMilli() {
-		t.Fatalf("unexpected parsed workflow key: id=%d timestamp=%d", workflowID, timestamp)
-	}
-	if _, _, err := ParseWorkflowKey("rhistory_db_table_00000000000000000001_00000000000000000001"); err == nil {
-		t.Fatal("expected invalid workflow key error")
-	}
 }
 
 func TestHistoryTimestampsStayMillisecondIntsWithoutOverwriting(t *testing.T) {

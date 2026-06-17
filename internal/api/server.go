@@ -1094,26 +1094,12 @@ func (server *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request,
 	for _, entry := range entries {
 		run, err := history.DecodeWorkflowRun(entry)
 		if err != nil {
-			run = corruptWorkflowRun(workflowID, entry, err)
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
 		runs = append(runs, workflowRunResponse{HistoryKey: entry.Key, Run: run})
 	}
 	writeJSON(w, http.StatusOK, runs)
-}
-
-func corruptWorkflowRun(workflowID int64, entry history.Entry, decodeErr error) history.WorkflowRun {
-	parsedWorkflowID, timestamp, err := history.ParseWorkflowKey(entry.Key)
-	if err == nil && parsedWorkflowID != 0 {
-		workflowID = parsedWorkflowID
-	}
-	run := history.WorkflowRun{
-		WorkflowID: workflowID,
-		Timestamp:  timestamp,
-		Steps:      []history.StepRecord{},
-		Error:      "decode workflow run: " + decodeErr.Error(),
-	}
-	run.Outputs = map[string]any{"error": run.Error}
-	return run
 }
 
 func (server *Server) StartWorkflowWorkers(ctx context.Context) {

@@ -1926,7 +1926,7 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"triggered",
-		"script":"function instances(info) { return { row_change: \"table.record.changed\" }; }\nfunction run(info) { const changed = info.instance(\"row_change\").exec({ history_key: info.inputs.history_key }); return { record_id: changed.record.record_id, name: changed.values.name }; }"
+		"script":"function instances(info) { return { row_change: \"table.record.changed\" }; }\nfunction run(info) { return { record_id: info.inputs.record.record_id, name: info.inputs.values.name }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1935,7 +1935,7 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
 	}
 
-	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"history_key":"`+historyKey+`"}}`))
+	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"history_key":"`+historyKey+`","record":{"record_id":9,"table":"contacts"},"values":{"name":"Ada"}}}`))
 	runRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	runRecorder := httptest.NewRecorder()
 	server.ServeHTTP(runRecorder, runRequest)
@@ -1949,50 +1949,8 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 	if response.Run.Outputs["record_id"] != float64(9) || response.Run.Outputs["name"] != "Ada" {
 		t.Fatalf("unexpected trigger outputs: %#v", response.Run.Outputs)
 	}
-	if len(response.Run.Steps) != 1 || response.Run.Steps[0].NodeID != "row_change" || response.Run.Steps[0].NodeType != "table.record.changed" {
-		t.Fatalf("unexpected trigger steps: %#v", response.Run.Steps)
-	}
-}
-
-func TestWorkflowRunsAPIReportsCorruptHistoryEntry(t *testing.T) {
-	ctx := context.Background()
-	server, system := newTestServer(t)
-	if err := system.SaveGrant(ctx, permission.Grant{
-		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
-		"name":"corrupt-history",
-		"script":"function instances(info) { return { echo_main: \"echo\" }; }\nfunction run(info) { return {}; }"
-	}`))
-	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
-	workflowRecorder := httptest.NewRecorder()
-	server.ServeHTTP(workflowRecorder, workflowRequest)
-	if workflowRecorder.Code != http.StatusCreated {
-		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
-	}
-	key := history.WorkflowKey(1, 1781604000000)
-	if err := server.history.Put(ctx, key, []byte(`{"workflow_id":1,"timestamp":"2026-06-17T01:19:12Z","steps":[]}`)); err != nil {
-		t.Fatal(err)
-	}
-
-	listRequest := httptest.NewRequest(http.MethodGet, "/api/workflows/1/runs", nil)
-	listRequest.AddCookie(testSessionCookie(t, system, "u1"))
-	listRecorder := httptest.NewRecorder()
-	server.ServeHTTP(listRecorder, listRequest)
-	if listRecorder.Code != http.StatusOK {
-		t.Fatalf("expected workflow runs 200, got %d: %s", listRecorder.Code, listRecorder.Body.String())
-	}
-	var runs []workflowRunResponse
-	if err := json.NewDecoder(listRecorder.Body).Decode(&runs); err != nil {
-		t.Fatal(err)
-	}
-	if len(runs) != 1 || runs[0].Run.Timestamp != 1781604000000 || !strings.Contains(runs[0].Run.Error, "decode workflow run") {
-		t.Fatalf("expected corrupt run response, got %#v", runs)
+	if len(response.Run.Steps) != 0 {
+		t.Fatalf("trigger node should feed run inputs without a run step: %#v", response.Run.Steps)
 	}
 }
 
@@ -2153,7 +2111,7 @@ func TestScheduleTickRunsIntervalWorkflowUsingRunHistory(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"interval-workflow",
-		"script":"function instances(info) { return { every_interval: \"time.schedule\" }; }\nfunction trigger(info) { return { instance: \"every_interval\", params: { interval_ms: 15000 } }; }\nfunction run(info) { const tick = info.instance(\"every_interval\").exec({ scheduled_at: info.inputs.scheduled_at }); return { scheduled_at: tick.scheduled_at, event: info.inputs.event }; }"
+		"script":"function instances(info) { return { every_interval: \"time.schedule\" }; }\nfunction trigger(info) { return { instance: \"every_interval\", params: { interval_ms: 15000 } }; }\nfunction run(info) { return { scheduled_at: info.inputs.scheduled_at, event: info.inputs.event }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()

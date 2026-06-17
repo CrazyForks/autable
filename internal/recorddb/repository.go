@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"codetable/internal/metadata"
@@ -52,13 +51,6 @@ func (repository *Repository) OpenDatabase(ctx context.Context, name, path strin
 	if err != nil {
 		return err
 	}
-	if err := dropIncompatibleRecordTimestampTable(ctx, db); err != nil {
-		handle, closeErr := db.DB()
-		if closeErr == nil {
-			_ = handle.Close()
-		}
-		return err
-	}
 	if err := db.WithContext(ctx).AutoMigrate(&Record{}); err != nil {
 		handle, closeErr := db.DB()
 		if closeErr == nil {
@@ -71,91 +63,6 @@ func (repository *Repository) OpenDatabase(ctx context.Context, name, path strin
 	defer repository.mu.Unlock()
 	repository.dbs[name] = db
 	return nil
-}
-
-func dropIncompatibleRecordTimestampTable(ctx context.Context, db *gorm.DB) error {
-	migrator := db.WithContext(ctx).Migrator()
-	if !migrator.HasTable(&Record{}) {
-		return nil
-	}
-	columnTypes, err := migrator.ColumnTypes(&Record{})
-	if err != nil {
-		return err
-	}
-	for _, columnType := range columnTypes {
-		name := strings.ToLower(columnType.Name())
-		if name != "created_at" && name != "updated_at" {
-			continue
-		}
-		if !strings.Contains(strings.ToUpper(columnType.DatabaseTypeName()), "INT") {
-			return migrator.DropTable(&Record{})
-		}
-	}
-	tableName, err := recordTableName(db)
-	if err != nil {
-		return err
-	}
-	row, err := firstRecordRowValues(ctx, db, tableName, []string{"created_at", "updated_at"})
-	if err != nil {
-		return err
-	}
-	if row == nil {
-		return nil
-	}
-	for _, column := range []string{"created_at", "updated_at"} {
-		if hasIncompatibleTimestampValue(row[column]) {
-			return migrator.DropTable(&Record{})
-		}
-	}
-	return nil
-}
-
-func firstRecordRowValues(ctx context.Context, db *gorm.DB, tableName string, columns []string) (map[string]any, error) {
-	rows, err := db.WithContext(ctx).Table(tableName).Select(columns).Limit(1).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, nil
-	}
-	names, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	values := make([]any, len(names))
-	destinations := make([]any, len(names))
-	for index := range values {
-		destinations[index] = &values[index]
-	}
-	if err := rows.Scan(destinations...); err != nil {
-		return nil, err
-	}
-	result := map[string]any{}
-	for index, name := range names {
-		result[strings.ToLower(name)] = values[index]
-	}
-	return result, rows.Err()
-}
-
-func recordTableName(db *gorm.DB) (string, error) {
-	statement := &gorm.Statement{DB: db}
-	if err := statement.Parse(&Record{}); err != nil {
-		return "", err
-	}
-	return statement.Schema.Table, nil
-}
-
-func hasIncompatibleTimestampValue(value any) bool {
-	if value == nil {
-		return false
-	}
-	switch value.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
-		return false
-	default:
-		return true
-	}
 }
 
 func (repository *Repository) CreateRow(ctx context.Context, dbName, tableName string, values map[string]any) (table.Row, error) {
