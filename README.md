@@ -41,6 +41,8 @@ This repository currently contains the backend core primitives:
 - Do not preserve backward-compatible or legacy behavior unless explicitly requested.
 - When changing a contract, update callers, tests, and docs to the new contract and remove the old path.
 - Use the ORM for database access; do not hand-write SQL in application code.
+- All system timestamps are millisecond-precision 64-bit Unix timestamps.
+- Table fields have no `required` concept; field types are immutable after creation.
 
 ## Development
 

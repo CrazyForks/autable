@@ -1,6 +1,5 @@
 import {
   Button,
-  Checkbox,
   Field as FluentField,
   Input,
   Menu,
@@ -30,7 +29,7 @@ import {
   SaveRegular,
 } from "@fluentui/react-icons";
 import DataGrid, { type CellSelectArgs, type Column, type RowsChangeData } from "react-data-grid";
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Field, RowChange, TableMetadata, TableViewFilter, TableViewSort } from "../api";
 import type { TableGridRow } from "../tableGrid";
 
@@ -45,7 +44,6 @@ type TableWorkspaceProps = {
   onDeleteSelectedRow: (recordID?: number) => void;
   onLoadHistory: () => void;
   onNewFieldNameChange: (value: string) => void;
-  onNewFieldRequiredChange: (value: boolean) => void;
   onNewFieldTypeChange: (value: string) => void;
   onNewViewBaseChange: (value: string) => void;
   onNewViewFilterFieldChange: (value: string) => void;
@@ -56,11 +54,9 @@ type TableWorkspaceProps = {
   onSelectGridCell: (args: CellSelectArgs<TableGridRow>) => void;
   onSelectRecordID: (recordID: number) => void;
   onSelectedRowValueChange: (fieldName: string, value: string) => void;
-  onUpdateField: (fieldName: string, nextField: Pick<Field, "type" | "required">) => void | Promise<void>;
   onUpdateSelectedRow: () => void;
   onUpdateSelectedView: () => void;
   newFieldName: string;
-  newFieldRequired: boolean;
   newFieldType: string;
   newViewBase: string;
   newViewFilterField: string;
@@ -87,7 +83,6 @@ export function TableWorkspace({
   onDeleteSelectedRow,
   onLoadHistory,
   onNewFieldNameChange,
-  onNewFieldRequiredChange,
   onNewFieldTypeChange,
   onNewViewBaseChange,
   onNewViewFilterFieldChange,
@@ -98,11 +93,9 @@ export function TableWorkspace({
   onSelectGridCell,
   onSelectRecordID,
   onSelectedRowValueChange,
-  onUpdateField,
   onUpdateSelectedRow,
   onUpdateSelectedView,
   newFieldName,
-  newFieldRequired,
   newFieldType,
   newViewBase,
   newViewFilterField,
@@ -126,13 +119,6 @@ export function TableWorkspace({
   const [recordPanelTab, setRecordPanelTab] = useState<"details" | "history">("details");
   const [filterOpen, setFilterOpen] = useState(false);
   const [recordMenu, setRecordMenu] = useState<{ x: number; y: number; recordID: number } | null>(null);
-  const [fieldEditor, setFieldEditor] = useState<{
-    x: number;
-    y: number;
-    fieldName: string;
-    type: string;
-    required: boolean;
-  } | null>(null);
   const [fieldCreator, setFieldCreator] = useState<{ x: number; y: number } | null>(null);
   const selectedView = useMemo(
     () => (table.views ?? []).find((viewDef) => viewDef.name === selectedTableView),
@@ -146,15 +132,6 @@ export function TableWorkspace({
           }
         : undefined,
     [recordMenu]
-  );
-  const fieldEditorTarget = useMemo(
-    () =>
-      fieldEditor
-        ? {
-            getBoundingClientRect: () => new DOMRect(fieldEditor.x, fieldEditor.y, 0, 0)
-          }
-        : undefined,
-    [fieldEditor]
   );
   const fieldCreatorTarget = useMemo(
     () =>
@@ -179,17 +156,6 @@ export function TableWorkspace({
               canWriteTable={canWriteTable}
               field={field}
               onDeleteField={onDeleteField}
-              onEditField={(event) => {
-                event.stopPropagation();
-                const rect = event.currentTarget.getBoundingClientRect();
-                setFieldEditor({
-                  x: rect.left,
-                  y: rect.bottom,
-                  fieldName: field.name,
-                  type: field.type,
-                  required: field.required
-                });
-              }}
             />
           )
         } satisfies Column<TableGridRow>;
@@ -212,7 +178,6 @@ export function TableWorkspace({
               const rect = event.currentTarget.getBoundingClientRect();
               onNewFieldNameChange("");
               onNewFieldTypeChange("text");
-              onNewFieldRequiredChange(false);
               setFieldCreator({ x: rect.left, y: rect.bottom });
             }}
           >
@@ -229,7 +194,6 @@ export function TableWorkspace({
       columns,
       onDeleteField,
       onNewFieldNameChange,
-      onNewFieldRequiredChange,
       onNewFieldTypeChange
     ]
   );
@@ -385,61 +349,6 @@ export function TableWorkspace({
           </MenuPopover>
         </Menu>
         <Popover
-          open={Boolean(fieldEditor)}
-          onOpenChange={(_, data) => {
-            if (!data.open) {
-              setFieldEditor(null);
-            }
-          }}
-          positioning={fieldEditorTarget ? { target: fieldEditorTarget } : undefined}
-          withArrow
-        >
-          <PopoverSurface className="field-editor-popover" aria-label="Edit field">
-            {fieldEditor && (
-              <div className="field-editor">
-                <Text weight="semibold">{fieldEditor.fieldName}</Text>
-                <FluentField label="Field type">
-                  <Select
-                    aria-label="Field type"
-                    value={fieldEditor.type}
-                    onChange={(_, data) =>
-                      setFieldEditor((current) => (current ? { ...current, type: data.value } : current))
-                    }
-                  >
-                    <option value="text">text</option>
-                    <option value="email">email</option>
-                    <option value="number">number</option>
-                    <option value="date">date</option>
-                  </Select>
-                </FluentField>
-                <Checkbox
-                  label="Required"
-                  checked={fieldEditor.required}
-                  onChange={(_, data) =>
-                    setFieldEditor((current) => (current ? { ...current, required: Boolean(data.checked) } : current))
-                  }
-                />
-                <div className="field-editor-actions">
-                  <Button onClick={() => setFieldEditor(null)}>Cancel</Button>
-                  <Button
-                    appearance="primary"
-                    icon={<SaveRegular />}
-                    onClick={() => {
-                      void onUpdateField(fieldEditor.fieldName, {
-                        type: fieldEditor.type,
-                        required: fieldEditor.required
-                      });
-                      setFieldEditor(null);
-                    }}
-                  >
-                    Save
-                  </Button>
-                </div>
-              </div>
-            )}
-          </PopoverSurface>
-        </Popover>
-        <Popover
           open={Boolean(fieldCreator)}
           onOpenChange={(_, data) => {
             if (!data.open) {
@@ -471,11 +380,6 @@ export function TableWorkspace({
                   <option value="date">date</option>
                 </Select>
               </FluentField>
-              <Checkbox
-                label="Required"
-                checked={newFieldRequired}
-                onChange={(_, data) => onNewFieldRequiredChange(Boolean(data.checked))}
-              />
               <div className="field-editor-actions">
                 <Button onClick={() => setFieldCreator(null)}>Cancel</Button>
                 <Button
@@ -524,20 +428,15 @@ function canWriteField(field: Field): boolean {
 function FieldHeader({
   canWriteTable,
   field,
-  onDeleteField,
-  onEditField
+  onDeleteField
 }: {
   canWriteTable: boolean;
   field: Field;
   onDeleteField: (fieldName: string) => void;
-  onEditField: (event: MouseEvent<HTMLElement>) => void;
 }) {
   return (
     <div className="field-header">
-      <span className="field-header-name">
-        {field.name}
-        {field.required ? " *" : ""}
-      </span>
+      <span className="field-header-name">{field.name}</span>
       <Menu>
         <MenuTrigger disableButtonEnhancement>
           <button
@@ -552,10 +451,6 @@ function FieldHeader({
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem icon={<EditRegular />} onClick={onEditField}>
-              Edit field
-            </MenuItem>
-            <MenuDivider />
             <MenuItem icon={<DeleteRegular />} onClick={() => onDeleteField(field.name)}>
               Delete field
             </MenuItem>

@@ -58,13 +58,6 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 	if err := validateWritableFields(tableMeta, perms, actorID, resource, values); err != nil {
 		return Row{}, err
 	}
-	for _, field := range tableMeta.ActiveFields() {
-		if field.Required {
-			if _, ok := values[field.Name]; !ok {
-				return Row{}, fmt.Errorf("required field %q is missing", field.Name)
-			}
-		}
-	}
 
 	row, err := service.rows.CreateRow(ctx, dbName, tableName, cloneValues(values))
 	if err != nil {

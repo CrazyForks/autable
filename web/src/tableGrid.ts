@@ -6,7 +6,7 @@ export type TableGridRow = Record<string, unknown> & { record_id: number };
 export function buildTableColumns(fields: Field[]): Column<TableGridRow>[] {
   return fields.map((field) => ({
     key: field.name,
-    name: field.required ? `${field.name} *` : field.name,
+    name: field.name,
     minWidth: Math.max(128, field.name.length * 14),
     resizable: true,
     renderEditCell: textEditor,

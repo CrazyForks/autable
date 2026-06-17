@@ -698,7 +698,7 @@ func TestDatabaseOwnerCanCreateTable(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/databases/workspace/tables", bytes.NewBufferString(`{
 		"name":"contacts",
 		"display_name":"Contacts",
-		"fields":[{"name":"name","type":"text","required":true},{"name":"email","type":"email"}],
+		"fields":[{"name":"name","type":"text"},{"name":"email","type":"email"}],
 		"views":[]
 	}`))
 	request.AddCookie(testSessionCookie(t, system, "owner"))
@@ -2116,7 +2116,7 @@ func testCatalog(sqlitePath string) metadata.Catalog {
 		Tables: []metadata.Table{{
 			Name: "contacts",
 			Fields: []metadata.Field{
-				{Name: "name", Type: "text", Required: true},
+				{Name: "name", Type: "text"},
 				{Name: "email", Type: "email"},
 				{Name: "status", Type: "text"},
 			},

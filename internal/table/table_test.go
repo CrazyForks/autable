@@ -20,7 +20,7 @@ func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 		Tables: []metadata.Table{{
 			Name: "contacts",
 			Fields: []metadata.Field{
-				{Name: "name", Type: "text", Required: true},
+				{Name: "name", Type: "text"},
 				{Name: "email", Type: "email"},
 			},
 		}},

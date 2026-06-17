@@ -9,7 +9,6 @@ import {
   updateRow,
   updateTableMetadata,
   type Catalog,
-  type Field,
   type RowChange,
   type TableMetadata,
   type TableView,
@@ -44,7 +43,6 @@ export function useTableWorkspace({
   const [selectedRowDraft, setSelectedRowDraft] = useState<Record<string, string>>({});
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState("text");
-  const [newFieldRequired, setNewFieldRequired] = useState(false);
   const [newViewBase, setNewViewBase] = useState("all");
   const [newViewFilterField, setNewViewFilterField] = useState("");
   const [newViewFilterOp, setNewViewFilterOp] = useState<TableViewFilter["op"]>("eq");
@@ -200,12 +198,11 @@ export function useTableWorkspace({
     }
     const nextTable = {
       ...table,
-      fields: [...table.fields, { name, type: newFieldType, required: newFieldRequired, deleted: false }]
+      fields: [...table.fields, { name, type: newFieldType, deleted: false }]
     };
     await persistTableMetadata(nextTable, `Added field ${name}`);
     setNewFieldName("");
     setNewFieldType("text");
-    setNewFieldRequired(false);
   }
 
   async function deleteFieldFromCanvas(fieldName: string) {
@@ -214,19 +211,6 @@ export function useTableWorkspace({
       fields: table.fields.map((field) => (field.name === fieldName ? { ...field, deleted: true } : field))
     };
     await persistTableMetadata(nextTable, `Deleted field ${fieldName}`);
-  }
-
-  async function updateFieldFromHeader(fieldName: string, nextField: Pick<Field, "type" | "required">) {
-    const existing = table.fields.find((field) => field.name === fieldName && !field.deleted);
-    if (!existing) {
-      onStatus(`Field ${fieldName} does not exist`);
-      return;
-    }
-    const nextTable = {
-      ...table,
-      fields: table.fields.map((field) => (field.name === fieldName ? { ...field, ...nextField } : field))
-    };
-    await persistTableMetadata(nextTable, `Updated field ${fieldName}`);
   }
 
   function viewFiltersFromDraft(): TableViewFilter[] {
@@ -371,7 +355,6 @@ export function useTableWorkspace({
     displayedRecordIDs,
     displayedRows,
     newFieldName,
-    newFieldRequired,
     newFieldType,
     newViewBase,
     newViewFilterField,
@@ -393,7 +376,6 @@ export function useTableWorkspace({
     loadSelectedRowHistory,
     resetRows,
     setNewFieldName,
-    setNewFieldRequired,
     setNewFieldType,
     setNewViewBase,
     setNewViewFilterField,
@@ -403,7 +385,6 @@ export function useTableWorkspace({
     setNewViewSortField,
     setSelectedRecordID,
     selectGridCell,
-    updateFieldFromHeader,
     updateSelectedViewFromCanvas,
     updateSelectedRowDraft,
     updateSelectedRowFromEditor

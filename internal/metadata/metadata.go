@@ -31,7 +31,6 @@ type Table struct {
 type Field struct {
 	Name            string `yaml:"name" json:"name"`
 	Type            string `yaml:"type" json:"type"`
-	Required        bool   `yaml:"required" json:"required"`
 	Deleted         bool   `yaml:"deleted" json:"deleted"`
 	PermissionLevel int    `yaml:"-" json:"permission_level,omitempty"`
 }
@@ -190,6 +189,9 @@ func (catalog Catalog) UpdateTable(dbName, tableName string, table Table) (Catal
 			if existing.Name != tableName {
 				continue
 			}
+			if err := validateFieldTypesUnchanged(existing, table); err != nil {
+				return Catalog{}, err
+			}
 			tables[tableIndex] = table
 			db.Tables = tables
 			next.Databases[dbIndex] = db
@@ -201,6 +203,23 @@ func (catalog Catalog) UpdateTable(dbName, tableName string, table Table) (Catal
 		return Catalog{}, fmt.Errorf("database %q table %q not found", dbName, tableName)
 	}
 	return Catalog{}, fmt.Errorf("database %q not found", dbName)
+}
+
+func validateFieldTypesUnchanged(existing Table, next Table) error {
+	existingTypes := map[string]string{}
+	for _, field := range existing.Fields {
+		existingTypes[field.Name] = field.Type
+	}
+	for _, field := range next.Fields {
+		existingType, ok := existingTypes[field.Name]
+		if !ok {
+			continue
+		}
+		if field.Type != existingType {
+			return fmt.Errorf("field %q type cannot be changed", field.Name)
+		}
+	}
+	return nil
 }
 
 func (table Table) validate(dbName string, tableIndex int) error {
@@ -286,7 +305,7 @@ func (table Table) ActiveFields() []Field {
 
 func (table Table) Field(name string) (Field, bool) {
 	if name == "record_id" {
-		return Field{Name: "record_id", Type: "integer", Required: true}, true
+		return Field{Name: "record_id", Type: "integer"}, true
 	}
 	for _, field := range table.Fields {
 		if field.Name == name {

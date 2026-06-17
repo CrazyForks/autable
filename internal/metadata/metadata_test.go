@@ -98,7 +98,7 @@ func TestAddDatabaseAddTableAndSave(t *testing.T) {
 	catalog, err = catalog.AddTable("workspace", Table{
 		Name:        "contacts",
 		DisplayName: "Contacts",
-		Fields:      []Field{{Name: "name", Type: "text", Required: true}},
+		Fields:      []Field{{Name: "name", Type: "text"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -172,5 +172,38 @@ func TestUpdateTableCanSoftDeleteFieldAndAddBasedView(t *testing.T) {
 	}
 	if len(resolved.Filters) != 1 || len(resolved.Sorts) != 1 {
 		t.Fatalf("expected based view composition, got %#v", resolved)
+	}
+}
+
+func TestUpdateTableRejectsFieldTypeChange(t *testing.T) {
+	catalog := Catalog{Databases: []Database{{
+		Name:       "workspace",
+		SQLitePath: "./data/workspace.sqlite",
+		Tables: []Table{{
+			Name:   "contacts",
+			Fields: []Field{{Name: "priority", Type: "text"}},
+		}},
+	}}}
+
+	if _, err := catalog.UpdateTable("workspace", "contacts", Table{
+		Name:   "contacts",
+		Fields: []Field{{Name: "priority", Type: "number"}},
+	}); err == nil {
+		t.Fatal("expected field type change to be rejected")
+	}
+
+	updated, err := catalog.UpdateTable("workspace", "contacts", Table{
+		Name: "contacts",
+		Fields: []Field{
+			{Name: "priority", Type: "text"},
+			{Name: "status", Type: "text"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := updated.Table("workspace", "contacts")
+	if !ok || len(table.Fields) != 2 {
+		t.Fatalf("expected adding a new field to be allowed, got %#v", table)
 	}
 }

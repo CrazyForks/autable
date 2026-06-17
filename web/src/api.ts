@@ -1,7 +1,6 @@
 export type Field = {
   name: string;
   type: string;
-  required: boolean;
   deleted: boolean;
   permission_level?: 0 | 1 | 2;
 };

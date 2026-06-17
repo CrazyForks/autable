@@ -102,9 +102,9 @@ async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
     name: tableName,
     display_name: "Contacts",
     fields: [
-      { name: "name", type: "text", required: true, deleted: false },
-      { name: "email", type: "email", required: false, deleted: false },
-      { name: "status", type: "text", required: false, deleted: false }
+      { name: "name", type: "text", deleted: false },
+      { name: "email", type: "email", deleted: false },
+      { name: "status", type: "text", deleted: false }
     ],
     views: [
       {
@@ -173,7 +173,7 @@ test("shows database-owned workflow and form lists across table owners", async (
   await api(page, "POST", `/api/databases/${databaseName}/tables`, {
     name: "contacts",
     display_name: "Contacts",
-    fields: [{ name: "name", type: "text", required: false, deleted: false }],
+    fields: [{ name: "name", type: "text", deleted: false }],
     views: []
   });
   await api(page, "POST", "/api/permissions/grants", {
@@ -224,7 +224,7 @@ test("hides workflow and form resources without resource permission", async ({ p
   await api(page, "POST", `/api/databases/${databaseName}/tables`, {
     name: "contacts",
     display_name: "Contacts",
-    fields: [{ name: "name", type: "text", required: false, deleted: false }],
+    fields: [{ name: "name", type: "text", deleted: false }],
     views: []
   });
   await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
@@ -278,7 +278,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
   await api(page, "POST", `/api/databases/${databaseName}/tables`, {
     name: "contacts",
     display_name: "Contacts",
-    fields: [{ name: "name", type: "text", required: false, deleted: false }],
+    fields: [{ name: "name", type: "text", deleted: false }],
     views: []
   });
   const workflow = (await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
@@ -372,14 +372,6 @@ test("covers table views, row creation, and row history through the real backend
   await addFieldEditor.getByRole("button", { name: "Add" }).click();
   await expect(page.getByText("Added field priority")).toBeVisible();
 
-  await recordsGrid.getByRole("button", { name: "Field actions priority" }).click();
-  await page.getByRole("menuitem", { name: "Edit field" }).click();
-  const fieldEditor = page.getByLabel("Edit field");
-  await fieldEditor.getByLabel("Field type").selectOption("number");
-  await fieldEditor.getByLabel("Required").check();
-  await fieldEditor.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Updated field priority")).toBeVisible();
-
   await recordsGrid.getByRole("button", { name: "Field actions email" }).click();
   await page.getByRole("menuitem", { name: "Delete field" }).click();
   await expect(page.getByText("Deleted field email")).toBeVisible();
@@ -437,14 +429,14 @@ test("covers table views, row creation, and row history through the real backend
   await expect(page.getByText(/Deleted record \d+/)).toBeVisible();
 
   const metadata = (await api(page, "GET", "/api/metadata")) as {
-    databases: Array<{ name: string; tables: Array<{ name: string; fields: Array<{ name: string; type?: string; required?: boolean; deleted: boolean }>; views: Array<{ name: string; filters: Array<{ field: string; value?: string }>; sorts: Array<{ field: string; direction: string }> }> }> }>;
+    databases: Array<{ name: string; tables: Array<{ name: string; fields: Array<{ name: string; type?: string; deleted: boolean }>; views: Array<{ name: string; filters: Array<{ field: string; value?: string }>; sorts: Array<{ field: string; direction: string }> }> }> }>;
   };
   const table = metadata.databases
     .find((database) => database.name === workspace.databaseName)
     ?.tables.find((item) => item.name === workspace.tableName);
   expect(table?.fields).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ name: "priority", type: "number", required: true, deleted: false }),
+      expect.objectContaining({ name: "priority", type: "text", deleted: false }),
       expect.objectContaining({ name: "email", deleted: true })
     ])
   );

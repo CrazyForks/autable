@@ -259,7 +259,7 @@ function WorkspaceApp() {
         {
           name,
           display_name: name,
-          fields: [{ name: "name", type: "text", required: true, deleted: false }],
+          fields: [{ name: "name", type: "text", deleted: false }],
           views: []
         }
       );
@@ -416,7 +416,6 @@ function WorkspaceApp() {
               columns={tableWorkspace.columns}
               displayedRows={tableWorkspace.displayedRows}
               newFieldName={tableWorkspace.newFieldName}
-              newFieldRequired={tableWorkspace.newFieldRequired}
               newFieldType={tableWorkspace.newFieldType}
               newViewBase={tableWorkspace.newViewBase}
               newViewFilterField={tableWorkspace.newViewFilterField}
@@ -430,7 +429,6 @@ function WorkspaceApp() {
               onDeleteSelectedRow={tableWorkspace.deleteSelectedRow}
               onLoadHistory={tableWorkspace.loadSelectedRowHistory}
               onNewFieldNameChange={tableWorkspace.setNewFieldName}
-              onNewFieldRequiredChange={tableWorkspace.setNewFieldRequired}
               onNewFieldTypeChange={tableWorkspace.setNewFieldType}
               onNewViewBaseChange={tableWorkspace.setNewViewBase}
               onNewViewFilterFieldChange={tableWorkspace.setNewViewFilterField}
@@ -442,7 +440,6 @@ function WorkspaceApp() {
               onSelectGridCell={tableWorkspace.selectGridCell}
               onSelectRecordID={tableWorkspace.setSelectedRecordID}
               onSelectedRowValueChange={tableWorkspace.updateSelectedRowDraft}
-              onUpdateField={tableWorkspace.updateFieldFromHeader}
               onUpdateSelectedRow={tableWorkspace.updateSelectedRowFromEditor}
               onUpdateSelectedView={tableWorkspace.updateSelectedViewFromCanvas}
               rowHistory={tableWorkspace.rowHistory}
