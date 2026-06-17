@@ -18,6 +18,7 @@ import {
 import { renderFormScript, type FormElement } from "../formRuntime";
 import { rowRecordToValues } from "../tableGrid";
 import { parseAnyMap, parseStringMap, stringMapToJSON } from "../workflowConfig";
+import { evaluateWorkflowInstances } from "../workflowInstances";
 
 type UseWorkflowFormWorkspaceOptions = {
   currentUserID?: string;
@@ -53,6 +54,14 @@ export function useWorkflowFormWorkspace({
   const selectedWorkflowRun =
     workflowRuns.find((run) => run.history_key === selectedWorkflowRunKey) ?? workflowRuns[0] ?? null;
   const renderedForm = useMemo(() => renderFormScript(selectedForm?.script ?? ""), [selectedForm?.script]);
+  const workflowInstances = useMemo(
+    () =>
+      evaluateWorkflowInstances(selectedWorkflow?.script ?? "", {
+        workflow_id: selectedWorkflow?.id,
+        database_name: databaseName
+      }),
+    [databaseName, selectedWorkflow?.id, selectedWorkflow?.script]
+  );
 
   useEffect(() => {
     setFormValues({});
@@ -356,6 +365,7 @@ export function useWorkflowFormWorkspace({
     selectedWorkflow,
     selectedWorkflowRun,
     workflowInputsText,
+    workflowInstances,
     workflowNodes,
     workflowRuns,
     workflowSecretsText,

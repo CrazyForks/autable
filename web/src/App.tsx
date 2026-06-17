@@ -88,6 +88,7 @@ function WorkspaceApp() {
     selectedWorkflow,
     selectedWorkflowRun,
     workflowInputsText,
+    workflowInstances,
     workflowNodes,
     workflowRuns,
     workflowSecretsText,
@@ -465,6 +466,7 @@ function WorkspaceApp() {
               onUpdateInputsJSON={workflowFormWorkspace.updateWorkflowInputsJSON}
               onUpdateScript={workflowFormWorkspace.updateSelectedWorkflowScript}
               inputsText={workflowInputsText}
+              workflowInstances={workflowInstances}
               selectedRun={selectedWorkflowRun}
               secretsText={workflowSecretsText}
               variablesText={workflowVariablesText}

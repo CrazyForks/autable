@@ -1,6 +1,6 @@
 import { Button, Text, Textarea } from "@fluentui/react-components";
 import { PlayRegular, SaveRegular } from "@fluentui/react-icons";
-import type { WorkflowDefinition, WorkflowNodeInfo, WorkflowRunResponse } from "../api";
+import type { WorkflowDefinition, WorkflowInstanceDeclaration, WorkflowNodeInfo, WorkflowRunResponse } from "../api";
 
 type WorkflowWorkspaceProps = {
   databaseName: string;
@@ -15,6 +15,9 @@ type WorkflowWorkspaceProps = {
   variablesText: string;
   secretsText: string;
   workflow?: WorkflowDefinition;
+  workflowInstances:
+    | { ok: true; value: Record<string, WorkflowInstanceDeclaration> }
+    | { ok: false; error: string };
   workflowNodes: WorkflowNodeInfo[];
   workflowRuns: WorkflowRunResponse[];
 };
@@ -32,6 +35,7 @@ export function WorkflowWorkspace({
   secretsText,
   variablesText,
   workflow,
+  workflowInstances,
   workflowNodes,
   workflowRuns
 }: WorkflowWorkspaceProps) {
@@ -94,7 +98,7 @@ export function WorkflowWorkspace({
       </div>
       <div className="history-pane">
         <Text weight="semibold">Nodes</Text>
-        <div className="node-list">
+        <div className="node-list" aria-label="Workflow nodes">
           {workflowNodes.map((node) => (
             <div key={node.type} className={node.trigger ? "node-item trigger" : "node-item"}>
               <div className="node-title">
@@ -108,6 +112,25 @@ export function WorkflowWorkspace({
               </div>
             </div>
           ))}
+        </div>
+        <Text weight="semibold">Instances</Text>
+        <div className="node-list" aria-label="Workflow instances">
+          {workflowInstances.ok ? (
+            Object.entries(workflowInstances.value).map(([instanceID, instance]) => (
+              <div key={instanceID} className="node-item">
+                <div className="node-title">
+                  <span>{instanceID}</span>
+                  <span>{instance.node}</span>
+                </div>
+                <div className="node-ports">
+                  <span>vars {formatPorts(instance.variables ?? [])}</span>
+                  <span>secrets {formatPorts(instance.secrets ?? [])}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <Text size={200}>{workflowInstances.error}</Text>
+          )}
         </div>
         <Text weight="semibold">Run flow</Text>
         {workflowRuns.length > 0 && (

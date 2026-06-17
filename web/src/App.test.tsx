@@ -387,7 +387,8 @@ describe("App", () => {
     await userEvent.clear(screen.getByLabelText("Workflow Variables JSON"));
     fireEvent.change(screen.getByLabelText("Workflow Variables JSON"), { target: { value: '{"review_echo.CHANNEL":"support"}' } });
     expect((screen.getByLabelText("Workflow Variables JSON") as HTMLTextAreaElement).value).toContain("support");
-    expect(screen.getByText("echo")).toBeInTheDocument();
+    expect(screen.getAllByText("echo").length).toBeGreaterThan(0);
+    expect(screen.getByText("review_echo")).toBeInTheDocument();
     expect(screen.getByText("table.record.changed")).toBeInTheDocument();
     expect(screen.getByText(/history_key:string/)).toBeInTheDocument();
     expect(screen.getByText("No runs yet")).toBeInTheDocument();

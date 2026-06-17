@@ -990,10 +990,6 @@ func (server *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) 
 		server.handleWorkflowRuns(w, r, id)
 		return
 	}
-	if id, ok := parseWorkflowInstancesPath(r.URL.Path); ok {
-		server.handleWorkflowInstances(w, r, id)
-		return
-	}
 	id, ok := parseIDPath(r.URL.Path, "/api/workflows/")
 	if !ok {
 		http.NotFound(w, r)
@@ -1018,43 +1014,6 @@ func (server *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 	workflow = server.workflowWithPermissionLevel(r.Context(), actorID, workflow)
 	writeJSON(w, http.StatusOK, workflow)
-}
-
-func (server *Server) handleWorkflowInstances(w http.ResponseWriter, r *http.Request, workflowID int64) {
-	if r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
-	actorID, ok := server.requireUserID(w, r)
-	if !ok {
-		return
-	}
-	if !server.requireResourceRead(w, r, actorID, permission.ScopeWorkflow, workflowID) {
-		return
-	}
-	workflowDefinition, err := server.system.Workflow(r.Context(), workflowID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err)
-		return
-	}
-	workflowDefinition, err = server.workflowDefinitionWithFileScript(r.Context(), workflowDefinition)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	instances, err := server.runner.Instances(r.Context(), workflow.Definition{
-		ID:           workflowDefinition.ID,
-		DatabaseName: workflowDefinition.DatabaseName,
-		Script:       workflowDefinition.Script,
-		CreatorID:    workflowDefinition.CreatorID,
-		Secrets:      workflowDefinition.Secrets,
-		Variables:    workflowDefinition.Variables,
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, instances)
 }
 
 func (server *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -1715,15 +1674,6 @@ func parseRoleActionPath(path string) (string, string, string, bool) {
 func parseWorkflowRunsPath(path string) (int64, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 4 || parts[0] != "api" || parts[1] != "workflows" || parts[3] != "runs" {
-		return 0, false
-	}
-	id, err := strconv.ParseInt(parts[2], 10, 64)
-	return id, err == nil
-}
-
-func parseWorkflowInstancesPath(path string) (int64, bool) {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 4 || parts[0] != "api" || parts[1] != "workflows" || parts[3] != "instances" {
 		return 0, false
 	}
 	id, err := strconv.ParseInt(parts[2], 10, 64)

@@ -1708,21 +1708,6 @@ func TestWorkflowRunAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	instancesRequest := httptest.NewRequest(http.MethodGet, "/api/workflows/1/instances", nil)
-	instancesRequest.AddCookie(testSessionCookie(t, system, "u1"))
-	instancesRecorder := httptest.NewRecorder()
-	server.ServeHTTP(instancesRecorder, instancesRequest)
-	if instancesRecorder.Code != http.StatusOK {
-		t.Fatalf("expected workflow instances 200, got %d: %s", instancesRecorder.Code, instancesRecorder.Body.String())
-	}
-	var instances map[string]workflow.InstanceDeclaration
-	if err := json.NewDecoder(instancesRecorder.Body).Decode(&instances); err != nil {
-		t.Fatal(err)
-	}
-	if instances["welcome_echo"].Node != "echo" || len(instances["welcome_echo"].Variables) != 1 || instances["welcome_echo"].Variables[0].Name != "suffix" {
-		t.Fatalf("unexpected workflow instances: %#v", instances)
-	}
-
 	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"name":"Ada"}}`))
 	runRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	runRecorder := httptest.NewRecorder()

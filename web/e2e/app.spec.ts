@@ -530,7 +530,7 @@ test("covers workflow editor, node list, and run history through the real backen
   await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/function trigger\(info\)/);
   await expect(page.getByLabel("Workflow JavaScript")).toHaveValue(/table\.record\.changed/);
   await expect(page.getByText("echo").first()).toBeVisible();
-  const nodeListLayout = await page.locator(".node-list").evaluate((element) => {
+  const nodeListLayout = await page.getByLabel("Workflow nodes").evaluate((element) => {
     const list = element as HTMLElement;
     return {
       overflowY: window.getComputedStyle(list).overflowY,
@@ -540,6 +540,7 @@ test("covers workflow editor, node list, and run history through the real backen
   });
   expect(nodeListLayout.overflowY).toBe("auto");
   expect(nodeListLayout.scrollHeight).toBeGreaterThan(nodeListLayout.clientHeight);
+  await expect(page.getByLabel("Workflow instances").getByText("row_change")).toBeVisible();
   const rowHistory = (await api(
     page,
     "GET",

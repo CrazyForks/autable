@@ -368,15 +368,6 @@ export async function loadWorkflowNodes(): Promise<WorkflowNodeInfo[]> {
   return response.json() as Promise<WorkflowNodeInfo[]>;
 }
 
-export async function loadWorkflowInstances(workflowID: number): Promise<Record<string, WorkflowInstanceDeclaration>> {
-  const response = await fetch(`/api/workflows/${workflowID}/instances`);
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error ?? "workflow instances request failed");
-  }
-  return response.json() as Promise<Record<string, WorkflowInstanceDeclaration>>;
-}
-
 export async function runWorkflow(
   workflowID: number,
   inputs: Record<string, unknown>
