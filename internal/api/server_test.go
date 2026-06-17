@@ -1977,6 +1977,46 @@ func TestRowCreateAutomaticallyRunsMatchingWorkflowTrigger(t *testing.T) {
 	}
 }
 
+func TestWorkflowWorkersConsumeRowChangeEvents(t *testing.T) {
+	ctx := context.Background()
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	server, system := newTestServer(t)
+	server.StartWorkflowWorkers(workerCtx)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"worker-contact",
+		"script":"function trigger(info) { return { node: \"table.record.changed\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"name\"] } }; }\nfunction run(info) { const changed = info.node(\"table.record.changed\", { history_key: info.inputs.history_key }); return { name: changed.diff.name.new }; }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+
+	createRow := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{"values":{"name":"Ada"}}`))
+	createRow.AddCookie(testSessionCookie(t, system, "u1"))
+	createRecorder := httptest.NewRecorder()
+	server.ServeHTTP(createRecorder, createRow)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected row create 201, got %d: %s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	runs := waitWorkflowRunCount(t, server, system, 1, "u1", 1)
+	if runs[0].Run.Outputs["name"] != "Ada" {
+		t.Fatalf("unexpected worker workflow run: %#v", runs[0].Run)
+	}
+}
+
 func TestRowCreateDoesNotRunWorkflowWhenTriggerFieldsDoNotMatch(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
@@ -2369,6 +2409,30 @@ func newTestServerWithOIDC(t *testing.T, providers []config.OIDCProvider) (*Serv
 
 func assertWorkflowRunCount(t *testing.T, server *Server, system *systemdb.DB, workflowID int64, actorID string, expected int) []workflowRunResponse {
 	t.Helper()
+	runs := fetchWorkflowRuns(t, server, system, workflowID, actorID)
+	if len(runs) != expected {
+		t.Fatalf("expected %d workflow runs, got %#v", expected, runs)
+	}
+	return runs
+}
+
+func waitWorkflowRunCount(t *testing.T, server *Server, system *systemdb.DB, workflowID int64, actorID string, expected int) []workflowRunResponse {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var runs []workflowRunResponse
+	for time.Now().Before(deadline) {
+		runs = fetchWorkflowRuns(t, server, system, workflowID, actorID)
+		if len(runs) == expected {
+			return runs
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected %d workflow runs, got %#v", expected, runs)
+	return nil
+}
+
+func fetchWorkflowRuns(t *testing.T, server *Server, system *systemdb.DB, workflowID int64, actorID string) []workflowRunResponse {
+	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, "/api/workflows/"+strconv.FormatInt(workflowID, 10)+"/runs", nil)
 	request.AddCookie(testSessionCookie(t, system, actorID))
 	recorder := httptest.NewRecorder()
@@ -2379,9 +2443,6 @@ func assertWorkflowRunCount(t *testing.T, server *Server, system *systemdb.DB, w
 	var runs []workflowRunResponse
 	if err := json.NewDecoder(recorder.Body).Decode(&runs); err != nil {
 		t.Fatal(err)
-	}
-	if len(runs) != expected {
-		t.Fatalf("expected %d workflow runs, got %#v", expected, runs)
 	}
 	return runs
 }

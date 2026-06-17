@@ -70,6 +70,7 @@ func run(ctx context.Context, configPath, metadataPath string) error {
 	server.EnableMetadataWrites(metadataPath)
 	server.SetDatabaseOpener(rowRepository.OpenDatabase)
 	server.SetCodeFileStore(codefiles.NewStore(cfg.Repository.Path))
+	server.StartWorkflowWorkers(ctx)
 	server.StartWorkflowScheduler(ctx, 15*time.Second)
 	slog.Info("codetable listening", "address", address)
 	return http.ListenAndServe(address, server)

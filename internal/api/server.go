@@ -27,17 +27,20 @@ import (
 )
 
 type Server struct {
-	catalogMu    sync.RWMutex
-	catalog      metadata.Catalog
-	metadataPath string
-	openDatabase func(context.Context, string, string) error
-	codeFiles    codeFileStore
-	system       *systemdb.DB
-	tables       *table.Service
-	history      history.Store
-	runner       *workflow.Runner
-	oidc         []config.OIDCProvider
-	mux          *http.ServeMux
+	catalogMu        sync.RWMutex
+	catalog          metadata.Catalog
+	metadataPath     string
+	openDatabase     func(context.Context, string, string) error
+	codeFiles        codeFileStore
+	system           *systemdb.DB
+	tables           *table.Service
+	history          history.Store
+	runner           *workflow.Runner
+	oidc             []config.OIDCProvider
+	workflowWorkers  map[string]*workflowEventWorker
+	workflowWorker   context.Context
+	workflowWorkerMu sync.Mutex
+	mux              *http.ServeMux
 }
 
 type codeFileStore interface {
@@ -95,6 +98,26 @@ type workflowRunRequest struct {
 type workflowRunResponse struct {
 	HistoryKey string              `json:"history_key"`
 	Run        history.WorkflowRun `json:"run"`
+}
+
+type workflowEventKind string
+
+const (
+	workflowEventRowChange workflowEventKind = "row_change"
+	workflowEventSchedule  workflowEventKind = "schedule"
+)
+
+type workflowEvent struct {
+	Kind         workflowEventKind
+	DatabaseName string
+	HistoryKey   string
+	RowChange    history.RowChange
+	ScheduledAt  time.Time
+}
+
+type workflowEventWorker struct {
+	dbName string
+	events chan workflowEvent
 }
 
 type roleGrantsRequest struct {
@@ -1065,6 +1088,66 @@ func (server *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, runs)
 }
 
+func (server *Server) StartWorkflowWorkers(ctx context.Context) {
+	server.workflowWorkerMu.Lock()
+	defer server.workflowWorkerMu.Unlock()
+	if server.workflowWorker != nil {
+		return
+	}
+	server.workflowWorker = ctx
+	server.workflowWorkers = map[string]*workflowEventWorker{}
+	for _, database := range server.catalogSnapshot().Databases {
+		server.startWorkflowWorkerLocked(database.Name)
+	}
+}
+
+func (server *Server) startWorkflowWorkerLocked(dbName string) *workflowEventWorker {
+	if worker, ok := server.workflowWorkers[dbName]; ok {
+		return worker
+	}
+	worker := &workflowEventWorker{
+		dbName: dbName,
+		events: make(chan workflowEvent, 256),
+	}
+	server.workflowWorkers[dbName] = worker
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event := <-worker.events:
+				server.processWorkflowEvent(ctx, event)
+			}
+		}
+	}(server.workflowWorker)
+	return worker
+}
+
+func (server *Server) dispatchWorkflowEvent(ctx context.Context, event workflowEvent) {
+	if server.enqueueWorkflowEvent(ctx, event) {
+		return
+	}
+	server.processWorkflowEvent(ctx, event)
+}
+
+func (server *Server) enqueueWorkflowEvent(ctx context.Context, event workflowEvent) bool {
+	server.workflowWorkerMu.Lock()
+	if server.workflowWorker == nil {
+		server.workflowWorkerMu.Unlock()
+		return false
+	}
+	worker := server.startWorkflowWorkerLocked(event.DatabaseName)
+	server.workflowWorkerMu.Unlock()
+	select {
+	case worker.events <- event:
+		return true
+	case <-ctx.Done():
+		return true
+	case <-server.workflowWorker.Done():
+		return true
+	}
+}
+
 func (server *Server) StartWorkflowScheduler(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		return
@@ -1090,36 +1173,11 @@ func (server *Server) dispatchScheduleTickAll(ctx context.Context, scheduledAt t
 }
 
 func (server *Server) dispatchScheduleTick(ctx context.Context, dbName string, scheduledAt time.Time) {
-	workflows, err := server.system.Workflows(ctx, dbName)
-	if err != nil {
-		return
-	}
-	workflows, err = server.workflowDefinitionsWithFileScripts(ctx, workflows)
-	if err != nil {
-		return
-	}
-	for _, workflowDefinition := range workflows {
-		definition := workflow.Definition{
-			ID:           workflowDefinition.ID,
-			DatabaseName: workflowDefinition.DatabaseName,
-			Script:       workflowDefinition.Script,
-			CreatorID:    workflowDefinition.CreatorID,
-			Secrets:      workflowDefinition.Secrets,
-			Variables:    workflowDefinition.Variables,
-		}
-		declaration, err := server.runner.Trigger(ctx, definition)
-		if errors.Is(err, workflow.ErrMissingTrigger) {
-			continue
-		}
-		if err != nil || !server.scheduleTriggerMatches(ctx, workflowDefinition.ID, declaration, scheduledAt) {
-			continue
-		}
-		inputs := map[string]any{
-			"scheduled_at": scheduledAt.UTC().UnixMilli(),
-			"event":        "schedule",
-		}
-		_, _, _ = server.runner.RunAt(ctx, definition, inputs, scheduledAt)
-	}
+	server.dispatchWorkflowEvent(ctx, workflowEvent{
+		Kind:         workflowEventSchedule,
+		DatabaseName: dbName,
+		ScheduledAt:  scheduledAt.UTC(),
+	})
 }
 
 func (server *Server) scheduleTriggerMatches(ctx context.Context, workflowID int64, declaration workflow.TriggerDeclaration, scheduledAt time.Time) bool {
@@ -1178,7 +1236,16 @@ func dailyScheduleDue(scheduledAt, latestRun time.Time, hasLatestRun bool, daily
 }
 
 func (server *Server) dispatchRowChangeEvent(ctx context.Context, historyKey string, change history.RowChange) {
-	workflows, err := server.system.Workflows(ctx, change.Database)
+	server.dispatchWorkflowEvent(ctx, workflowEvent{
+		Kind:         workflowEventRowChange,
+		DatabaseName: change.Database,
+		HistoryKey:   historyKey,
+		RowChange:    change,
+	})
+}
+
+func (server *Server) processWorkflowEvent(ctx context.Context, event workflowEvent) {
+	workflows, err := server.system.Workflows(ctx, event.DatabaseName)
 	if err != nil {
 		return
 	}
@@ -1199,18 +1266,48 @@ func (server *Server) dispatchRowChangeEvent(ctx context.Context, historyKey str
 		if errors.Is(err, workflow.ErrMissingTrigger) {
 			continue
 		}
-		if err != nil || !rowChangeTriggerMatches(declaration, change) {
+		if err != nil || !server.workflowEventMatches(ctx, workflowDefinition.ID, declaration, event) {
 			continue
 		}
-		inputs := map[string]any{
-			"history_key": historyKey,
+		inputs := workflowEventInputs(event)
+		if event.Kind == workflowEventSchedule {
+			_, _, _ = server.runner.RunAt(ctx, definition, inputs, event.ScheduledAt)
+			continue
+		}
+		_, _, _ = server.runner.Run(ctx, definition, inputs)
+	}
+}
+
+func (server *Server) workflowEventMatches(ctx context.Context, workflowID int64, declaration workflow.TriggerDeclaration, event workflowEvent) bool {
+	switch event.Kind {
+	case workflowEventSchedule:
+		return server.scheduleTriggerMatches(ctx, workflowID, declaration, event.ScheduledAt)
+	case workflowEventRowChange:
+		return rowChangeTriggerMatches(declaration, event.RowChange)
+	default:
+		return false
+	}
+}
+
+func workflowEventInputs(event workflowEvent) map[string]any {
+	switch event.Kind {
+	case workflowEventSchedule:
+		return map[string]any{
+			"scheduled_at": event.ScheduledAt.UTC().UnixMilli(),
+			"event":        "schedule",
+		}
+	case workflowEventRowChange:
+		change := event.RowChange
+		return map[string]any{
+			"history_key": event.HistoryKey,
 			"database":    change.Database,
 			"table":       change.Table,
 			"record_id":   change.RecordID,
 			"operation":   change.Operation,
 			"diff":        change.Diff,
 		}
-		_, _, _ = server.runner.Run(ctx, definition, inputs)
+	default:
+		return map[string]any{}
 	}
 }
 
