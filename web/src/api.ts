@@ -64,6 +64,8 @@ export type WorkflowDefinition = {
   secrets: Record<string, string>;
   variables: Record<string, string>;
   permission_level?: 0 | 1 | 2;
+  created_at?: number;
+  updated_at?: number;
 };
 
 export type WorkflowPort = {
@@ -118,6 +120,8 @@ export type FormDefinition = {
   script: string;
   published_token?: string;
   permission_level?: 0 | 1 | 2;
+  created_at?: number;
+  updated_at?: number;
 };
 
 export type PermissionGrant = {
@@ -135,6 +139,8 @@ export type RoleDefinition = {
   subject_id: string;
   grants: PermissionGrant[];
   members: string[];
+  created_at?: number;
+  updated_at?: number;
 };
 
 export type AuthUser = {

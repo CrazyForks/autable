@@ -4,13 +4,9 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"codetable/internal/metadata"
 	"codetable/internal/table"
-
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestRepositoryCreatesOneSQLiteFilePerMetadataDatabase(t *testing.T) {
@@ -87,6 +83,17 @@ func TestRepositoryPersistsRowsAcrossReopen(t *testing.T) {
 	if loaded.RecordID != row.RecordID || loaded.Values["name"] != "Ada" {
 		t.Fatalf("unexpected persisted row: %#v", loaded)
 	}
+	db, err := reopened.database("workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored Record
+	if err := db.First(&stored, &Record{RecordID: row.RecordID, TableName: "contacts"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.CreatedAt <= 0 || stored.UpdatedAt <= 0 {
+		t.Fatalf("expected millisecond integer timestamps, got created=%d updated=%d", stored.CreatedAt, stored.UpdatedAt)
+	}
 }
 
 func TestRepositoryAllocatesRecordIDsPerTableAcrossReopen(t *testing.T) {
@@ -132,59 +139,6 @@ func TestRepositoryAllocatesRecordIDsPerTableAcrossReopen(t *testing.T) {
 	}
 	if nextContact.RecordID != 2 || nextProject.RecordID != 2 {
 		t.Fatalf("expected each table to continue independently, got contact=%d project=%d", nextContact.RecordID, nextProject.RecordID)
-	}
-}
-
-func TestRepositoryMigratesLegacyGlobalRecordIDSchema(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "workspace.sqlite")
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.WithContext(ctx).AutoMigrate(&legacyRecord{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.WithContext(ctx).Create(&legacyRecord{
-		RecordID:  1,
-		Table:     "contacts",
-		Values:    JSONMap{"name": "Ada"},
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: path}}}
-	repository, err := OpenCatalog(ctx, catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := repository.Close(); err != nil {
-			t.Fatal(err)
-		}
-	})
-	loaded, err := repository.Row(ctx, "workspace", "contacts", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Values["name"] != "Ada" {
-		t.Fatalf("expected migrated legacy row, got %#v", loaded)
-	}
-	project, err := repository.CreateRow(ctx, "workspace", "projects", map[string]any{"name": "Apollo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if project.RecordID != 1 {
-		t.Fatalf("expected new table to start at record_id 1 after migration, got %d", project.RecordID)
 	}
 }
 

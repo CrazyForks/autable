@@ -172,6 +172,9 @@ func TestWorkflowDefinitionStoresSecretsAndVariablesAsJSON(t *testing.T) {
 	if saved.ID == 0 {
 		t.Fatal("expected autoincrement workflow id")
 	}
+	if saved.CreatedAt <= 0 || saved.UpdatedAt <= 0 {
+		t.Fatalf("expected workflow millisecond timestamps, got %#v", saved)
+	}
 
 	loaded, err := db.Workflow(ctx, saved.ID)
 	if err != nil {
@@ -218,6 +221,9 @@ func TestFormDefinitionAutoincrementsID(t *testing.T) {
 	}
 	if saved.ID != 1 {
 		t.Fatalf("expected first form id to be 1, got %d", saved.ID)
+	}
+	if saved.CreatedAt <= 0 || saved.UpdatedAt <= 0 {
+		t.Fatalf("expected form millisecond timestamps, got %#v", saved)
 	}
 	list, err := db.Forms(ctx, "workspace")
 	if err != nil {
@@ -285,6 +291,9 @@ func TestRoleDefinitionStoresReplaceableGrants(t *testing.T) {
 	}
 	if role.ID == 0 || role.SubjectID != "role:workspace:editor" {
 		t.Fatalf("unexpected role: %#v", role)
+	}
+	if role.CreatedAt <= 0 || role.UpdatedAt <= 0 {
+		t.Fatalf("expected role millisecond timestamps, got %#v", role)
 	}
 
 	role, err = db.ReplaceRoleGrants(ctx, "workspace", "editor", []permission.Grant{

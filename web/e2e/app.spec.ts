@@ -571,10 +571,19 @@ test("covers workflow editor, node list, and run history through the real backen
     page,
     "GET",
     `/api/databases/${workspace.databaseName}/workflows`
-  )) as Array<{ id: number; name: string; variables: Record<string, string>; secrets: Record<string, string> }>;
+  )) as Array<{
+    id: number;
+    name: string;
+    variables: Record<string, string>;
+    secrets: Record<string, string>;
+    created_at: number;
+    updated_at: number;
+  }>;
   const savedWorkflow = savedWorkflows.find((item) => item.name === workflowName);
   expect(savedWorkflow?.variables["row_change.label"]).toBe("review");
   expect(savedWorkflow?.secrets["row_change.token"]).toBe("hidden-token");
+  expect(typeof savedWorkflow?.created_at).toBe("number");
+  expect(typeof savedWorkflow?.updated_at).toBe("number");
   await page.getByLabel("Workflow Inputs JSON").fill(JSON.stringify({ history_key: rowHistory[0].history_key }, null, 2));
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
@@ -706,9 +715,16 @@ test("publishes form links that require login and explicit form permission", asy
   const link = await page.getByLabel("Published form link").inputValue();
   expect(link).toContain("/forms/");
   const token = link.split("/forms/").at(-1) ?? "";
-  const forms = (await api(page, "GET", `/api/databases/${workspace.databaseName}/forms`)) as Array<{ id: number; published_token?: string }>;
+  const forms = (await api(page, "GET", `/api/databases/${workspace.databaseName}/forms`)) as Array<{
+    id: number;
+    published_token?: string;
+    created_at: number;
+    updated_at: number;
+  }>;
   const form = forms.find((item) => item.published_token === token);
   expect(form?.id).toBeTruthy();
+  expect(typeof form?.created_at).toBe("number");
+  expect(typeof form?.updated_at).toBe("number");
 
   const readerEmail = `form-reader-${Date.now()}-${sequence}@example.com`;
   const reader = (await api(page, "POST", "/api/auth/register", {
@@ -784,9 +800,13 @@ test("covers role members and resource permission grants through the real backen
     name: string;
     grants: Array<{ scope: string; resource: string; field: string; level: number }>;
     members: string[];
+    created_at: number;
+    updated_at: number;
   }>;
   const role = roles.find((item) => item.name === "editor");
   expect(role?.members).toContain(user.id);
+  expect(typeof role?.created_at).toBe("number");
+  expect(typeof role?.updated_at).toBe("number");
   expect(role?.grants).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ scope: "table", resource: `${databaseName}.${tableName}`, field: "", level: 2 }),

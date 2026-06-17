@@ -30,8 +30,8 @@ type WorkflowDefinition struct {
 	Secrets         map[string]string `json:"secrets"`
 	Variables       map[string]string `json:"variables"`
 	PermissionLevel permission.Level  `json:"permission_level,omitempty" gorm:"-"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
+	CreatedAt       int64             `json:"created_at"`
+	UpdatedAt       int64             `json:"updated_at"`
 }
 
 type FormDefinition struct {
@@ -41,8 +41,8 @@ type FormDefinition struct {
 	Script          string           `json:"script"`
 	PublishedToken  string           `json:"published_token,omitempty"`
 	PermissionLevel permission.Level `json:"permission_level,omitempty" gorm:"-"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+	CreatedAt       int64            `json:"created_at"`
+	UpdatedAt       int64            `json:"updated_at"`
 }
 
 type RoleDefinition struct {
@@ -52,8 +52,8 @@ type RoleDefinition struct {
 	SubjectID    string             `json:"subject_id"`
 	Grants       []permission.Grant `json:"grants"`
 	Members      []string           `json:"members"`
-	CreatedAt    time.Time          `json:"created_at"`
-	UpdatedAt    time.Time          `json:"updated_at"`
+	CreatedAt    int64              `json:"created_at"`
+	UpdatedAt    int64              `json:"updated_at"`
 }
 
 type userModel struct {
@@ -63,16 +63,16 @@ type userModel struct {
 	ProviderName string `gorm:"not null"`
 	Subject      string `gorm:"not null"`
 	PasswordHash []byte
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	CreatedAt    int64 `gorm:"autoCreateTime:milli"`
+	UpdatedAt    int64 `gorm:"autoUpdateTime:milli"`
 }
 
 type sessionModel struct {
-	TokenHash string    `gorm:"primaryKey"`
-	UserID    string    `gorm:"index;not null"`
-	ExpiresAt time.Time `gorm:"index;not null"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	TokenHash string `gorm:"primaryKey"`
+	UserID    string `gorm:"index;not null"`
+	ExpiresAt int64  `gorm:"index;not null"`
+	CreatedAt int64  `gorm:"autoCreateTime:milli"`
+	UpdatedAt int64  `gorm:"autoUpdateTime:milli"`
 }
 
 type permissionGrantModel struct {
@@ -92,8 +92,8 @@ type workflowModel struct {
 	CreatorID     string `gorm:"index;not null;default:''"`
 	SecretsJSON   string `gorm:"not null"`
 	VariablesJSON string `gorm:"not null"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	CreatedAt     int64  `gorm:"autoCreateTime:milli"`
+	UpdatedAt     int64  `gorm:"autoUpdateTime:milli"`
 }
 
 type formModel struct {
@@ -102,16 +102,16 @@ type formModel struct {
 	Name           string `gorm:"uniqueIndex:idx_form_database_name;not null"`
 	Script         string `gorm:"not null"`
 	PublishedToken string `gorm:"index"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	CreatedAt      int64  `gorm:"autoCreateTime:milli"`
+	UpdatedAt      int64  `gorm:"autoUpdateTime:milli"`
 }
 
 type roleModel struct {
 	ID           int64  `gorm:"primaryKey;autoIncrement"`
 	DatabaseName string `gorm:"uniqueIndex:idx_role_database_name;not null"`
 	Name         string `gorm:"uniqueIndex:idx_role_database_name;not null"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	CreatedAt    int64  `gorm:"autoCreateTime:milli"`
+	UpdatedAt    int64  `gorm:"autoUpdateTime:milli"`
 }
 
 type roleMemberModel struct {
@@ -119,8 +119,8 @@ type roleMemberModel struct {
 	DatabaseName string `gorm:"uniqueIndex:idx_role_member;not null"`
 	RoleName     string `gorm:"uniqueIndex:idx_role_member;not null"`
 	UserID       string `gorm:"uniqueIndex:idx_role_member;not null"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	CreatedAt    int64  `gorm:"autoCreateTime:milli"`
+	UpdatedAt    int64  `gorm:"autoUpdateTime:milli"`
 }
 
 func Open(ctx context.Context, path string) (*DB, error) {
@@ -223,7 +223,7 @@ func (db *DB) CreateSession(ctx context.Context, userID string, ttl time.Duratio
 	model := sessionModel{
 		TokenHash: auth.HashSessionToken(token),
 		UserID:    userID,
-		ExpiresAt: session.ExpiresAt,
+		ExpiresAt: session.ExpiresAt.UTC().UnixMilli(),
 	}
 	if err := db.orm.WithContext(ctx).Create(&model).Error; err != nil {
 		return auth.Session{}, err
@@ -237,8 +237,8 @@ func (db *DB) UserBySessionToken(ctx context.Context, token string) (auth.User, 
 	if err != nil {
 		return auth.User{}, auth.Session{}, err
 	}
-	session := auth.Session{Token: token, UserID: model.UserID, ExpiresAt: model.ExpiresAt}
-	if !model.ExpiresAt.After(time.Now().UTC()) {
+	session := auth.Session{Token: token, UserID: model.UserID, ExpiresAt: time.UnixMilli(model.ExpiresAt).UTC()}
+	if model.ExpiresAt <= time.Now().UTC().UnixMilli() {
 		_ = db.DeleteSession(ctx, token)
 		return auth.User{}, session, gorm.ErrRecordNotFound
 	}
