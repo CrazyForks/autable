@@ -485,6 +485,43 @@ test("covers workflow editor, node list, and run history through the real backen
   await expect(runFlow.getByText(/"record_id": 1/).first()).toBeVisible();
 });
 
+test("runs table row workflow nodes through the real backend", async ({ page }) => {
+  const workspace = await setupWorkspace(page);
+
+  await page.getByRole("button", { name: "Workflow", exact: true }).click();
+  const workflowName = `row-node-workflow-${Date.now()}`;
+  await page.getByRole("textbox", { name: "New workflow name" }).fill(workflowName);
+  await page.getByRole("button", { name: "Create Workflow" }).click();
+  await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
+  await page.getByLabel("Workflow JavaScript").fill(
+    "function run(info) {\n  const created = info.node('table.row.create', {\n    table: 'contacts',\n    values: { name: info.inputs.name, email: info.inputs.email, status: 'Review' }\n  });\n  return { record_id: created.record.record_id, name: created.record.values.name };\n}"
+  );
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(/Workflow saved as #/)).toBeVisible();
+  await page.getByLabel("Workflow Inputs JSON").fill(
+    JSON.stringify({ name: "Grace Hopper", email: "grace@example.com" }, null, 2)
+  );
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Workflow run saved: whistory_/)).toBeVisible();
+
+  const rows = (await api(
+    page,
+    "GET",
+    `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows`
+  )) as Array<{ record_id: number; values: Record<string, unknown> }>;
+  expect(rows).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        values: expect.objectContaining({ name: "Grace Hopper", email: "grace@example.com", status: "Review" })
+      })
+    ])
+  );
+  const runFlow = page.getByLabel("Workflow run flow");
+  await expect(runFlow.getByText("table.row.create")).toBeVisible();
+  await expect(runFlow.getByText(/Grace Hopper/).first()).toBeVisible();
+});
+
 test("persists workflow and form JavaScript into the repository path", async ({ page }) => {
   await registerUser(page);
   const suffix = `${Date.now()}-${sequence}`;
