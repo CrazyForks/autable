@@ -735,6 +735,18 @@ test("publishes form links that require login and explicit form permission", asy
 
 test("covers role members and resource permission grants through the real backend", async ({ page }) => {
   const { user, databaseName, tableName } = await setupWorkspace(page);
+  const workflows = (await api(page, "GET", `/api/databases/${databaseName}/workflows`)) as Array<{
+    id: number;
+    name: string;
+  }>;
+  const forms = (await api(page, "GET", `/api/databases/${databaseName}/forms`)) as Array<{
+    id: number;
+    name: string;
+  }>;
+  const workflow = workflows[0];
+  const form = forms[0];
+  expect(workflow).toBeTruthy();
+  expect(form).toBeTruthy();
 
   await page.getByRole("button", { name: "Permission", exact: true }).click();
   await page.getByRole("textbox", { name: "New role name" }).fill("editor");
@@ -746,6 +758,8 @@ test("covers role members and resource permission grants through the real backen
   await expect(permissionView.getByText(user.id)).toBeVisible();
   await permissionView.getByLabel("contacts permission").selectOption("2");
   await permissionView.getByLabel("email permission").selectOption("1");
+  await permissionView.getByLabel(`${workflow.name} permission`).selectOption("1");
+  await permissionView.getByLabel(`${form.name} permission`).selectOption("2");
   await permissionView.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved role editor")).toBeVisible();
 
@@ -760,7 +774,9 @@ test("covers role members and resource permission grants through the real backen
     expect.arrayContaining([
       expect.objectContaining({ scope: "table", resource: `${databaseName}.${tableName}`, field: "", level: 2 }),
       expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "name", level: 0 }),
-      expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "email", level: 1 })
+      expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "email", level: 1 }),
+      expect.objectContaining({ scope: "workflow", resource: String(workflow.id), field: "", level: 1 }),
+      expect.objectContaining({ scope: "form", resource: String(form.id), field: "", level: 2 })
     ])
   );
 });
