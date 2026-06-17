@@ -12,6 +12,10 @@ type creatorCaptureNode struct {
 	creatorID string
 }
 
+type configCaptureNode struct {
+	captures map[string]RuntimeInfo
+}
+
 func (node *creatorCaptureNode) Info() NodeInfo {
 	return NodeInfo{
 		Type:        "creator.capture",
@@ -27,15 +31,53 @@ func (node *creatorCaptureNode) Run(_ context.Context, _ map[string]any, info Ru
 	return map[string]any{"creator_id": info.CreatorID}, nil
 }
 
+func (node *configCaptureNode) Info() NodeInfo {
+	return NodeInfo{
+		Type:        "config.capture",
+		DisplayName: "Config capture",
+		Inputs:      []Port{},
+		Outputs: []Port{
+			{Name: "instance_id", Type: "string"},
+			{Name: "channel", Type: "string"},
+			{Name: "token", Type: "string"},
+		},
+		Stateless: true,
+	}
+}
+
+func (node *configCaptureNode) Run(_ context.Context, _ map[string]any, info RuntimeInfo) (map[string]any, error) {
+	if node.captures == nil {
+		node.captures = map[string]RuntimeInfo{}
+	}
+	node.captures[info.InstanceID] = info
+	return map[string]any{
+		"instance_id": info.InstanceID,
+		"channel":     info.Variables["channel"],
+		"token":       info.Secrets["token"],
+	}, nil
+}
+
 func TestRunnerExecutesJavaScriptAndPersistsWorkflowHistory(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
 	runner := NewRunner(store, EchoNode{})
 
 	run, key, err := runner.Run(ctx, Definition{
-		ID:        7,
-		Script:    `function run(info) { const echoed = info.node("echo", { value: info.inputs.name }); return { message: echoed.value + "-" + info.variables.suffix }; }`,
-		Variables: map[string]string{"suffix": "done"},
+		ID: 7,
+		Script: `
+function instances(info) {
+  return {
+    echo_main: {
+      node: "echo",
+      variables: [{ name: "suffix", type: "string", required: true }]
+    }
+  };
+}
+function run(info) {
+  const echoed = info.instance("echo_main").exec({ value: info.inputs.name });
+  return { message: echoed.value + "-done" };
+}`,
+		Variables: map[string]string{"echo_main.suffix": "done"},
 	}, map[string]any{"name": "Ada"})
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +88,7 @@ func TestRunnerExecutesJavaScriptAndPersistsWorkflowHistory(t *testing.T) {
 	if run.Outputs["message"] != "Ada-done" {
 		t.Fatalf("unexpected outputs: %#v", run.Outputs)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].NodeID != "echo" || run.Steps[0].Output["value"] != "Ada" {
+	if len(run.Steps) != 1 || run.Steps[0].NodeID != "echo_main" || run.Steps[0].NodeType != "echo" || run.Steps[0].Output["value"] != "Ada" {
 		t.Fatalf("unexpected steps: %#v", run.Steps)
 	}
 
@@ -73,12 +115,12 @@ func TestRunnerPersistsFailedRuns(t *testing.T) {
 
 	run, _, err := runner.Run(ctx, Definition{
 		ID:     9,
-		Script: `function run(info) { return info.node("missing", { value: 1 }); }`,
+		Script: `function instances(info) { return { missing_main: "missing" }; } function run(info) { return info.instance("missing_main").exec({ value: 1 }); }`,
 	}, nil)
 	if err == nil {
 		t.Fatal("expected missing node error")
 	}
-	if run.Error == "" || len(run.Steps) != 1 || run.Steps[0].Error == "" {
+	if run.Error == "" || len(run.Steps) != 0 {
 		t.Fatalf("expected failed run details, got %#v", run)
 	}
 	entries, err := store.GetPrefix(ctx, history.WorkflowPrefix(9))
@@ -99,8 +141,11 @@ func TestRunnerUsesCreatorIdentityOnlyInsideNodes(t *testing.T) {
 		ID:        15,
 		CreatorID: "creator-user",
 		Script: `
+function instances(info) {
+  return { capture: "creator.capture" };
+}
 function run(info) {
-  const captured = info.node("creator.capture", {});
+  const captured = info.instance("capture").exec({});
   return {
     has_js_creator: Object.prototype.hasOwnProperty.call(info, "creator_id"),
     node_creator: captured.creator_id
@@ -119,6 +164,61 @@ function run(info) {
 	}
 }
 
+func TestRunnerScopesVariablesAndSecretsToNodeInstances(t *testing.T) {
+	ctx := context.Background()
+	capture := &configCaptureNode{}
+	runner := NewRunner(history.NewMemoryStore(), capture)
+
+	run, _, err := runner.Run(ctx, Definition{
+		ID: 16,
+		Script: `
+function instances(info) {
+  return {
+    primary_sender: {
+      node: "config.capture",
+      variables: [{ name: "channel", type: "string", required: true }],
+      secrets: [{ name: "token", type: "string", required: true }]
+    },
+    fallback_sender: {
+      node: "config.capture",
+      variables: [{ name: "channel", type: "string", required: true }],
+      secrets: [{ name: "token", type: "string", required: true }]
+    }
+  };
+}
+function run(info) {
+  const primary = info.instance("primary_sender").exec({});
+  const fallback = info.instance("fallback_sender").exec({});
+  return {
+    primary_channel: primary.channel,
+    primary_token: primary.token,
+    fallback_channel: fallback.channel,
+    fallback_token: fallback.token
+  };
+}`,
+		Variables: map[string]string{
+			"primary_sender.channel":  "ops",
+			"fallback_sender.channel": "sales",
+		},
+		Secrets: map[string]string{
+			"primary_sender.token":  "primary-secret",
+			"fallback_sender.token": "fallback-secret",
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Outputs["primary_channel"] != "ops" || run.Outputs["fallback_channel"] != "sales" {
+		t.Fatalf("unexpected scoped variable outputs: %#v", run.Outputs)
+	}
+	if run.Outputs["primary_token"] != "primary-secret" || run.Outputs["fallback_token"] != "fallback-secret" {
+		t.Fatalf("unexpected scoped secret outputs: %#v", run.Outputs)
+	}
+	if capture.captures["primary_sender"].Variables["channel"] != "ops" || capture.captures["fallback_sender"].Variables["channel"] != "sales" {
+		t.Fatalf("unexpected node runtime captures: %#v", capture.captures)
+	}
+}
+
 func TestRunnerReadsTriggerDeclaration(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
@@ -127,9 +227,12 @@ func TestRunnerReadsTriggerDeclaration(t *testing.T) {
 	declaration, err := runner.Trigger(ctx, Definition{
 		ID: 11,
 		Script: `
+function instances(info) {
+  return { contacts_changed: "table.record.changed" };
+}
 function trigger(info) {
   return {
-    node: "table.record.changed",
+    instance: "contacts_changed",
     params: {
       table: "contacts",
       operations: ["update"],
@@ -143,7 +246,7 @@ function run(info) { return {}; }
 	if err != nil {
 		t.Fatal(err)
 	}
-	if declaration.Node != "table.record.changed" {
+	if declaration.Instance != "contacts_changed" || declaration.Node != "table.record.changed" {
 		t.Fatalf("unexpected trigger node: %#v", declaration)
 	}
 	if declaration.Params["table"] != "contacts" {
@@ -165,7 +268,7 @@ func TestRunnerRejectsNonTriggerDeclarationNode(t *testing.T) {
 
 	_, err := runner.Trigger(ctx, Definition{
 		ID:     12,
-		Script: `function trigger(info) { return { node: "echo" }; } function run(info) { return {}; }`,
+		Script: `function instances(info) { return { echo_trigger: "echo" }; } function trigger(info) { return { instance: "echo_trigger" }; } function run(info) { return {}; }`,
 	})
 	if err == nil {
 		t.Fatal("expected non-trigger node error")
@@ -178,7 +281,7 @@ func TestRunnerRequiresTriggerFunction(t *testing.T) {
 
 	_, err := runner.Trigger(ctx, Definition{
 		ID:     13,
-		Script: `function run(info) { return {}; }`,
+		Script: `function instances(info) { return { echo_main: "echo" }; } function run(info) { return {}; }`,
 	})
 	if err == nil {
 		t.Fatal("expected missing trigger function error")
@@ -217,7 +320,7 @@ func TestRunnerExecutesRecordChangedTriggerNode(t *testing.T) {
 
 	run, _, err := runner.Run(ctx, Definition{
 		ID:     10,
-		Script: `function run(info) { const changed = info.node("table.record.changed", { history_key: info.inputs.history_key }); return { record_id: changed.record.record_id, name: changed.values.name, actor: changed.actor_id, diff_name: changed.diff.name.new }; }`,
+		Script: `function instances(info) { return { changed: "table.record.changed" }; } function run(info) { const changed = info.instance("changed").exec({ history_key: info.inputs.history_key }); return { record_id: changed.record.record_id, name: changed.values.name, actor: changed.actor_id, diff_name: changed.diff.name.new }; }`,
 	}, map[string]any{"history_key": historyKey})
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +328,7 @@ func TestRunnerExecutesRecordChangedTriggerNode(t *testing.T) {
 	if run.Outputs["record_id"] != int64(5) || run.Outputs["name"] != "Ada" || run.Outputs["actor"] != "u1" || run.Outputs["diff_name"] != "Ada" {
 		t.Fatalf("unexpected trigger workflow outputs: %#v", run.Outputs)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].NodeID != "table.record.changed" {
+	if len(run.Steps) != 1 || run.Steps[0].NodeID != "changed" || run.Steps[0].NodeType != "table.record.changed" {
 		t.Fatalf("unexpected trigger workflow steps: %#v", run.Steps)
 	}
 }

@@ -122,7 +122,7 @@ async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
     database_name: databaseName,
     name: `welcome-contact-${suffix}`,
     script:
-      'function run(info) { const echoed = info.node("echo", { value: info.inputs.name }); return { message: echoed.value }; }',
+      'function instances(info) { return { welcome_echo: "echo" }; }\nfunction run(info) { const echoed = info.instance("welcome_echo").exec({ value: info.inputs.name }); return { message: echoed.value }; }',
     secrets: {},
     variables: {}
   });
@@ -188,7 +188,7 @@ test("shows database-owned workflow and form lists across table owners", async (
   await loginUser(page, tableOwner.email);
   await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
     name: workflowName,
-    script: "function run() { return {}; }",
+    script: "function instances(info) { return { noop: 'echo' }; }\nfunction run(info) { return {}; }",
     secrets: {},
     variables: {}
   });
@@ -229,7 +229,7 @@ test("hides workflow and form resources without resource permission", async ({ p
   });
   await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
     name: workflowName,
-    script: "function run() { return {}; }",
+    script: "function instances(info) { return { noop: 'echo' }; }\nfunction run(info) { return {}; }",
     secrets: {},
     variables: {}
   });
@@ -283,7 +283,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
   });
   const workflow = (await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
     name: workflowName,
-    script: "function run() { return {}; }",
+    script: "function instances(info) { return { noop: 'echo' }; }\nfunction run(info) { return {}; }",
     secrets: {},
     variables: {}
   })) as { id: number };
@@ -546,7 +546,7 @@ test("covers workflow editor, node list, and run history through the real backen
     `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows/1/history`
   )) as Array<{ history_key: string }>;
   await page.getByLabel("Workflow JavaScript").fill(
-    "function run(info) {\n  const triggered = info.node('table.record.changed', { history_key: info.inputs.history_key });\n  return { record_id: triggered.record.record_id, name: triggered.values.name };\n}"
+    "function instances(info) {\n  return { row_change: 'table.record.changed' };\n}\n\nfunction run(info) {\n  const triggered = info.instance('row_change').exec({ history_key: info.inputs.history_key });\n  return { record_id: triggered.record.record_id, name: triggered.values.name };\n}"
   );
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(/Workflow saved as #/)).toBeVisible();
@@ -572,7 +572,7 @@ test("runs table row workflow nodes through the real backend", async ({ page }) 
   await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
   await page.getByLabel("Workflow JavaScript").fill(
-    "function run(info) {\n  const created = info.node('table.row.create', {\n    table: 'contacts',\n    values: { name: info.inputs.name, email: info.inputs.email, status: 'Review' }\n  });\n  const beforeUpdate = info.node('table.row.list', { table: 'contacts' });\n  const updated = info.node('table.row.update', {\n    table: 'contacts',\n    record_id: created.record.record_id,\n    values: { status: 'Active' }\n  });\n  const deleted = info.node('table.row.delete', {\n    table: 'contacts',\n    record_id: created.record.record_id\n  });\n  return {\n    created_id: created.record.record_id,\n    before_count: beforeUpdate.rows.length,\n    updated_status: updated.record.values.status,\n    deleted_name: deleted.record.values.name\n  };\n}"
+    "function instances(info) {\n  return {\n    create_contact: 'table.row.create',\n    list_contacts: 'table.row.list',\n    update_contact: 'table.row.update',\n    delete_contact: 'table.row.delete'\n  };\n}\n\nfunction run(info) {\n  const created = info.instance('create_contact').exec({\n    table: 'contacts',\n    values: { name: info.inputs.name, email: info.inputs.email, status: 'Review' }\n  });\n  const beforeUpdate = info.instance('list_contacts').exec({ table: 'contacts' });\n  const updated = info.instance('update_contact').exec({\n    table: 'contacts',\n    record_id: created.record.record_id,\n    values: { status: 'Active' }\n  });\n  const deleted = info.instance('delete_contact').exec({\n    table: 'contacts',\n    record_id: created.record.record_id\n  });\n  return {\n    created_id: created.record.record_id,\n    before_count: beforeUpdate.rows.length,\n    updated_status: updated.record.values.status,\n    deleted_name: deleted.record.values.name\n  };\n}"
   );
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(/Workflow saved as #/)).toBeVisible();
@@ -607,7 +607,7 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
   });
 
   const workflowName = `repo-workflow-${suffix}`;
-  const workflowScript = 'function run(info) { return { name: info.inputs.name }; }';
+  const workflowScript = 'function instances(info) { return { noop: "echo" }; }\nfunction run(info) { return { name: info.inputs.name }; }';
   const workflow = (await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
     database_name: databaseName,
     name: workflowName,
@@ -623,7 +623,7 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
     `${String(workflow.id).padStart(20, "0")}-${workflowName}.js`
   );
   expect(readFileSync(workflowPath, "utf8")).toBe(workflowScript);
-  const editedWorkflowScript = "function run() { return { source: 'file' }; }";
+  const editedWorkflowScript = "function instances(info) { return { noop: 'echo' }; }\nfunction run() { return { source: 'file' }; }";
   writeFileSync(workflowPath, editedWorkflowScript);
   const loadedWorkflow = (await api(page, "GET", `/api/workflows/${workflow.id}`)) as { script: string };
   expect(loadedWorkflow.script).toBe(editedWorkflowScript);

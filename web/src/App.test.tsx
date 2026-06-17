@@ -39,18 +39,20 @@ const workflowFixture = [
     id: 1,
     database_name: "workspace",
     name: "record-review",
-    script: 'function run(info) { return info.node("echo", { value: info.inputs.name }); }',
-    secrets: { TOKEN: "" },
-    variables: { CHANNEL: "ops" },
+    script:
+      'function instances(info) { return { review_echo: { node: "echo", variables: [{ name: "CHANNEL", type: "string" }], secrets: [{ name: "TOKEN", type: "string" }] } }; }\nfunction run(info) { return info.instance("review_echo").exec({ value: info.inputs.name }); }',
+    secrets: { "review_echo.TOKEN": "" },
+    variables: { "review_echo.CHANNEL": "ops" },
     permission_level: 2
   },
   {
     id: 2,
     database_name: "workspace",
     name: "welcome-contact",
-    script: 'function run(info) { return info.node("echo", { value: info.inputs.name }); }',
+    script:
+      'function instances(info) { return { welcome_echo: "echo" }; }\nfunction run(info) { return info.instance("welcome_echo").exec({ value: info.inputs.name }); }',
     secrets: {},
-    variables: { CHANNEL: "sales" },
+    variables: { "welcome_echo.CHANNEL": "sales" },
     permission_level: 2
   }
 ];
@@ -376,14 +378,14 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
     expect(screen.getByRole("button", { name: /welcome-contact/ })).toBeInTheDocument();
     expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
-      'info.node("echo"'
+      'info.instance("review_echo").exec'
     );
     expect((screen.getByLabelText("Workflow Variables JSON") as HTMLTextAreaElement).value).toContain(
-      '"CHANNEL": "ops"'
+      '"review_echo.CHANNEL": "ops"'
     );
-    expect((screen.getByLabelText("Workflow Secrets JSON") as HTMLTextAreaElement).value).toContain('"TOKEN": ""');
+    expect((screen.getByLabelText("Workflow Secrets JSON") as HTMLTextAreaElement).value).toContain('"review_echo.TOKEN": ""');
     await userEvent.clear(screen.getByLabelText("Workflow Variables JSON"));
-    fireEvent.change(screen.getByLabelText("Workflow Variables JSON"), { target: { value: '{"CHANNEL":"support"}' } });
+    fireEvent.change(screen.getByLabelText("Workflow Variables JSON"), { target: { value: '{"review_echo.CHANNEL":"support"}' } });
     expect((screen.getByLabelText("Workflow Variables JSON") as HTMLTextAreaElement).value).toContain("support");
     expect(screen.getByText("echo")).toBeInTheDocument();
     expect(screen.getByText("table.record.changed")).toBeInTheDocument();

@@ -51,10 +51,11 @@ type WorkflowRun struct {
 }
 
 type StepRecord struct {
-	NodeID string         `json:"node_id"`
-	Input  map[string]any `json:"input,omitempty"`
-	Output map[string]any `json:"output,omitempty"`
-	Error  string         `json:"error,omitempty"`
+	NodeID   string         `json:"node_id"`
+	NodeType string         `json:"node_type,omitempty"`
+	Input    map[string]any `json:"input,omitempty"`
+	Output   map[string]any `json:"output,omitempty"`
+	Error    string         `json:"error,omitempty"`
 }
 
 func RowKey(database, table string, recordID int64, ts time.Time) string {

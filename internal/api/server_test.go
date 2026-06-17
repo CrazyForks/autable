@@ -896,7 +896,7 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 	workspaceWorkflow, err := system.SaveWorkflow(ctx, systemdb.WorkflowDefinition{
 		DatabaseName: "workspace",
 		Name:         "workspace-flow",
-		Script:       "function run() {}",
+		Script:       "function instances(info) { return { noop: \"echo\" }; } function run() {}",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -904,7 +904,7 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 	otherWorkflow, err := system.SaveWorkflow(ctx, systemdb.WorkflowDefinition{
 		DatabaseName: "other",
 		Name:         "other-flow",
-		Script:       "function run() {}",
+		Script:       "function instances(info) { return { noop: \"echo\" }; } function run() {}",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1252,7 +1252,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
-		"script":"function run() {}",
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() {}",
 		"secrets":{"TOKEN":"secret"},
 		"variables":{"CHANNEL":"ops"}
 	}`))
@@ -1341,7 +1341,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	if string(formScript) != form.Script {
 		t.Fatalf("unexpected form code file: %s", formScript)
 	}
-	fileWorkflowScript := "function run(info) { return { message: info.inputs.name + '-from-file' }; }"
+	fileWorkflowScript := "function instances(info) { return { noop: \"echo\" }; } function run(info) { return { message: info.inputs.name + '-from-file' }; }"
 	if err := os.WriteFile(filepath.Join(codeRoot, "workflows", "db", "00000000000000000001-notify.js"), []byte(fileWorkflowScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1400,7 +1400,7 @@ func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
 
 	deniedWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"denied",
-		"script":"function run() { return {}; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return {}; }"
 	}`))
 	deniedWorkflow.AddCookie(testSessionCookie(t, system, "viewer"))
 	deniedWorkflowRecorder := httptest.NewRecorder()
@@ -1419,7 +1419,7 @@ func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
 	}
 	tableOwnerWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"allowed-by-table",
-		"script":"function run() { return {}; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return {}; }"
 	}`))
 	tableOwnerWorkflow.AddCookie(testSessionCookie(t, system, "table-owner"))
 	tableOwnerWorkflowRecorder := httptest.NewRecorder()
@@ -1470,7 +1470,7 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"owned-by-table",
-		"script":"function run(info) { return { message: info.inputs.name }; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run(info) { return { message: info.inputs.name }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "table-owner"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1524,7 +1524,7 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 	updateWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"id":1,
 		"name":"owned-by-table",
-		"script":"function run() { return { updated: true }; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return { updated: true }; }"
 	}`))
 	updateWorkflow.AddCookie(testSessionCookie(t, system, "db-owner"))
 	updateWorkflowRecorder := httptest.NewRecorder()
@@ -1587,7 +1587,7 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
-		"script":"function run() { return {}; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return {}; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1618,7 +1618,7 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 	moveWorkflowByPath := httptest.NewRequest(http.MethodPost, "/api/databases/other/workflows", bytes.NewBufferString(`{
 		"id":1,
 		"name":"notify",
-		"script":"function run() { return { moved: true }; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return { moved: true }; }"
 	}`))
 	moveWorkflowByPath.AddCookie(testSessionCookie(t, system, "u1"))
 	moveWorkflowByPathRecorder := httptest.NewRecorder()
@@ -1631,7 +1631,7 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 		"id":1,
 		"database_name":"other",
 		"name":"notify",
-		"script":"function run() { return { moved: true }; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return { moved: true }; }"
 	}`))
 	moveWorkflowByBody.AddCookie(testSessionCookie(t, system, "u1"))
 	moveWorkflowByBodyRecorder := httptest.NewRecorder()
@@ -1694,8 +1694,8 @@ func TestWorkflowRunAPI(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"welcome",
-		"script":"function run(info) { const echoed = info.node(\"echo\", { value: info.inputs.name }); return { message: echoed.value + \"-\" + info.variables.suffix }; }",
-		"variables":{"suffix":"done"}
+		"script":"function instances(info) { return { welcome_echo: { node: \"echo\", variables: [{ name: \"suffix\", type: \"string\", required: true }] } }; }\nfunction run(info) { const echoed = info.instance(\"welcome_echo\").exec({ value: info.inputs.name }); return { message: echoed.value + \"-done\" }; }",
+		"variables":{"welcome_echo.suffix":"done"}
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1706,6 +1706,21 @@ func TestWorkflowRunAPI(t *testing.T) {
 	var saved systemdb.WorkflowDefinition
 	if err := json.NewDecoder(workflowRecorder.Body).Decode(&saved); err != nil {
 		t.Fatal(err)
+	}
+
+	instancesRequest := httptest.NewRequest(http.MethodGet, "/api/workflows/1/instances", nil)
+	instancesRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	instancesRecorder := httptest.NewRecorder()
+	server.ServeHTTP(instancesRecorder, instancesRequest)
+	if instancesRecorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow instances 200, got %d: %s", instancesRecorder.Code, instancesRecorder.Body.String())
+	}
+	var instances map[string]workflow.InstanceDeclaration
+	if err := json.NewDecoder(instancesRecorder.Body).Decode(&instances); err != nil {
+		t.Fatal(err)
+	}
+	if instances["welcome_echo"].Node != "echo" || len(instances["welcome_echo"].Variables) != 1 || instances["welcome_echo"].Variables[0].Name != "suffix" {
+		t.Fatalf("unexpected workflow instances: %#v", instances)
 	}
 
 	runRequest := httptest.NewRequest(http.MethodPost, "/api/workflows/1/runs", bytes.NewBufferString(`{"inputs":{"name":"Ada"}}`))
@@ -1722,7 +1737,7 @@ func TestWorkflowRunAPI(t *testing.T) {
 	if runResponse.HistoryKey == "" || runResponse.Run.Outputs["message"] != "Ada-done" {
 		t.Fatalf("unexpected workflow run response: %#v", runResponse)
 	}
-	if len(runResponse.Run.Steps) != 1 || runResponse.Run.Steps[0].NodeID != "echo" {
+	if len(runResponse.Run.Steps) != 1 || runResponse.Run.Steps[0].NodeID != "welcome_echo" || runResponse.Run.Steps[0].NodeType != "echo" {
 		t.Fatalf("unexpected workflow run steps: %#v", runResponse.Run.Steps)
 	}
 
@@ -1756,7 +1771,7 @@ func TestWorkflowTableCreateNodeUsesCreatorPermissions(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"create-contact",
-		"script":"function run(info) { const created = info.node(\"table.row.create\", { table: \"contacts\", values: { name: info.inputs.name } }); return { record_id: created.record.record_id, name: created.record.values.name, database: info.database_name }; }"
+		"script":"function instances(info) { return { create_contact: \"table.row.create\" }; }\nfunction run(info) { const created = info.instance(\"create_contact\").exec({ table: \"contacts\", values: { name: info.inputs.name } }); return { record_id: created.record.record_id, name: created.record.values.name, database: info.database_name }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "creator"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1779,7 +1794,7 @@ func TestWorkflowTableCreateNodeUsesCreatorPermissions(t *testing.T) {
 	if response.Run.Outputs["record_id"] != float64(1) || response.Run.Outputs["name"] != "Ada" || response.Run.Outputs["database"] != "db" {
 		t.Fatalf("unexpected table node outputs: %#v", response.Run.Outputs)
 	}
-	if len(response.Run.Steps) != 1 || response.Run.Steps[0].NodeID != "table.row.create" {
+	if len(response.Run.Steps) != 1 || response.Run.Steps[0].NodeID != "create_contact" || response.Run.Steps[0].NodeType != "table.row.create" {
 		t.Fatalf("unexpected table node steps: %#v", response.Run.Steps)
 	}
 }
@@ -1798,7 +1813,7 @@ func TestWorkflowTableCreateNodeIgnoresRunnerPermissions(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"create-contact",
-		"script":"function run(info) { return info.node(\"table.row.create\", { table: \"contacts\", values: { name: \"Ada\" } }); }"
+		"script":"function instances(info) { return { create_contact: \"table.row.create\" }; }\nfunction run(info) { return info.instance(\"create_contact\").exec({ table: \"contacts\", values: { name: \"Ada\" } }); }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "creator"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1899,7 +1914,7 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"triggered",
-		"script":"function run(info) { const changed = info.node(\"table.record.changed\", { history_key: info.inputs.history_key }); return { record_id: changed.record.record_id, name: changed.values.name }; }"
+		"script":"function instances(info) { return { row_change: \"table.record.changed\" }; }\nfunction run(info) { const changed = info.instance(\"row_change\").exec({ history_key: info.inputs.history_key }); return { record_id: changed.record.record_id, name: changed.values.name }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1922,7 +1937,7 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 	if response.Run.Outputs["record_id"] != float64(9) || response.Run.Outputs["name"] != "Ada" {
 		t.Fatalf("unexpected trigger outputs: %#v", response.Run.Outputs)
 	}
-	if len(response.Run.Steps) != 1 || response.Run.Steps[0].NodeID != "table.record.changed" {
+	if len(response.Run.Steps) != 1 || response.Run.Steps[0].NodeID != "row_change" || response.Run.Steps[0].NodeType != "table.record.changed" {
 		t.Fatalf("unexpected trigger steps: %#v", response.Run.Steps)
 	}
 }
@@ -1941,7 +1956,7 @@ func TestRowCreateAutomaticallyRunsMatchingWorkflowTrigger(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"auto-contact",
-		"script":"function trigger(info) { return { node: \"table.record.changed\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"name\"] } }; }\nfunction run(info) { const changed = info.node(\"table.record.changed\", { history_key: info.inputs.history_key }); return { operation: info.inputs.operation, record_id: changed.record.record_id, name: changed.diff.name.new }; }"
+		"script":"function instances(info) { return { row_change: \"table.record.changed\" }; }\nfunction trigger(info) { return { instance: \"row_change\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"name\"] } }; }\nfunction run(info) { const changed = info.instance(\"row_change\").exec({ history_key: info.inputs.history_key }); return { operation: info.inputs.operation, record_id: changed.record.record_id, name: changed.diff.name.new }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -1994,7 +2009,7 @@ func TestWorkflowWorkersConsumeRowChangeEvents(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"worker-contact",
-		"script":"function trigger(info) { return { node: \"table.record.changed\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"name\"] } }; }\nfunction run(info) { const changed = info.node(\"table.record.changed\", { history_key: info.inputs.history_key }); return { name: changed.diff.name.new }; }"
+		"script":"function instances(info) { return { row_change: \"table.record.changed\" }; }\nfunction trigger(info) { return { instance: \"row_change\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"name\"] } }; }\nfunction run(info) { const changed = info.instance(\"row_change\").exec({ history_key: info.inputs.history_key }); return { name: changed.diff.name.new }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -2031,7 +2046,7 @@ func TestRowCreateDoesNotRunWorkflowWhenTriggerFieldsDoNotMatch(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"status-only",
-		"script":"function trigger(info) { return { node: \"table.record.changed\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"status\"] } }; }\nfunction run(info) { return { unexpected: true }; }"
+		"script":"function instances(info) { return { row_change: \"table.record.changed\" }; }\nfunction trigger(info) { return { instance: \"row_change\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"status\"] } }; }\nfunction run(info) { return { unexpected: true }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -2078,7 +2093,7 @@ func TestScheduleTickRunsIntervalWorkflowUsingRunHistory(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"interval-workflow",
-		"script":"function trigger(info) { return { node: \"time.schedule\", params: { interval_ms: 15000 } }; }\nfunction run(info) { const tick = info.node(\"time.schedule\", { scheduled_at: info.inputs.scheduled_at }); return { scheduled_at: tick.scheduled_at, event: info.inputs.event }; }"
+		"script":"function instances(info) { return { every_interval: \"time.schedule\" }; }\nfunction trigger(info) { return { instance: \"every_interval\", params: { interval_ms: 15000 } }; }\nfunction run(info) { const tick = info.instance(\"every_interval\").exec({ scheduled_at: info.inputs.scheduled_at }); return { scheduled_at: tick.scheduled_at, event: info.inputs.event }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -2113,7 +2128,7 @@ func TestScheduleTickRunsDailyWorkflowOncePerDay(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"daily-workflow",
-		"script":"function trigger(info) { return { node: \"time.schedule\", params: { daily_at: \"09:30\" } }; }\nfunction run(info) { return { scheduled_at: info.inputs.scheduled_at }; }"
+		"script":"function instances(info) { return { daily: \"time.schedule\" }; }\nfunction trigger(info) { return { instance: \"daily\", params: { daily_at: \"09:30\" } }; }\nfunction run(info) { return { scheduled_at: info.inputs.scheduled_at }; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
 	workflowRecorder := httptest.NewRecorder()
@@ -2146,7 +2161,7 @@ func TestWorkflowAndFormPermissions(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"restricted",
-		"script":"function run(info) { return info.inputs; }"
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run(info) { return info.inputs; }"
 	}`))
 	workflowRequest.AddCookie(testSessionCookie(t, system, "owner"))
 	workflowRecorder := httptest.NewRecorder()

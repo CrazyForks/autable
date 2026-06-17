@@ -178,7 +178,7 @@ export function useWorkflowFormWorkspace({
       const saved = await saveWorkflow(databaseName, {
         database_name: databaseName,
         name,
-        script: "function trigger(info) {\n  return {\n    node: 'table.record.changed',\n    params: {\n      operations: ['create', 'update', 'delete']\n    }\n  };\n}\n\nfunction run(info) {\n  const changed = info.node('table.record.changed', {\n    history_key: info.inputs.history_key\n  });\n  return {\n    database: changed.record.database,\n    table: changed.record.table,\n    record_id: changed.record.record_id,\n    operation: info.inputs.operation,\n    diff: changed.diff\n  };\n}",
+        script: "function instances(info) {\n  return {\n    row_change: 'table.record.changed'\n  };\n}\n\nfunction trigger(info) {\n  return {\n    instance: 'row_change',\n    params: {\n      operations: ['create', 'update', 'delete']\n    }\n  };\n}\n\nfunction run(info) {\n  const changed = info.instance('row_change').exec({\n    history_key: info.inputs.history_key\n  });\n  return {\n    database: changed.record.database,\n    table: changed.record.table,\n    record_id: changed.record.record_id,\n    operation: info.inputs.operation,\n    diff: changed.diff\n  };\n}",
         secrets: {},
         variables: {}
       });

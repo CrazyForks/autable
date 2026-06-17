@@ -28,6 +28,8 @@ type RuntimeInfo struct {
 	WorkflowID   int64
 	DatabaseName string
 	RunID        string
+	InstanceID   string
+	NodeType     string
 	CreatorID    string
 	Secrets      map[string]string
 	Variables    map[string]string

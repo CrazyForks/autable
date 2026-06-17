@@ -133,6 +133,7 @@ export function WorkflowWorkspace({
                 <div key={`${step.node_id}-${index}`} className={step.error ? "flow-step error" : "flow-step"}>
                   <div className="flow-step-title">
                     <Text weight="semibold">{step.node_id}</Text>
+                    {step.node_type && <Text size={200}>{step.node_type}</Text>}
                     {step.error && <Text size={200}>{step.error}</Text>}
                   </div>
                   <div className="flow-step-payloads">

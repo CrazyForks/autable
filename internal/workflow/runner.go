@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"codetable/internal/history"
@@ -23,10 +24,19 @@ type Definition struct {
 }
 
 var ErrMissingTrigger = errors.New("workflow script must define function trigger(info)")
+var ErrMissingInstances = errors.New("workflow script must define function instances(info)")
+
+type InstanceDeclaration struct {
+	Node      string         `json:"node"`
+	Variables []Port         `json:"variables,omitempty"`
+	Secrets   []Port         `json:"secrets,omitempty"`
+	Params    map[string]any `json:"params,omitempty"`
+}
 
 type TriggerDeclaration struct {
-	Node   string         `json:"node"`
-	Params map[string]any `json:"params,omitempty"`
+	Instance string         `json:"instance"`
+	Node     string         `json:"node"`
+	Params   map[string]any `json:"params,omitempty"`
 }
 
 type Runner struct {
@@ -75,16 +85,30 @@ func (runner *Runner) RunAt(ctx context.Context, definition Definition, inputs m
 		Inputs:     cloneAnyMap(inputs),
 		Steps:      []history.StepRecord{},
 	}
+	instances, err := runner.Instances(ctx, definition)
+	if err != nil {
+		return runner.finish(ctx, run, err)
+	}
 	runtime := newRuntime()
 	info := workflowInfo(definition, runID, inputs)
-	info["node"] = func(call goja.FunctionCall) goja.Value {
-		nodeType := call.Argument(0).String()
-		nodeInput := exportedMap(call.Argument(1).Export())
-		output, err := runner.runNode(ctx, definition, runID, nodeType, nodeInput, &run)
-		if err != nil {
-			panic(runtime.ToValue(err.Error()))
+	info["instance"] = func(call goja.FunctionCall) goja.Value {
+		instanceID := call.Argument(0).String()
+		declaration, ok := instances[instanceID]
+		if !ok {
+			panic(runtime.ToValue(fmt.Sprintf("workflow instance %q is not declared", instanceID)))
 		}
-		return runtime.ToValue(output)
+		return runtime.ToValue(map[string]any{
+			"id":   instanceID,
+			"node": declaration.Node,
+			"exec": func(call goja.FunctionCall) goja.Value {
+				nodeInput := exportedMap(call.Argument(0).Export())
+				output, err := runner.runInstance(ctx, definition, runID, instanceID, declaration, nodeInput, &run)
+				if err != nil {
+					panic(runtime.ToValue(err.Error()))
+				}
+				return runtime.ToValue(output)
+			},
+		})
 	}
 
 	if _, err := runtime.RunString(definition.Script); err != nil {
@@ -102,7 +126,49 @@ func (runner *Runner) RunAt(ctx context.Context, definition Definition, inputs m
 	return runner.finish(ctx, run, nil)
 }
 
+func (runner *Runner) Instances(ctx context.Context, definition Definition) (map[string]InstanceDeclaration, error) {
+	runtime := newRuntime()
+	if _, err := runtime.RunString(definition.Script); err != nil {
+		return nil, err
+	}
+	fn, ok := goja.AssertFunction(runtime.Get("instances"))
+	if !ok {
+		return nil, ErrMissingInstances
+	}
+	info := workflowInfo(definition, "", nil)
+	delete(info, "run_id")
+	delete(info, "inputs")
+	value, err := fn(goja.Undefined(), runtime.ToValue(info))
+	if err != nil {
+		return nil, err
+	}
+	instances := instanceDeclarationsFromExport(value.Export())
+	if len(instances) == 0 {
+		return nil, errors.New("workflow instances must declare at least one node instance")
+	}
+	for instanceID, declaration := range instances {
+		if instanceID == "" {
+			return nil, errors.New("workflow instance id is required")
+		}
+		if declaration.Node == "" {
+			return nil, fmt.Errorf("workflow instance %q node is required", instanceID)
+		}
+		if _, ok := runner.nodes[declaration.Node]; !ok {
+			return nil, fmt.Errorf("workflow instance %q node %q is not registered", instanceID, declaration.Node)
+		}
+		if declaration.Params == nil {
+			declaration.Params = map[string]any{}
+			instances[instanceID] = declaration
+		}
+	}
+	return instances, ctx.Err()
+}
+
 func (runner *Runner) Trigger(ctx context.Context, definition Definition) (TriggerDeclaration, error) {
+	instances, err := runner.Instances(ctx, definition)
+	if err != nil {
+		return TriggerDeclaration{}, err
+	}
 	runtime := newRuntime()
 	if _, err := runtime.RunString(definition.Script); err != nil {
 		return TriggerDeclaration{}, err
@@ -119,10 +185,15 @@ func (runner *Runner) Trigger(ctx context.Context, definition Definition) (Trigg
 		return TriggerDeclaration{}, err
 	}
 	declaration := triggerDeclarationFromExport(value.Export())
-	if declaration.Node == "" {
-		return TriggerDeclaration{}, errors.New("workflow trigger must return a node")
+	if declaration.Instance == "" {
+		return TriggerDeclaration{}, errors.New("workflow trigger must return an instance")
 	}
-	node, ok := runner.nodes[declaration.Node]
+	instance, ok := instances[declaration.Instance]
+	if !ok {
+		return TriggerDeclaration{}, fmt.Errorf("trigger instance %q is not declared", declaration.Instance)
+	}
+	declaration.Node = instance.Node
+	node, ok := runner.nodes[instance.Node]
 	if !ok {
 		return TriggerDeclaration{}, fmt.Errorf("trigger node %q is not registered", declaration.Node)
 	}
@@ -135,21 +206,23 @@ func (runner *Runner) Trigger(ctx context.Context, definition Definition) (Trigg
 	return declaration, ctx.Err()
 }
 
-func (runner *Runner) runNode(ctx context.Context, definition Definition, runID, nodeType string, input map[string]any, run *history.WorkflowRun) (map[string]any, error) {
-	node, ok := runner.nodes[nodeType]
-	step := history.StepRecord{NodeID: nodeType, Input: cloneAnyMap(input)}
+func (runner *Runner) runInstance(ctx context.Context, definition Definition, runID, instanceID string, declaration InstanceDeclaration, input map[string]any, run *history.WorkflowRun) (map[string]any, error) {
+	node, ok := runner.nodes[declaration.Node]
+	step := history.StepRecord{NodeID: instanceID, NodeType: declaration.Node, Input: cloneAnyMap(input)}
 	if !ok {
 		step.Error = "node is not registered"
 		run.Steps = append(run.Steps, step)
-		return nil, fmt.Errorf("node %q is not registered", nodeType)
+		return nil, fmt.Errorf("node %q is not registered", declaration.Node)
 	}
 	output, err := node.Run(ctx, input, RuntimeInfo{
 		WorkflowID:   definition.ID,
 		DatabaseName: definition.DatabaseName,
 		RunID:        runID,
+		InstanceID:   instanceID,
+		NodeType:     declaration.Node,
 		CreatorID:    definition.CreatorID,
-		Secrets:      cloneStringMap(definition.Secrets),
-		Variables:    cloneStringMap(definition.Variables),
+		Secrets:      instanceStringMap(definition.Secrets, instanceID, declaration.Secrets),
+		Variables:    instanceStringMap(definition.Variables, instanceID, declaration.Variables),
 	})
 	if err != nil {
 		step.Error = err.Error()
@@ -185,8 +258,6 @@ func workflowInfo(definition Definition, runID string, inputs map[string]any) ma
 		"database_name": definition.DatabaseName,
 		"run_id":        runID,
 		"inputs":        cloneAnyMap(inputs),
-		"secrets":       cloneStringMap(definition.Secrets),
-		"variables":     cloneStringMap(definition.Variables),
 	}
 }
 
@@ -196,11 +267,91 @@ func triggerDeclarationFromExport(value any) TriggerDeclaration {
 		return TriggerDeclaration{}
 	}
 	declaration := TriggerDeclaration{}
-	if node, ok := values["node"].(string); ok {
-		declaration.Node = node
+	if instance, ok := values["instance"].(string); ok {
+		declaration.Instance = instance
 	}
 	declaration.Params = exportedMap(values["params"])
 	return declaration
+}
+
+func instanceDeclarationsFromExport(value any) map[string]InstanceDeclaration {
+	values, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	instances := map[string]InstanceDeclaration{}
+	for instanceID, rawDeclaration := range values {
+		switch declaration := rawDeclaration.(type) {
+		case string:
+			instances[instanceID] = InstanceDeclaration{Node: declaration}
+		case map[string]any:
+			instances[instanceID] = InstanceDeclaration{
+				Node:      stringValue(declaration["node"]),
+				Variables: portsFromExport(declaration["variables"]),
+				Secrets:   portsFromExport(declaration["secrets"]),
+				Params:    exportedMap(declaration["params"]),
+			}
+		}
+	}
+	return instances
+}
+
+func portsFromExport(value any) []Port {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	ports := make([]Port, 0, len(values))
+	for _, value := range values {
+		switch port := value.(type) {
+		case string:
+			ports = append(ports, Port{Name: port, Type: "string"})
+		case map[string]any:
+			ports = append(ports, Port{
+				Name:        stringValue(port["name"]),
+				Type:        stringValue(port["type"]),
+				Description: stringValue(port["description"]),
+				Required:    boolValue(port["required"]),
+			})
+		}
+	}
+	return ports
+}
+
+func instanceStringMap(values map[string]string, instanceID string, ports []Port) map[string]string {
+	prefix := instanceID + "."
+	scoped := map[string]string{}
+	if len(ports) == 0 {
+		for key, value := range values {
+			if strings.HasPrefix(key, prefix) {
+				scoped[strings.TrimPrefix(key, prefix)] = value
+			}
+		}
+		return scoped
+	}
+	for _, port := range ports {
+		if port.Name == "" {
+			continue
+		}
+		if value, ok := values[prefix+port.Name]; ok {
+			scoped[port.Name] = value
+		}
+	}
+	return scoped
+}
+
+func stringValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
+}
+
+func boolValue(value any) bool {
+	if boolean, ok := value.(bool); ok {
+		return boolean
+	}
+	return false
 }
 
 func exportedMap(value any) map[string]any {

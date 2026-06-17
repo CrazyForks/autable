@@ -83,8 +83,16 @@ export type WorkflowNodeInfo = {
   trigger: boolean;
 };
 
+export type WorkflowInstanceDeclaration = {
+  node: string;
+  variables?: WorkflowPort[];
+  secrets?: WorkflowPort[];
+  params?: Record<string, unknown>;
+};
+
 export type WorkflowStepRecord = {
   node_id: string;
+  node_type?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   error?: string;
@@ -358,6 +366,15 @@ export async function loadWorkflowNodes(): Promise<WorkflowNodeInfo[]> {
     throw new Error(`workflow nodes failed: ${response.status}`);
   }
   return response.json() as Promise<WorkflowNodeInfo[]>;
+}
+
+export async function loadWorkflowInstances(workflowID: number): Promise<Record<string, WorkflowInstanceDeclaration>> {
+  const response = await fetch(`/api/workflows/${workflowID}/instances`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "workflow instances request failed");
+  }
+  return response.json() as Promise<Record<string, WorkflowInstanceDeclaration>>;
 }
 
 export async function runWorkflow(
