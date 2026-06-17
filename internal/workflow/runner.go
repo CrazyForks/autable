@@ -63,10 +63,14 @@ func (runner *Runner) NodeInfos() []NodeInfo {
 }
 
 func (runner *Runner) Run(ctx context.Context, definition Definition, inputs map[string]any) (history.WorkflowRun, string, error) {
+	return runner.RunAt(ctx, definition, inputs, runner.now())
+}
+
+func (runner *Runner) RunAt(ctx context.Context, definition Definition, inputs map[string]any, timestamp time.Time) (history.WorkflowRun, string, error) {
 	runID := uuid.NewString()
 	run := history.WorkflowRun{
 		WorkflowID: definition.ID,
-		Timestamp:  runner.now(),
+		Timestamp:  timestamp.UTC(),
 		Inputs:     cloneAnyMap(inputs),
 		Steps:      []history.StepRecord{},
 	}

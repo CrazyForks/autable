@@ -122,7 +122,7 @@ func NewServer(catalog metadata.Catalog, system *systemdb.DB, tables *table.Serv
 		system,
 		tables,
 		historyStore,
-		workflow.NewRunner(historyStore, workflow.EchoNode{}, workflow.NewRecordChangedTriggerNode(historyStore)),
+		workflow.NewRunner(historyStore, workflow.EchoNode{}, workflow.NewRecordChangedTriggerNode(historyStore), workflow.ScheduleTriggerNode{}),
 	)
 }
 
@@ -136,7 +136,7 @@ func NewServerWithOIDCProviders(catalog metadata.Catalog, system *systemdb.DB, t
 		system,
 		tables,
 		historyStore,
-		workflow.NewRunner(historyStore, workflow.EchoNode{}, workflow.NewRecordChangedTriggerNode(historyStore)),
+		workflow.NewRunner(historyStore, workflow.EchoNode{}, workflow.NewRecordChangedTriggerNode(historyStore), workflow.ScheduleTriggerNode{}),
 		providers,
 	)
 }
@@ -1063,6 +1063,117 @@ func (server *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, runs)
 }
 
+func (server *Server) StartWorkflowScheduler(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case scheduledAt := <-ticker.C:
+				server.dispatchScheduleTickAll(ctx, scheduledAt.UTC())
+			}
+		}
+	}()
+}
+
+func (server *Server) dispatchScheduleTickAll(ctx context.Context, scheduledAt time.Time) {
+	for _, database := range server.catalogSnapshot().Databases {
+		server.dispatchScheduleTick(ctx, database.Name, scheduledAt)
+	}
+}
+
+func (server *Server) dispatchScheduleTick(ctx context.Context, dbName string, scheduledAt time.Time) {
+	workflows, err := server.system.Workflows(ctx, dbName)
+	if err != nil {
+		return
+	}
+	workflows, err = server.workflowDefinitionsWithFileScripts(ctx, workflows)
+	if err != nil {
+		return
+	}
+	for _, workflowDefinition := range workflows {
+		definition := workflow.Definition{
+			ID:        workflowDefinition.ID,
+			Script:    workflowDefinition.Script,
+			CreatorID: workflowDefinition.CreatorID,
+			Secrets:   workflowDefinition.Secrets,
+			Variables: workflowDefinition.Variables,
+		}
+		declaration, err := server.runner.Trigger(ctx, definition)
+		if errors.Is(err, workflow.ErrMissingTrigger) {
+			continue
+		}
+		if err != nil || !server.scheduleTriggerMatches(ctx, workflowDefinition.ID, declaration, scheduledAt) {
+			continue
+		}
+		inputs := map[string]any{
+			"scheduled_at": scheduledAt.UTC().UnixMilli(),
+			"event":        "schedule",
+		}
+		_, _, _ = server.runner.RunAt(ctx, definition, inputs, scheduledAt)
+	}
+}
+
+func (server *Server) scheduleTriggerMatches(ctx context.Context, workflowID int64, declaration workflow.TriggerDeclaration, scheduledAt time.Time) bool {
+	if declaration.Node != "time.schedule" {
+		return false
+	}
+	latestRun, hasLatestRun, err := server.latestWorkflowRunTimestamp(ctx, workflowID)
+	if err != nil {
+		return false
+	}
+	hasSchedule := false
+	if intervalMS, ok := triggerInt64Param(declaration.Params, "interval_ms"); ok && intervalMS > 0 {
+		hasSchedule = true
+		if !hasLatestRun || scheduledAt.Sub(latestRun) >= time.Duration(intervalMS)*time.Millisecond {
+			return true
+		}
+	}
+	if dailyAt, ok := triggerStringParam(declaration.Params, "daily_at"); ok {
+		hasSchedule = true
+		if dailyScheduleDue(scheduledAt, latestRun, hasLatestRun, dailyAt) {
+			return true
+		}
+	}
+	return !hasSchedule
+}
+
+func (server *Server) latestWorkflowRunTimestamp(ctx context.Context, workflowID int64) (time.Time, bool, error) {
+	entries, err := server.history.GetPrefix(ctx, history.WorkflowPrefix(workflowID))
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	var latest time.Time
+	for _, entry := range entries {
+		run, err := history.DecodeWorkflowRun(entry)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		if run.Timestamp.After(latest) {
+			latest = run.Timestamp
+		}
+	}
+	return latest, !latest.IsZero(), nil
+}
+
+func dailyScheduleDue(scheduledAt, latestRun time.Time, hasLatestRun bool, dailyAt string) bool {
+	parsed, err := time.Parse("15:04", dailyAt)
+	if err != nil {
+		return false
+	}
+	scheduledAt = scheduledAt.UTC()
+	dueAt := time.Date(scheduledAt.Year(), scheduledAt.Month(), scheduledAt.Day(), parsed.Hour(), parsed.Minute(), 0, 0, time.UTC)
+	if scheduledAt.Before(dueAt) {
+		return false
+	}
+	return !hasLatestRun || latestRun.Before(dueAt)
+}
+
 func (server *Server) dispatchRowChangeEvent(ctx context.Context, historyKey string, change history.RowChange) {
 	workflows, err := server.system.Workflows(ctx, change.Database)
 	if err != nil {
@@ -1125,6 +1236,22 @@ func rowChangeTriggerMatches(declaration workflow.TriggerDeclaration, change his
 func triggerStringParam(params map[string]any, key string) (string, bool) {
 	value, ok := params[key].(string)
 	return value, ok && value != ""
+}
+
+func triggerInt64Param(params map[string]any, key string) (int64, bool) {
+	switch value := params[key].(type) {
+	case int:
+		return int64(value), true
+	case int64:
+		return value, true
+	case float64:
+		return int64(value), true
+	case json.Number:
+		parsed, err := value.Int64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func triggerStringSetParam(params map[string]any, key string) map[string]struct{} {

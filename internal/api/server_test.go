@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1754,10 +1755,10 @@ func TestWorkflowNodesAPI(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&nodes); err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 2 || nodes[0].Type != "echo" || nodes[1].Type != "table.record.changed" {
+	if len(nodes) != 3 || nodes[0].Type != "echo" || nodes[1].Type != "table.record.changed" || nodes[2].Type != "time.schedule" {
 		t.Fatalf("unexpected nodes: %#v", nodes)
 	}
-	if !nodes[1].Trigger || len(nodes[1].Inputs) == 0 || len(nodes[1].Outputs) == 0 {
+	if !nodes[1].Trigger || len(nodes[1].Inputs) == 0 || len(nodes[1].Outputs) == 0 || !nodes[2].Trigger {
 		t.Fatalf("expected trigger node ports: %#v", nodes[1])
 	}
 }
@@ -1909,6 +1910,75 @@ func TestRowCreateDoesNotRunWorkflowWhenTriggerFieldsDoNotMatch(t *testing.T) {
 	if len(runs) != 0 {
 		t.Fatalf("expected no automatic workflow runs, got %#v", runs)
 	}
+}
+
+func TestScheduleTickRunsIntervalWorkflowUsingRunHistory(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"interval-workflow",
+		"script":"function trigger(info) { return { node: \"time.schedule\", params: { interval_ms: 15000 } }; }\nfunction run(info) { const tick = info.node(\"time.schedule\", { scheduled_at: info.inputs.scheduled_at }); return { scheduled_at: tick.scheduled_at, event: info.inputs.event }; }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+
+	first := time.Date(2026, 6, 17, 9, 0, 0, 0, time.UTC)
+	server.dispatchScheduleTick(ctx, "db", first)
+	assertWorkflowRunCount(t, server, system, 1, "u1", 1)
+	server.dispatchScheduleTick(ctx, "db", first.Add(14*time.Second))
+	assertWorkflowRunCount(t, server, system, 1, "u1", 1)
+	server.dispatchScheduleTick(ctx, "db", first.Add(15*time.Second))
+	runs := assertWorkflowRunCount(t, server, system, 1, "u1", 2)
+	if runs[1].Run.Outputs["event"] != "schedule" || runs[1].Run.Outputs["scheduled_at"] != float64(first.Add(15*time.Second).UnixMilli()) {
+		t.Fatalf("unexpected scheduled workflow output: %#v", runs[1].Run.Outputs)
+	}
+}
+
+func TestScheduleTickRunsDailyWorkflowOncePerDay(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"daily-workflow",
+		"script":"function trigger(info) { return { node: \"time.schedule\", params: { daily_at: \"09:30\" } }; }\nfunction run(info) { return { scheduled_at: info.inputs.scheduled_at }; }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+
+	day := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
+	server.dispatchScheduleTick(ctx, "db", day.Add(9*time.Hour+29*time.Minute))
+	assertWorkflowRunCount(t, server, system, 1, "u1", 0)
+	server.dispatchScheduleTick(ctx, "db", day.Add(9*time.Hour+30*time.Minute))
+	assertWorkflowRunCount(t, server, system, 1, "u1", 1)
+	server.dispatchScheduleTick(ctx, "db", day.Add(10*time.Hour))
+	assertWorkflowRunCount(t, server, system, 1, "u1", 1)
+	server.dispatchScheduleTick(ctx, "db", day.Add(24*time.Hour+9*time.Hour+30*time.Minute))
+	assertWorkflowRunCount(t, server, system, 1, "u1", 2)
 }
 
 func TestWorkflowAndFormPermissions(t *testing.T) {
@@ -2183,6 +2253,25 @@ func newTestServerWithOIDC(t *testing.T, providers []config.OIDCProvider) (*Serv
 	historyStore := history.NewMemoryStore()
 	catalog := testCatalog("./db.sqlite")
 	return NewServerWithOIDCProviders(catalog, system, table.NewService(historyStore), historyStore, providers), system
+}
+
+func assertWorkflowRunCount(t *testing.T, server *Server, system *systemdb.DB, workflowID int64, actorID string, expected int) []workflowRunResponse {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, "/api/workflows/"+strconv.FormatInt(workflowID, 10)+"/runs", nil)
+	request.AddCookie(testSessionCookie(t, system, actorID))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow runs 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var runs []workflowRunResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&runs); err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != expected {
+		t.Fatalf("expected %d workflow runs, got %#v", expected, runs)
+	}
+	return runs
 }
 
 func newTestServerWithMetadataFile(t *testing.T, catalog metadata.Catalog) (*Server, *systemdb.DB, string) {
