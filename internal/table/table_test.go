@@ -57,6 +57,9 @@ func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 	if change.RecordID != 1 || change.Values["name"] != "Ada" {
 		t.Fatalf("unexpected history change: %#v", change)
 	}
+	if change.Diff["name"].Old != nil || change.Diff["name"].New != "Ada" || change.Diff["email"].New != "ada@example.com" {
+		t.Fatalf("unexpected create diff: %#v", change.Diff)
+	}
 }
 
 func TestCreateRowRejectsDeletedField(t *testing.T) {
@@ -203,6 +206,12 @@ func TestUpdateRowMergesValuesAndWritesHistory(t *testing.T) {
 	}
 	if change.Values["email"] != "ada@codetable.test" || change.Values["name"] != "Ada" {
 		t.Fatalf("unexpected update history: %#v", change)
+	}
+	if _, ok := change.Diff["name"]; ok {
+		t.Fatalf("unchanged field should not be in diff: %#v", change.Diff)
+	}
+	if change.Diff["email"].Old != "ada@example.com" || change.Diff["email"].New != "ada@codetable.test" {
+		t.Fatalf("unexpected update diff: %#v", change.Diff)
 	}
 }
 
@@ -355,6 +364,9 @@ func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 	}
 	if change.Operation != "delete" || change.Values["name"] != "Ada" {
 		t.Fatalf("unexpected delete history: %#v", change)
+	}
+	if change.Diff["name"].Old != "Ada" || change.Diff["name"].New != nil {
+		t.Fatalf("unexpected delete diff: %#v", change.Diff)
 	}
 }
 

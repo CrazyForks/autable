@@ -27,6 +27,7 @@ type Node interface {
 type RuntimeInfo struct {
 	WorkflowID int64
 	RunID      string
+	CreatorID  string
 	Secrets    map[string]string
 	Variables  map[string]string
 }

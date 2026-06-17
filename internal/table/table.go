@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -70,6 +71,7 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 		Timestamp: time.Now().UTC(),
 		Operation: "create",
 		Values:    cloneValues(row.Values),
+		Diff:      rowDiff(nil, row.Values),
 		ActorID:   actorID,
 	}); err != nil {
 		_, _ = service.rows.DeleteRow(ctx, dbName, tableName, row.RecordID)
@@ -103,6 +105,7 @@ func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog,
 		Timestamp: time.Now().UTC(),
 		Operation: "update",
 		Values:    cloneValues(updated.Values),
+		Diff:      rowDiff(existing.Values, updated.Values),
 		ActorID:   actorID,
 	}); err != nil {
 		_ = service.rows.RestoreRow(ctx, dbName, tableName, existing)
@@ -131,6 +134,7 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		Timestamp: time.Now().UTC(),
 		Operation: "delete",
 		Values:    cloneValues(row.Values),
+		Diff:      rowDiff(row.Values, nil),
 		ActorID:   actorID,
 	}); err != nil {
 		_ = service.rows.RestoreRow(ctx, dbName, tableName, row)
@@ -373,4 +377,24 @@ func cloneValues(values map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func rowDiff(oldValues map[string]any, newValues map[string]any) history.RowDiff {
+	keys := map[string]struct{}{}
+	for key := range oldValues {
+		keys[key] = struct{}{}
+	}
+	for key := range newValues {
+		keys[key] = struct{}{}
+	}
+	diff := history.RowDiff{}
+	for key := range keys {
+		oldValue, oldOK := oldValues[key]
+		newValue, newOK := newValues[key]
+		if oldOK && newOK && reflect.DeepEqual(oldValue, newValue) {
+			continue
+		}
+		diff[key] = history.FieldDiff{Old: oldValue, New: newValue}
+	}
+	return diff
 }

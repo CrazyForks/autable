@@ -1251,7 +1251,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
-		"script":"export default async function run() {}",
+		"script":"function run() {}",
 		"secrets":{"TOKEN":"secret"},
 		"variables":{"CHANNEL":"ops"}
 	}`))

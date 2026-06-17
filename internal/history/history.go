@@ -30,7 +30,15 @@ type RowChange struct {
 	Timestamp time.Time      `json:"timestamp"`
 	Operation string         `json:"operation,omitempty"`
 	Values    map[string]any `json:"values"`
+	Diff      RowDiff        `json:"diff,omitempty"`
 	ActorID   string         `json:"actor_id,omitempty"`
+}
+
+type RowDiff map[string]FieldDiff
+
+type FieldDiff struct {
+	Old any `json:"old"`
+	New any `json:"new"`
 }
 
 type WorkflowRun struct {

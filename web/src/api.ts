@@ -50,6 +50,7 @@ export type RowChange = {
   timestamp: string;
   operation?: string;
   values: Record<string, unknown>;
+  diff?: Record<string, { old: unknown; new: unknown }>;
   actor_id?: string;
 };
 
@@ -58,6 +59,7 @@ export type WorkflowDefinition = {
   database_name: string;
   name: string;
   script: string;
+  creator_id?: string;
   secrets: Record<string, string>;
   variables: Record<string, string>;
   permission_level?: 0 | 1 | 2;

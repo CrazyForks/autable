@@ -29,6 +29,7 @@ func (node RecordChangedTriggerNode) Info() NodeInfo {
 		Outputs: []Port{
 			{Name: "record", Type: "TriggerRecord", Required: true},
 			{Name: "values", Type: "object", Required: true},
+			{Name: "diff", Type: "object"},
 			{Name: "actor_id", Type: "string"},
 		},
 		Stateless: true,
@@ -54,11 +55,12 @@ func (node RecordChangedTriggerNode) Run(ctx context.Context, input map[string]a
 		Database:   change.Database,
 		Table:      change.Table,
 		RecordID:   change.RecordID,
-		Timestamp:  change.Timestamp.UTC().UnixNano(),
+		Timestamp:  change.Timestamp.UTC().UnixMilli(),
 	}
 	return map[string]any{
 		"record":   record,
 		"values":   change.Values,
+		"diff":     change.Diff,
 		"actor_id": change.ActorID,
 	}, nil
 }

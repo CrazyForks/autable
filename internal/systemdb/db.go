@@ -26,6 +26,7 @@ type WorkflowDefinition struct {
 	DatabaseName    string            `json:"database_name"`
 	Name            string            `json:"name"`
 	Script          string            `json:"script"`
+	CreatorID       string            `json:"creator_id,omitempty"`
 	Secrets         map[string]string `json:"secrets"`
 	Variables       map[string]string `json:"variables"`
 	PermissionLevel permission.Level  `json:"permission_level,omitempty" gorm:"-"`
@@ -88,6 +89,7 @@ type workflowModel struct {
 	DatabaseName  string `gorm:"uniqueIndex:idx_workflow_database_name;not null"`
 	Name          string `gorm:"uniqueIndex:idx_workflow_database_name;not null"`
 	Script        string `gorm:"not null"`
+	CreatorID     string `gorm:"index;not null;default:''"`
 	SecretsJSON   string `gorm:"not null"`
 	VariablesJSON string `gorm:"not null"`
 	CreatedAt     time.Time
@@ -315,6 +317,13 @@ func (db *DB) GrantListForSubject(ctx context.Context, subjectID string) ([]perm
 func (db *DB) SaveWorkflow(ctx context.Context, workflow WorkflowDefinition) (WorkflowDefinition, error) {
 	if workflow.DatabaseName == "" {
 		return WorkflowDefinition{}, errors.New("database_name is required")
+	}
+	if workflow.ID != 0 {
+		existing, err := db.Workflow(ctx, workflow.ID)
+		if err != nil {
+			return WorkflowDefinition{}, err
+		}
+		workflow.CreatorID = existing.CreatorID
 	}
 	model, err := workflowToModel(workflow)
 	if err != nil {
@@ -630,6 +639,7 @@ func workflowToModel(workflow WorkflowDefinition) (workflowModel, error) {
 		DatabaseName:  workflow.DatabaseName,
 		Name:          workflow.Name,
 		Script:        workflow.Script,
+		CreatorID:     workflow.CreatorID,
 		SecretsJSON:   string(secrets),
 		VariablesJSON: string(variables),
 		CreatedAt:     workflow.CreatedAt,
@@ -643,6 +653,7 @@ func modelToWorkflow(model workflowModel) (WorkflowDefinition, error) {
 		DatabaseName: model.DatabaseName,
 		Name:         model.Name,
 		Script:       model.Script,
+		CreatorID:    model.CreatorID,
 		CreatedAt:    model.CreatedAt,
 		UpdatedAt:    model.UpdatedAt,
 	}

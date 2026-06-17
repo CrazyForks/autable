@@ -681,6 +681,9 @@ func (server *Server) handleSaveWorkflow(w http.ResponseWriter, r *http.Request)
 	if workflow.ID != 0 && !server.requireExistingWorkflowDatabase(w, r, workflow.ID, workflow.DatabaseName) {
 		return
 	}
+	if workflow.ID == 0 {
+		workflow.CreatorID = actorID
+	}
 	saved, err := server.system.SaveWorkflow(r.Context(), workflow)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -813,6 +816,9 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			return
 		}
 		workflow.DatabaseName = dbName
+		if workflow.ID == 0 {
+			workflow.CreatorID = actorID
+		}
 		saved, err := server.system.SaveWorkflow(r.Context(), workflow)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -1016,6 +1022,7 @@ func (server *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) 
 	run, key, err := server.runner.Run(r.Context(), workflow.Definition{
 		ID:        workflowDefinition.ID,
 		Script:    workflowDefinition.Script,
+		CreatorID: workflowDefinition.CreatorID,
 		Secrets:   workflowDefinition.Secrets,
 		Variables: workflowDefinition.Variables,
 	}, request.Inputs)

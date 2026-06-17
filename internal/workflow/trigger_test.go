@@ -18,6 +18,7 @@ func TestRecordChangedTriggerNodeLoadsRowHistory(t *testing.T) {
 		RecordID:  12,
 		Timestamp: ts,
 		Values:    map[string]any{"name": "Ada"},
+		Diff:      history.RowDiff{"name": {Old: nil, New: "Ada"}},
 		ActorID:   "u1",
 	})
 	if err != nil {
@@ -38,12 +39,16 @@ func TestRecordChangedTriggerNodeLoadsRowHistory(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected trigger record output, got %#v", output["record"])
 	}
-	if record.HistoryKey != key || record.Database != "db" || record.Table != "contacts" || record.RecordID != 12 || record.Timestamp != ts.UnixNano() {
+	if record.HistoryKey != key || record.Database != "db" || record.Table != "contacts" || record.RecordID != 12 || record.Timestamp != ts.UnixMilli() {
 		t.Fatalf("unexpected trigger record: %#v", record)
 	}
 	values, ok := output["values"].(map[string]any)
 	if !ok || values["name"] != "Ada" || output["actor_id"] != "u1" {
 		t.Fatalf("unexpected trigger output: %#v", output)
+	}
+	diff, ok := output["diff"].(history.RowDiff)
+	if !ok || diff["name"].New != "Ada" {
+		t.Fatalf("unexpected trigger diff: %#v", output["diff"])
 	}
 }
 

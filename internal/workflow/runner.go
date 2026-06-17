@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"codetable/internal/history"
@@ -17,8 +16,14 @@ import (
 type Definition struct {
 	ID        int64
 	Script    string
+	CreatorID string
 	Secrets   map[string]string
 	Variables map[string]string
+}
+
+type TriggerDeclaration struct {
+	Node   string         `json:"node"`
+	Params map[string]any `json:"params,omitempty"`
 }
 
 type Runner struct {
@@ -63,15 +68,8 @@ func (runner *Runner) Run(ctx context.Context, definition Definition, inputs map
 		Inputs:     cloneAnyMap(inputs),
 		Steps:      []history.StepRecord{},
 	}
-	runtime := goja.New()
-	runtime.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
-	info := map[string]any{
-		"workflow_id": definition.ID,
-		"run_id":      runID,
-		"inputs":      cloneAnyMap(inputs),
-		"secrets":     cloneStringMap(definition.Secrets),
-		"variables":   cloneStringMap(definition.Variables),
-	}
+	runtime := newRuntime()
+	info := workflowInfo(definition, runID, inputs)
 	info["node"] = func(call goja.FunctionCall) goja.Value {
 		nodeType := call.Argument(0).String()
 		nodeInput := exportedMap(call.Argument(1).Export())
@@ -82,16 +80,12 @@ func (runner *Runner) Run(ctx context.Context, definition Definition, inputs map
 		return runtime.ToValue(output)
 	}
 
-	if _, err := runtime.RunString(normalizeScript(definition.Script)); err != nil {
+	if _, err := runtime.RunString(definition.Script); err != nil {
 		return runner.finish(ctx, run, err)
 	}
-	fn, ok := goja.AssertFunction(runtime.Get("__codetableWorkflow"))
+	fn, ok := goja.AssertFunction(runtime.Get("run"))
 	if !ok {
-		if fallback, fallbackOK := goja.AssertFunction(runtime.Get("run")); fallbackOK {
-			fn = fallback
-		} else {
-			return runner.finish(ctx, run, errors.New("workflow script must define function run(info)"))
-		}
+		return runner.finish(ctx, run, errors.New("workflow script must define function run(info)"))
 	}
 	output, err := fn(goja.Undefined(), runtime.ToValue(info))
 	if err != nil {
@@ -99,6 +93,39 @@ func (runner *Runner) Run(ctx context.Context, definition Definition, inputs map
 	}
 	run.Outputs = exportedMap(output.Export())
 	return runner.finish(ctx, run, nil)
+}
+
+func (runner *Runner) Trigger(ctx context.Context, definition Definition) (TriggerDeclaration, error) {
+	runtime := newRuntime()
+	if _, err := runtime.RunString(definition.Script); err != nil {
+		return TriggerDeclaration{}, err
+	}
+	fn, ok := goja.AssertFunction(runtime.Get("trigger"))
+	if !ok {
+		return TriggerDeclaration{}, errors.New("workflow script must define function trigger(info)")
+	}
+	info := workflowInfo(definition, "", nil)
+	delete(info, "run_id")
+	delete(info, "inputs")
+	value, err := fn(goja.Undefined(), runtime.ToValue(info))
+	if err != nil {
+		return TriggerDeclaration{}, err
+	}
+	declaration := triggerDeclarationFromExport(value.Export())
+	if declaration.Node == "" {
+		return TriggerDeclaration{}, errors.New("workflow trigger must return a node")
+	}
+	node, ok := runner.nodes[declaration.Node]
+	if !ok {
+		return TriggerDeclaration{}, fmt.Errorf("trigger node %q is not registered", declaration.Node)
+	}
+	if !node.Info().Trigger {
+		return TriggerDeclaration{}, fmt.Errorf("node %q is not a trigger node", declaration.Node)
+	}
+	if declaration.Params == nil {
+		declaration.Params = map[string]any{}
+	}
+	return declaration, ctx.Err()
 }
 
 func (runner *Runner) runNode(ctx context.Context, definition Definition, runID, nodeType string, input map[string]any, run *history.WorkflowRun) (map[string]any, error) {
@@ -112,6 +139,7 @@ func (runner *Runner) runNode(ctx context.Context, definition Definition, runID,
 	output, err := node.Run(ctx, input, RuntimeInfo{
 		WorkflowID: definition.ID,
 		RunID:      runID,
+		CreatorID:  definition.CreatorID,
 		Secrets:    cloneStringMap(definition.Secrets),
 		Variables:  cloneStringMap(definition.Variables),
 	})
@@ -137,21 +165,33 @@ func (runner *Runner) finish(ctx context.Context, run history.WorkflowRun, runEr
 	return run, key, runErr
 }
 
-func normalizeScript(script string) string {
-	trimmed := strings.TrimSpace(script)
-	replacements := []struct {
-		from string
-		to   string
-	}{
-		{"export default function run", "function __codetableWorkflow"},
-		{"export default function", "function __codetableWorkflow"},
+func newRuntime() *goja.Runtime {
+	runtime := goja.New()
+	runtime.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+	return runtime
+}
+
+func workflowInfo(definition Definition, runID string, inputs map[string]any) map[string]any {
+	return map[string]any{
+		"workflow_id": definition.ID,
+		"run_id":      runID,
+		"inputs":      cloneAnyMap(inputs),
+		"secrets":     cloneStringMap(definition.Secrets),
+		"variables":   cloneStringMap(definition.Variables),
 	}
-	for _, replacement := range replacements {
-		if strings.HasPrefix(trimmed, replacement.from) {
-			return replacement.to + strings.TrimPrefix(trimmed, replacement.from)
-		}
+}
+
+func triggerDeclarationFromExport(value any) TriggerDeclaration {
+	values, ok := value.(map[string]any)
+	if !ok {
+		return TriggerDeclaration{}
 	}
-	return script
+	declaration := TriggerDeclaration{}
+	if node, ok := values["node"].(string); ok {
+		declaration.Node = node
+	}
+	declaration.Params = exportedMap(values["params"])
+	return declaration
 }
 
 func exportedMap(value any) map[string]any {
