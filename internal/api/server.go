@@ -151,6 +151,7 @@ func NewServerWithWorkflowRunnerAndOIDC(catalog metadata.Catalog, system *system
 		oidc:    append([]config.OIDCProvider(nil), providers...),
 		mux:     http.NewServeMux(),
 	}
+	server.tables.SetRowChangeHandler(server.dispatchRowChangeEvent)
 	server.routes()
 	return server
 }
@@ -1060,6 +1061,97 @@ func (server *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request,
 		runs = append(runs, workflowRunResponse{HistoryKey: entry.Key, Run: run})
 	}
 	writeJSON(w, http.StatusOK, runs)
+}
+
+func (server *Server) dispatchRowChangeEvent(ctx context.Context, historyKey string, change history.RowChange) {
+	workflows, err := server.system.Workflows(ctx, change.Database)
+	if err != nil {
+		return
+	}
+	workflows, err = server.workflowDefinitionsWithFileScripts(ctx, workflows)
+	if err != nil {
+		return
+	}
+	for _, workflowDefinition := range workflows {
+		definition := workflow.Definition{
+			ID:        workflowDefinition.ID,
+			Script:    workflowDefinition.Script,
+			CreatorID: workflowDefinition.CreatorID,
+			Secrets:   workflowDefinition.Secrets,
+			Variables: workflowDefinition.Variables,
+		}
+		declaration, err := server.runner.Trigger(ctx, definition)
+		if errors.Is(err, workflow.ErrMissingTrigger) {
+			continue
+		}
+		if err != nil || !rowChangeTriggerMatches(declaration, change) {
+			continue
+		}
+		inputs := map[string]any{
+			"history_key": historyKey,
+			"database":    change.Database,
+			"table":       change.Table,
+			"record_id":   change.RecordID,
+			"operation":   change.Operation,
+			"diff":        change.Diff,
+		}
+		_, _, _ = server.runner.Run(ctx, definition, inputs)
+	}
+}
+
+func rowChangeTriggerMatches(declaration workflow.TriggerDeclaration, change history.RowChange) bool {
+	if declaration.Node != "table.record.changed" {
+		return false
+	}
+	if tableName, ok := triggerStringParam(declaration.Params, "table"); ok && tableName != change.Table {
+		return false
+	}
+	if operations := triggerStringSetParam(declaration.Params, "operations"); len(operations) > 0 {
+		if _, ok := operations[change.Operation]; !ok {
+			return false
+		}
+	}
+	if fields := triggerStringSetParam(declaration.Params, "fields"); len(fields) > 0 {
+		for field := range change.Diff {
+			if _, ok := fields[field]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func triggerStringParam(params map[string]any, key string) (string, bool) {
+	value, ok := params[key].(string)
+	return value, ok && value != ""
+}
+
+func triggerStringSetParam(params map[string]any, key string) map[string]struct{} {
+	raw, ok := params[key]
+	if !ok {
+		return nil
+	}
+	values := map[string]struct{}{}
+	switch typed := raw.(type) {
+	case []any:
+		for _, item := range typed {
+			if value, ok := item.(string); ok && value != "" {
+				values[value] = struct{}{}
+			}
+		}
+	case []string:
+		for _, value := range typed {
+			if value != "" {
+				values[value] = struct{}{}
+			}
+		}
+	case string:
+		if typed != "" {
+			values[typed] = struct{}{}
+		}
+	}
+	return values
 }
 
 func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {

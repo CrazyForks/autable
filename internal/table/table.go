@@ -25,6 +25,8 @@ type Row struct {
 	Values   map[string]any
 }
 
+type RowChangeHandler func(ctx context.Context, historyKey string, change history.RowChange)
+
 type RowRepository interface {
 	CreateRow(ctx context.Context, dbName, tableName string, values map[string]any) (Row, error)
 	UpdateRow(ctx context.Context, dbName, tableName string, recordID int64, values map[string]any) (Row, error)
@@ -35,8 +37,10 @@ type RowRepository interface {
 }
 
 type Service struct {
-	rows    RowRepository
-	history history.Store
+	mu          sync.RWMutex
+	rows        RowRepository
+	history     history.Store
+	rowChangeFn RowChangeHandler
 }
 
 func NewService(historyStore history.Store) *Service {
@@ -48,6 +52,12 @@ func NewServiceWithRepository(historyStore history.Store, rows RowRepository) *S
 		rows:    rows,
 		history: historyStore,
 	}
+}
+
+func (service *Service) SetRowChangeHandler(handler RowChangeHandler) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.rowChangeFn = handler
 }
 
 func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID, dbName, tableName string, values map[string]any) (Row, error) {
@@ -64,7 +74,7 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 	if err != nil {
 		return Row{}, err
 	}
-	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+	change := history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
 		RecordID:  row.RecordID,
@@ -73,10 +83,13 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 		Values:    cloneValues(row.Values),
 		Diff:      rowDiff(nil, row.Values),
 		ActorID:   actorID,
-	}); err != nil {
+	}
+	historyKey, err := history.SaveRowChange(ctx, service.history, change)
+	if err != nil {
 		_, _ = service.rows.DeleteRow(ctx, dbName, tableName, row.RecordID)
 		return Row{}, err
 	}
+	service.notifyRowChange(ctx, historyKey, change)
 	return row, nil
 }
 
@@ -98,7 +111,7 @@ func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog,
 	if err != nil {
 		return Row{}, err
 	}
-	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+	change := history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
 		RecordID:  updated.RecordID,
@@ -107,10 +120,13 @@ func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog,
 		Values:    cloneValues(updated.Values),
 		Diff:      rowDiff(existing.Values, updated.Values),
 		ActorID:   actorID,
-	}); err != nil {
+	}
+	historyKey, err := history.SaveRowChange(ctx, service.history, change)
+	if err != nil {
 		_ = service.rows.RestoreRow(ctx, dbName, tableName, existing)
 		return Row{}, err
 	}
+	service.notifyRowChange(ctx, historyKey, change)
 	return updated, nil
 }
 
@@ -127,7 +143,7 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 	if err != nil {
 		return Row{}, err
 	}
-	if _, err = history.SaveRowChange(ctx, service.history, history.RowChange{
+	change := history.RowChange{
 		Database:  dbName,
 		Table:     tableName,
 		RecordID:  row.RecordID,
@@ -136,10 +152,13 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		Values:    cloneValues(row.Values),
 		Diff:      rowDiff(row.Values, nil),
 		ActorID:   actorID,
-	}); err != nil {
+	}
+	historyKey, err := history.SaveRowChange(ctx, service.history, change)
+	if err != nil {
 		_ = service.rows.RestoreRow(ctx, dbName, tableName, row)
 		return Row{}, err
 	}
+	service.notifyRowChange(ctx, historyKey, change)
 	return row, nil
 }
 
@@ -377,6 +396,15 @@ func cloneValues(values map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func (service *Service) notifyRowChange(ctx context.Context, historyKey string, change history.RowChange) {
+	service.mu.RLock()
+	handler := service.rowChangeFn
+	service.mu.RUnlock()
+	if handler != nil {
+		handler(ctx, historyKey, change)
+	}
 }
 
 func rowDiff(oldValues map[string]any, newValues map[string]any) history.RowDiff {

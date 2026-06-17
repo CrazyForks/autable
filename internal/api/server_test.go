@@ -1814,6 +1814,103 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 	}
 }
 
+func TestRowCreateAutomaticallyRunsMatchingWorkflowTrigger(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"auto-contact",
+		"script":"function trigger(info) { return { node: \"table.record.changed\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"name\"] } }; }\nfunction run(info) { const changed = info.node(\"table.record.changed\", { history_key: info.inputs.history_key }); return { operation: info.inputs.operation, record_id: changed.record.record_id, name: changed.diff.name.new }; }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+
+	createRow := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{"values":{"name":"Ada"}}`))
+	createRow.AddCookie(testSessionCookie(t, system, "u1"))
+	createRecorder := httptest.NewRecorder()
+	server.ServeHTTP(createRecorder, createRow)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected row create 201, got %d: %s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/workflows/1/runs", nil)
+	listRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	listRecorder := httptest.NewRecorder()
+	server.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow runs 200, got %d: %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var runs []workflowRunResponse
+	if err := json.NewDecoder(listRecorder.Body).Decode(&runs); err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one automatic workflow run, got %#v", runs)
+	}
+	if runs[0].Run.Inputs["operation"] != "create" || runs[0].Run.Outputs["name"] != "Ada" || runs[0].Run.Outputs["record_id"] != float64(1) {
+		t.Fatalf("unexpected automatic workflow run: %#v", runs[0].Run)
+	}
+}
+
+func TestRowCreateDoesNotRunWorkflowWhenTriggerFieldsDoNotMatch(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"status-only",
+		"script":"function trigger(info) { return { node: \"table.record.changed\", params: { table: \"contacts\", operations: [\"create\"], fields: [\"status\"] } }; }\nfunction run(info) { return { unexpected: true }; }"
+	}`))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	workflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowRecorder, workflowRequest)
+	if workflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+	}
+
+	createRow := httptest.NewRequest(http.MethodPost, "/api/tables/db/contacts/rows", bytes.NewBufferString(`{"values":{"name":"Ada"}}`))
+	createRow.AddCookie(testSessionCookie(t, system, "u1"))
+	createRecorder := httptest.NewRecorder()
+	server.ServeHTTP(createRecorder, createRow)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected row create 201, got %d: %s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/workflows/1/runs", nil)
+	listRequest.AddCookie(testSessionCookie(t, system, "u1"))
+	listRecorder := httptest.NewRecorder()
+	server.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected workflow runs 200, got %d: %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var runs []workflowRunResponse
+	if err := json.NewDecoder(listRecorder.Body).Decode(&runs); err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("expected no automatic workflow runs, got %#v", runs)
+	}
+}
+
 func TestWorkflowAndFormPermissions(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(context.Background(), permission.Grant{

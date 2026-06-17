@@ -62,6 +62,50 @@ func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 	}
 }
 
+func TestCreateRowNotifiesHistoryBackedRowChange(t *testing.T) {
+	ctx := context.Background()
+	store := history.NewMemoryStore()
+	service := NewService(store)
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "db",
+		SQLitePath: "./db.sqlite",
+		Tables: []metadata.Table{{
+			Name:   "contacts",
+			Fields: []metadata.Field{{Name: "name", Type: "text"}},
+		}},
+	}}}
+	perms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	})
+	var notifiedKey string
+	var notifiedChange history.RowChange
+	service.SetRowChangeHandler(func(_ context.Context, historyKey string, change history.RowChange) {
+		notifiedKey = historyKey
+		notifiedChange = change
+	})
+
+	if _, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"name": "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+	if notifiedKey == "" || notifiedChange.Operation != "create" || notifiedChange.Diff["name"].New != "Ada" {
+		t.Fatalf("unexpected row change notification: key=%q change=%#v", notifiedKey, notifiedChange)
+	}
+	entry, err := store.Get(ctx, notifiedKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := history.DecodeRowChange(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.RecordID != notifiedChange.RecordID || saved.Values["name"] != "Ada" {
+		t.Fatalf("notification did not reference saved history: saved=%#v notified=%#v", saved, notifiedChange)
+	}
+}
+
 func TestCreateRowRejectsDeletedField(t *testing.T) {
 	ctx := context.Background()
 	service := NewService(history.NewMemoryStore())

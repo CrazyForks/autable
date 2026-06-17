@@ -21,6 +21,8 @@ type Definition struct {
 	Variables map[string]string
 }
 
+var ErrMissingTrigger = errors.New("workflow script must define function trigger(info)")
+
 type TriggerDeclaration struct {
 	Node   string         `json:"node"`
 	Params map[string]any `json:"params,omitempty"`
@@ -102,7 +104,7 @@ func (runner *Runner) Trigger(ctx context.Context, definition Definition) (Trigg
 	}
 	fn, ok := goja.AssertFunction(runtime.Get("trigger"))
 	if !ok {
-		return TriggerDeclaration{}, errors.New("workflow script must define function trigger(info)")
+		return TriggerDeclaration{}, ErrMissingTrigger
 	}
 	info := workflowInfo(definition, "", nil)
 	delete(info, "run_id")
