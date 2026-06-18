@@ -64,6 +64,7 @@ declare global {
     table: string;
   }
 
+  function stableStringify(value: unknown): string;
   function render(api: CodeTableFormAPI, root: CodeTableFormRoot): CodeTableFormDefinition;
 }
 `
@@ -131,6 +132,7 @@ declare global {
 
   function instances(info: CodeTableWorkflowDefinitionInfo): Record<string, string | CodeTableWorkflowInstanceDeclaration>;
   function trigger(info: CodeTableWorkflowDefinitionInfo): CodeTableWorkflowTriggerDeclaration;
+  function stableStringify(value: unknown): string;
   function run(info: CodeTableWorkflowRunInfo): Record<string, unknown>;
 }
 `;

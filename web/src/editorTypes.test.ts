@@ -49,6 +49,7 @@ describe("editorTypes", () => {
     expect(content).toContain('instance(id: "send"): CodeTableWorkflowInstance<CodeTableNodeDingtalkRobotSendInput, CodeTableNodeDingtalkRobotSendOutput>');
     expect(content).toContain("interface CodeTableWorkflowRunInputs extends CodeTableNodeTableRecordChangedOutput");
     expect(content).toContain("record?: CodeTableTriggerRecord;");
+    expect(content).toContain("function stableStringify(value: unknown): string;");
   });
 
   it("generates form runtime declarations", () => {
@@ -56,6 +57,7 @@ describe("editorTypes", () => {
 
     expect(content).toContain("interface CodeTableFormAPI");
     expect(content).toContain("relation(config:");
+    expect(content).toContain("function stableStringify(value: unknown): string;");
     expect(content).toContain("function render(api: CodeTableFormAPI, root: CodeTableFormRoot): CodeTableFormDefinition");
   });
 });

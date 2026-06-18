@@ -99,11 +99,35 @@ func workflowFieldsInput(input map[string]any) ([]metadata.Field, error) {
 		if fields[index].Name == "" {
 			return nil, fmt.Errorf("fields[%d].name is required", index)
 		}
+		if strings.HasPrefix(fields[index].Name, "ct_") {
+			return nil, fmt.Errorf("fields[%d].name %q uses reserved prefix ct_", index, fields[index].Name)
+		}
+		if reason := unsafeWorkflowFieldNameReason(fields[index].Name); reason != "" {
+			return nil, fmt.Errorf("fields[%d].name %q is unsafe: %s", index, fields[index].Name, reason)
+		}
 		if fields[index].Type != "string" && fields[index].Type != "int" && fields[index].Type != "float" {
 			return nil, fmt.Errorf("fields[%d].type %q is unsupported", index, fields[index].Type)
 		}
 	}
 	return fields, nil
+}
+
+func unsafeWorkflowFieldNameReason(name string) string {
+	for _, char := range name {
+		if char == '.' {
+			return "must not contain ."
+		}
+		if char == ';' {
+			return "must not contain ;"
+		}
+		if char == '`' {
+			return "must not contain `"
+		}
+		if char < 0x20 || char == 0x7f {
+			return "must not contain control characters"
+		}
+	}
+	return ""
 }
 
 func workflowFieldInput(value any) (metadata.Field, error) {

@@ -70,3 +70,18 @@ func TestEvaluateAllowsRelationInput(t *testing.T) {
 		t.Fatalf("unexpected definition: %#v", definition)
 	}
 }
+
+func TestEvaluateProvidesStableStringify(t *testing.T) {
+	definition, err := Evaluate(`
+		function render(api, root) {
+			root.append(api.input({ field: stableStringify({ b: 2, a: 1 }) }));
+			return { table: "contacts" };
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := definition.Fields[`{"a":1,"b":2}`]; !ok {
+		t.Fatalf("expected stableStringify field key, got %#v", definition.Fields)
+	}
+}

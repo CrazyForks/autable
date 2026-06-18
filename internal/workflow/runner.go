@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"codetable/internal/history"
+	"codetable/internal/jsruntime"
 
 	"github.com/dop251/goja"
 	"github.com/google/uuid"
@@ -286,6 +287,9 @@ func (runner *Runner) finish(ctx context.Context, run history.WorkflowRun, runEr
 func newRuntime() *goja.Runtime {
 	runtime := goja.New()
 	runtime.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+	if err := jsruntime.InstallStableStringify(runtime); err != nil {
+		panic(err)
+	}
 	return runtime
 }
 

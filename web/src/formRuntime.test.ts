@@ -80,6 +80,24 @@ describe("renderFormScript", () => {
     ]);
   });
 
+  it("provides stableStringify as a stringifyValue replacement", () => {
+    const result = renderFormScript(`
+      function render(api, root) {
+        root.append(
+          api.input({ field: "empty", label: stableStringify(null) }),
+          api.input({ field: stableStringify({ b: 2, a: 1 }) })
+        );
+        return { table: "contacts" };
+      }
+    `);
+
+    expect(result.error).toBeUndefined();
+    expect(result.elements).toEqual([
+      { kind: "input", field: "empty", label: "", inputType: "text" },
+      { kind: "input", field: '{"a":1,"b":2}', label: '{"a":1,"b":2}', inputType: "text" }
+    ]);
+  });
+
   it("returns script errors without throwing", () => {
     const result = renderFormScript(`throw new Error("bad form")`);
 

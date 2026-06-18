@@ -596,6 +596,7 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 				{Name: "score_plus_one", Type: "formula", ValueType: "float", Formula: "field_score + 1"},
 				{Name: "score_band", Type: "formula", ValueType: "string", Formula: "field_score >= 5 ? 'high' : 'low'"},
 				{Name: "row_label", Type: "formula", ValueType: "string", Formula: "'row-' + field_record_id"},
+				{Name: "stable_json", Type: "formula", ValueType: "string", Formula: "stableStringify({ b: field_score, a: field_name })"},
 			},
 			Views: []metadata.View{{
 				Name:    "high",
@@ -618,7 +619,7 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(low.Values["score_plus_one"]) != "5" || low.Values["score_band"] != "low" || low.Values["row_label"] != "row-1" {
+	if fmt.Sprint(low.Values["score_plus_one"]) != "5" || low.Values["score_band"] != "low" || low.Values["row_label"] != "row-1" || low.Values["stable_json"] != `{"a":"Ada","b":4}` {
 		t.Fatalf("expected computed formula values, got %#v", low.Values)
 	}
 	if _, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{

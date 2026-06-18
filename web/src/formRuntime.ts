@@ -90,8 +90,8 @@ export function renderFormScript(script: string): FormRenderResult {
   };
 
   try {
-    const run = new Function("api", "root", `"use strict";\n${script}\nreturn render(api, root);`);
-    const returned = run(api, root);
+    const run = new Function("api", "root", "stableStringify", `"use strict";\n${script}\nreturn render(api, root);`);
+    const returned = run(api, root, stableStringify);
     const definition = formDefinitionFromValue(returned);
     if (rootElement && rootElement.childNodes.length > 0) {
       elements.push({ kind: "html", html: rootElement.innerHTML });
@@ -104,6 +104,54 @@ export function renderFormScript(script: string): FormRenderResult {
       error: error instanceof Error ? error.message : "Form script failed"
     };
   }
+}
+
+function stableStringify(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value !== "object") {
+    return String(value);
+  }
+  const seen: unknown[] = [];
+  function normalize(input: unknown): unknown {
+    if (input === null || typeof input !== "object") {
+      return input;
+    }
+    const toJSON = (input as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === "function") {
+      return normalize(toJSON.call(input));
+    }
+    if (seen.includes(input)) {
+      throw new TypeError("Converting circular structure to JSON");
+    }
+    seen.push(input);
+    try {
+      if (Array.isArray(input)) {
+        return input.map((item) => {
+          const normalized = normalize(item);
+          if (normalized === undefined || typeof normalized === "function" || typeof normalized === "symbol") {
+            return null;
+          }
+          return normalized;
+        });
+      }
+      return Object.fromEntries(
+        Object.keys(input)
+          .sort()
+          .flatMap((key) => {
+            const normalized = normalize((input as Record<string, unknown>)[key]);
+            if (normalized === undefined || typeof normalized === "function" || typeof normalized === "symbol") {
+              return [];
+            }
+            return [[key, normalized]];
+          })
+      );
+    } finally {
+      seen.pop();
+    }
+  }
+  return JSON.stringify(normalize(value)) ?? "";
 }
 
 function formDefinitionFromValue(value: unknown): Required<Pick<FormRenderResult, "table" | "fields">> {

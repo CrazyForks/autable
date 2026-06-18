@@ -3,6 +3,8 @@ package formruntime
 import (
 	"errors"
 
+	"codetable/internal/jsruntime"
+
 	"github.com/dop251/goja"
 )
 
@@ -13,6 +15,9 @@ type Definition struct {
 
 func Evaluate(script string) (Definition, error) {
 	runtime := goja.New()
+	if err := jsruntime.InstallStableStringify(runtime); err != nil {
+		return Definition{}, err
+	}
 	fields := map[string]string{}
 	noop := func(goja.FunctionCall) goja.Value { return goja.Undefined() }
 	formControl := func(call goja.FunctionCall) goja.Value {

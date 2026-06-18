@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"codetable/internal/history"
+	"codetable/internal/jsruntime"
 	"codetable/internal/metadata"
 	"codetable/internal/permission"
 
@@ -608,6 +609,9 @@ func normalizeFloat(value any) (float64, error) {
 
 func evaluateFormula(expression string, recordID int64, values map[string]any) (any, error) {
 	runtime := goja.New()
+	if err := jsruntime.InstallStableStringify(runtime); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	if err := runtime.Set("field_record_id", recordID); err != nil {

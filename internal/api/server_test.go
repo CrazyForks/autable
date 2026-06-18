@@ -1015,6 +1015,96 @@ func TestWorkflowFieldCreateNodeAddsMissingFields(t *testing.T) {
 	}
 }
 
+func TestWorkflowFieldCreateNodeRejectsUnsafeFieldNames(t *testing.T) {
+	ctx := context.Background()
+	for _, fieldName := range []string{"单位.采购明细", "bad;name", "bad`name", "bad\nname"} {
+		catalog := metadata.Catalog{Databases: []metadata.Database{{
+			Name:       "workspace",
+			SQLitePath: filepath.Join(t.TempDir(), "workspace.sqlite"),
+			Tables: []metadata.Table{{
+				Name:   "contacts",
+				Fields: []metadata.Field{{Name: "name", Type: "string"}},
+			}},
+		}}}
+		server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
+		if err := system.SaveGrant(ctx, permission.Grant{
+			SubjectID: "owner",
+			Scope:     permission.ScopeTable,
+			Resource:  "workspace.contacts",
+			Level:     permission.Write,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.ReadFile(metadataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = server.RunWorkflowTableFieldNode(ctx, map[string]any{
+			"table": "contacts",
+			"fields": map[string]any{
+				fieldName: "string",
+			},
+		}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "owner"})
+		if err == nil || !strings.Contains(err.Error(), "is unsafe") {
+			t.Fatalf("expected unsafe field name error for %q, got %v", fieldName, err)
+		}
+		after, err := os.ReadFile(metadataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatalf("unsafe field create for %q must not rewrite metadata", fieldName)
+		}
+	}
+}
+
+func TestWorkflowFieldCreateNodeAllowsReadableBusinessFieldNames(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "workspace",
+		SQLitePath: filepath.Join(t.TempDir(), "workspace.sqlite"),
+		Tables: []metadata.Table{{
+			Name:   "contacts",
+			Fields: []metadata.Field{{Name: "name", Type: "string"}},
+		}},
+	}}}
+	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "workspace.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+		"table": "contacts",
+		"fields": map[string]any{
+			"当前负责人（人员）": "string",
+			"采购 明细":     "string",
+		},
+	}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := metadata.Load(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tableMeta, ok := loaded.Table("workspace", "contacts")
+	if !ok {
+		t.Fatal("expected contacts table")
+	}
+	if _, ok := tableMeta.Field("当前负责人（人员）"); !ok {
+		t.Fatalf("expected Chinese field in metadata, got %#v", tableMeta.Fields)
+	}
+	if _, ok := tableMeta.Field("采购 明细"); !ok {
+		t.Fatalf("expected spaced field in metadata, got %#v", tableMeta.Fields)
+	}
+}
+
 func TestWorkflowFieldCreateNodeAddsExternalCreatedFieldsOnFirstRun(t *testing.T) {
 	ctx := context.Background()
 	sqlitePath := filepath.Join(t.TempDir(), "workspace.sqlite")

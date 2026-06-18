@@ -193,6 +193,25 @@ function run(info) {
 	}
 }
 
+func TestRunnerProvidesStableStringify(t *testing.T) {
+	store := history.NewMemoryStore()
+	runner := NewRunner(store, testEchoNode{})
+	run, _, err := runner.Run(context.Background(), Definition{
+		ID: 7,
+		Script: `
+function instances() { return { echoer: "echo" }; }
+function run(info) {
+  return { value: stableStringify({ b: 2, a: 1 }) };
+}`,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Outputs["value"] != `{"a":1,"b":2}` {
+		t.Fatalf("unexpected stableStringify output: %#v", run.Outputs)
+	}
+}
+
 func TestRunnerPersistsFailedRuns(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
