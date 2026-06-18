@@ -84,6 +84,23 @@ select {
   background-color: var(--colorBrandStroke1);
 }
 
+/* Fluent Nav rows default to top alignment with undersized (inherited) icons;
+   center each row and render icons at the standard 20px. */
+.database-nav .fui-NavCategoryItem,
+.database-nav .fui-NavItem,
+.database-nav .fui-NavSubItem,
+.resource-nav .fui-NavItem,
+.resource-nav .fui-NavCategoryItem {
+  align-items: center;
+}
+
+.database-nav .fui-NavCategoryItem__icon,
+.database-nav .fui-NavItem__icon,
+.resource-nav .fui-NavItem__icon,
+.resource-nav .fui-NavCategoryItem__icon {
+  font-size: 20px;
+}
+
 .sidebar-heading,
 .list-heading,
 .secondary-title,
@@ -296,7 +313,10 @@ select {
   gap: 16px;
 }
 
-.section-header > div {
+/* Only the leading title block stacks vertically; action containers (the
+   second child) keep their own row layout so new ones can't accidentally
+   inherit column stacking. */
+.section-header > div:first-child {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1068,9 +1088,28 @@ select {
   min-height: 0;
 }
 
+.permission-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.members-count {
+  margin-inline-start: 6px;
+}
+
+.members-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, calc(100vw - 32px));
+  max-height: 360px;
+  overflow: auto;
+}
+
 .permission-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 0.75fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
   min-height: 0;

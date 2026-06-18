@@ -1,13 +1,17 @@
 import {
   Button,
   Combobox,
+  CounterBadge,
   List,
   ListItem,
   Option,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   Select,
   Text
 } from "@fluentui/react-components";
-import { AddRegular, DismissRegular, SaveRegular } from "@fluentui/react-icons";
+import { AddRegular, DismissRegular, PeopleRegular, SaveRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import {
   type DatabaseMetadata,
@@ -68,9 +72,20 @@ export function PermissionPanel({
           <Text size={200}>{t("permission.roleAccessMatrix", { database: database.name })}</Text>
         </div>
         {role && (
-          <Button icon={<SaveRegular />} appearance="primary" onClick={onSave}>
-            {t("common.save")}
-          </Button>
+          <div className="permission-actions">
+            <MembersControl
+              members={members}
+              memberOptions={memberOptions}
+              memberUsers={memberUsers}
+              newMemberEmail={newMemberEmail}
+              onAddMember={onAddMember}
+              onMemberRemove={onMemberRemove}
+              onNewMemberEmailChange={onNewMemberEmailChange}
+            />
+            <Button icon={<SaveRegular />} appearance="primary" onClick={onSave}>
+              {t("common.save")}
+            </Button>
+          </div>
         )}
       </div>
       {role ? (
@@ -78,14 +93,7 @@ export function PermissionPanel({
           database={database}
           forms={forms}
           grants={grants}
-          members={members}
-          memberOptions={memberOptions}
-          memberUsers={memberUsers}
-          newMemberEmail={newMemberEmail}
-          onAddMember={onAddMember}
           onGrantChange={onGrantChange}
-          onMemberRemove={onMemberRemove}
-          onNewMemberEmailChange={onNewMemberEmailChange}
           workflows={workflows}
         />
       ) : (
@@ -97,20 +105,18 @@ export function PermissionPanel({
   );
 }
 
-function PermissionMatrix({
-  database,
-  forms,
-  grants,
+function MembersControl({
   members,
   memberOptions,
   memberUsers,
   newMemberEmail,
   onAddMember,
-  onGrantChange,
   onMemberRemove,
-  onNewMemberEmailChange,
-  workflows
-}: Omit<PermissionPanelProps, "onSave" | "role">) {
+  onNewMemberEmailChange
+}: Pick<
+  PermissionPanelProps,
+  "members" | "memberOptions" | "memberUsers" | "newMemberEmail" | "onAddMember" | "onMemberRemove" | "onNewMemberEmailChange"
+>) {
   const { t } = useTranslation();
   const memberByID = new Map(memberUsers.map((member) => [member.id, member]));
   const memberItems = members.map((memberID) => ({
@@ -118,9 +124,20 @@ function PermissionMatrix({
     email: memberByID.get(memberID)?.email ?? memberID
   }));
   return (
-    <div className="permission-grid">
-      <div className="permission-card">
-        <Text weight="semibold">{t("permission.members")}</Text>
+    <Popover positioning="below-end" trapFocus>
+      <PopoverTrigger disableButtonEnhancement>
+        <Button icon={<PeopleRegular />}>
+          {t("permission.members")}
+          <CounterBadge
+            className="members-count"
+            appearance="filled"
+            color="brand"
+            count={members.length}
+            showZero
+          />
+        </Button>
+      </PopoverTrigger>
+      <PopoverSurface className="members-popover" aria-label={t("permission.members")}>
         <div className="create-rowline">
           <Combobox
             aria-label={t("permission.roleMemberEmail")}
@@ -162,7 +179,21 @@ function PermissionMatrix({
             ))}
           </List>
         )}
-      </div>
+      </PopoverSurface>
+    </Popover>
+  );
+}
+
+function PermissionMatrix({
+  database,
+  forms,
+  grants,
+  onGrantChange,
+  workflows
+}: Pick<PermissionPanelProps, "database" | "forms" | "grants" | "onGrantChange" | "workflows">) {
+  const { t } = useTranslation();
+  return (
+    <div className="permission-grid">
       <div className="permission-card">
         <Text weight="semibold">{t("permission.tables")}</Text>
         {database.tables.map((table) => (

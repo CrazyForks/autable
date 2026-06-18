@@ -1001,9 +1001,12 @@ test("covers role members and resource permission grants through the real backen
   await page.getByRole("button", { name: "Create Role" }).click();
   await expect(page.getByRole("button", { name: /editor/ })).toBeVisible();
   const permissionView = page.locator(".permission-view");
-  await permissionView.getByRole("combobox", { name: "Role member email" }).fill(user.email);
+  await permissionView.getByRole("button", { name: /Members/ }).click();
+  const membersPopover = page.getByRole("complementary", { name: "Members" }).or(page.locator(".members-popover"));
+  await membersPopover.getByRole("combobox", { name: "Role member email" }).fill(user.email);
   await page.getByRole("option", { name: user.email }).click();
-  await expect(permissionView.getByText(user.email)).toBeVisible();
+  await expect(membersPopover.getByText(user.email)).toBeVisible();
+  await page.keyboard.press("Escape");
   await permissionView.getByLabel("contacts permission").selectOption("2");
   await permissionView.getByLabel("email permission").selectOption("1");
   await permissionView.getByLabel(`${workflow.name} permission`).selectOption("1");

@@ -32,7 +32,7 @@ import {
 } from "@fluentui/react-components";
 import {
   AddRegular,
-  CircleRegular,
+  CircleFilled,
   DatabaseRegular,
   DeleteRegular,
   DocumentFlowchartRegular,
@@ -354,7 +354,7 @@ function ResourceNav(props: {
             <span className="resource-nav-row">
               <span className="resource-nav-name">
                 {props.icon === "workflow" && (
-                  <CircleRegular className={item.enabled ? "enabled-dot" : "disabled-dot"} />
+                  <CircleFilled className={item.enabled ? "enabled-dot" : "disabled-dot"} />
                 )}
                 <span>{item.name}</span>
               </span>

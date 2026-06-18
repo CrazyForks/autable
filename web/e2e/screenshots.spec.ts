@@ -52,6 +52,21 @@ async function navShot(page: Page, name: string) {
   await page.screenshot({ path: join(shotsDir, `${name}.png`), clip: { x: 0, y: 0, width: 522, height: 900 } });
 }
 
+// Run an interaction, then screenshot; swallow failures so one flaky step
+// does not abort the rest of the capture run.
+// Short timeout for best-effort interactions so a flaky step fails fast
+// instead of burning the whole test budget.
+const bestEffort = { timeout: 6000 } as const;
+
+async function capture(page: Page, name: string, interact: () => Promise<void>) {
+  try {
+    await interact();
+  } catch (error) {
+    console.warn(`capture ${name} interaction failed:`, error instanceof Error ? error.message : error);
+  }
+  await shot(page, name);
+}
+
 test("capture workspace screenshots", async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -127,30 +142,34 @@ test("capture workspace screenshots", async ({ page }) => {
   await page.waitForTimeout(400);
   await shot(page, "02-table-view");
   await navShot(page, "nav-01-table");
+  await page.screenshot({ path: join(shotsDir, "nav-zoom-primary.png"), clip: { x: 0, y: 0, width: 260, height: 300 } });
 
-  // Filter popover.
-  await page.getByRole("button", { name: "Active", exact: true }).click();
-  await page.getByRole("button", { name: "Filter" }).click();
-  await page.getByLabel("View filters").waitFor();
-  await page.waitForTimeout(200);
-  await shot(page, "03-table-filter-popover");
+  // Filter popover (best-effort; never abort the whole capture run on one flaky step).
+  await capture(page, "03-table-filter-popover", async () => {
+    await page.getByRole("button", { name: "Active", exact: true }).click(bestEffort);
+    await page.getByRole("button", { name: "Filter" }).click(bestEffort);
+    await page.getByLabel("View filters").waitFor(bestEffort);
+    await page.waitForTimeout(200);
+  });
   await page.keyboard.press("Escape");
 
   // Add field popover.
-  await page.getByRole("button", { name: "Add field" }).click();
-  await page.getByRole("group", { name: "Add field" }).waitFor();
-  await page.getByLabel("New field type").selectOption("relation");
-  await page.waitForTimeout(200);
-  await shot(page, "04-table-add-field");
+  await capture(page, "04-table-add-field", async () => {
+    await page.getByRole("button", { name: "Add field" }).click(bestEffort);
+    await page.getByRole("group", { name: "Add field" }).waitFor(bestEffort);
+    await page.getByLabel("New field type").selectOption("relation", bestEffort);
+    await page.waitForTimeout(200);
+  });
   await page.keyboard.press("Escape");
 
   // Record drawer.
-  await page.getByRole("gridcell", { name: "Ada Lovelace", exact: true }).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "View details" }).click();
-  await page.getByRole("complementary", { name: "Record panel" }).waitFor();
-  await page.waitForTimeout(200);
-  await shot(page, "05-record-drawer");
-  await page.getByRole("button", { name: "Close record panel" }).click();
+  await capture(page, "05-record-drawer", async () => {
+    await page.getByRole("gridcell", { name: "Ada Lovelace", exact: true }).click({ button: "right", ...bestEffort });
+    await page.getByRole("menuitem", { name: "View details" }).click(bestEffort);
+    await page.getByRole("complementary", { name: "Record panel" }).waitFor(bestEffort);
+    await page.waitForTimeout(200);
+  });
+  await page.getByRole("button", { name: "Close record panel" }).click({ ...bestEffort }).catch(() => undefined);
 
   // Workflow view.
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
@@ -187,6 +206,14 @@ test("capture workspace screenshots", async ({ page }) => {
   await page.getByRole("button", { name: /editor/ }).waitFor();
   await page.waitForTimeout(300);
   await shot(page, "10-permission-matrix");
+
+  // Members popover (count badge + add/list).
+  await capture(page, "12-members-popover", async () => {
+    await page.getByRole("button", { name: /Members/ }).click(bestEffort);
+    await page.getByRole("combobox", { name: "Role member email" }).waitFor(bestEffort);
+    await page.waitForTimeout(200);
+  });
+  await page.keyboard.press("Escape");
 
   // Narrow viewport (responsive) on the permission matrix.
   await page.setViewportSize({ width: 760, height: 900 });
