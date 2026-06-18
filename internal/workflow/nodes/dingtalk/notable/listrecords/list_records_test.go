@@ -1,4 +1,4 @@
-package nodes
+package listrecords
 
 import (
 	"context"
@@ -66,7 +66,7 @@ func TestDingTalkNotableListRecordsNodeCallsSDK(t *testing.T) {
 		response: (&oauth2.GetAccessTokenResponse{}).
 			SetBody((&oauth2.GetAccessTokenResponseBody{}).SetAccessToken("dingtalk-token").SetExpireIn(7200)),
 	}
-	node := NewDingTalkNotableListRecordsNodeForTest(notableClient, accessTokenClient)
+	node := NewNodeForTest(notableClient, accessTokenClient)
 	output, err := node.Run(context.Background(), map[string]any{
 		"field_id_or_names": []any{
 			"Name",
@@ -140,7 +140,7 @@ func TestDingTalkNotableListRecordsNodeCallsSDK(t *testing.T) {
 }
 
 func TestDingTalkNotableListRecordsNodeRequiresInputs(t *testing.T) {
-	node := NewDingTalkNotableListRecordsNodeForTest(&fakeNotableListRecordsClient{}, &fakeDingTalkAccessTokenClient{})
+	node := NewNodeForTest(&fakeNotableListRecordsClient{}, &fakeDingTalkAccessTokenClient{})
 	if _, err := node.Run(context.Background(), map[string]any{}, workflow.RuntimeInfo{}); err == nil {
 		t.Fatal("expected missing app_key error")
 	}
@@ -165,7 +165,7 @@ func TestDingTalkNotableListRecordsNodeRequiresInputs(t *testing.T) {
 }
 
 func TestDingTalkNotableListRecordsNodeIsAvailableInNodeInfos(t *testing.T) {
-	runner := workflow.NewRunner(nil, NewDingTalkNotableListRecordsNodeForTest(&fakeNotableListRecordsClient{}, &fakeDingTalkAccessTokenClient{}))
+	runner := workflow.NewRunner(nil, NewNodeForTest(&fakeNotableListRecordsClient{}, &fakeDingTalkAccessTokenClient{}))
 	infos := runner.NodeInfos()
 	if len(infos) != 1 || infos[0].Type != "dingtalk.notable.records.list" {
 		t.Fatalf("expected dingtalk notable node info, got %#v", infos)

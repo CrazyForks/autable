@@ -1,4 +1,4 @@
-package nodes
+package recordchanged
 
 import (
 	"context"
@@ -9,20 +9,20 @@ import (
 	"codetable/internal/workflow"
 )
 
-type RecordChangedTriggerNode struct {
+type Node struct {
 	store history.Store
 }
 
-func NewRecordChangedTriggerNode(store history.Store) RecordChangedTriggerNode {
-	return RecordChangedTriggerNode{store: store}
+func NewNode(store history.Store) Node {
+	return Node{store: store}
 }
 
-func (node RecordChangedTriggerNode) Info() workflow.NodeInfo {
+func (node Node) Info() workflow.NodeInfo {
 	return workflow.NodeInfo{
 		Type:          "table.record.changed",
 		DisplayName:   "Record changed",
 		Description:   "Triggers a workflow from row history events that match the configured table, operations, and fields.",
-		Documentation: documentation("table.record.changed"),
+		Documentation: Documentation(),
 		Inputs: []workflow.Port{
 			{Name: "table", Type: "string", Description: "Optional table name to listen to."},
 			{Name: "operations", Type: "string[]", Description: "Optional create, update, or delete operation filter."},
@@ -44,7 +44,7 @@ func (node RecordChangedTriggerNode) Info() workflow.NodeInfo {
 	}
 }
 
-func (node RecordChangedTriggerNode) RunTrigger(_ context.Context, params map[string]any, event workflow.TriggerEvent, _ workflow.RuntimeInfo) (map[string]any, bool, error) {
+func (node Node) RunTrigger(_ context.Context, params map[string]any, event workflow.TriggerEvent, _ workflow.RuntimeInfo) (map[string]any, bool, error) {
 	change := event.RowChange
 	if event.Kind != "row_change" {
 		return nil, false, nil
@@ -72,7 +72,7 @@ func (node RecordChangedTriggerNode) RunTrigger(_ context.Context, params map[st
 	return rowChangeOutput(event.HistoryKey, change), true, nil
 }
 
-func (node RecordChangedTriggerNode) Run(ctx context.Context, input map[string]any, _ workflow.RuntimeInfo) (map[string]any, error) {
+func (node Node) Run(ctx context.Context, input map[string]any, _ workflow.RuntimeInfo) (map[string]any, error) {
 	historyKey, ok := input["history_key"].(string)
 	if !ok || historyKey == "" {
 		return nil, errors.New("history_key is required")
@@ -141,4 +141,4 @@ func triggerStringSetParam(params map[string]any, key string) map[string]struct{
 	return values
 }
 
-var _ workflow.TriggerNode = RecordChangedTriggerNode{}
+var _ workflow.TriggerNode = Node{}

@@ -1,4 +1,4 @@
-package nodes
+package recordchanged
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func TestRecordChangedTriggerNodeLoadsRowHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	node := NewRecordChangedTriggerNode(store)
+	node := NewNode(store)
 	info := node.Info()
 	if !info.Trigger || !info.Stateless || info.Type != "table.record.changed" {
 		t.Fatalf("unexpected node info: %#v", info)
@@ -60,7 +60,7 @@ func TestRecordChangedTriggerNodeLoadsRowHistory(t *testing.T) {
 }
 
 func TestRecordChangedTriggerNodeRunsEventWithParams(t *testing.T) {
-	node := NewRecordChangedTriggerNode(history.NewMemoryStore())
+	node := NewNode(history.NewMemoryStore())
 	output, matched, err := node.RunTrigger(context.Background(), map[string]any{
 		"table":      "contacts",
 		"operations": []any{"update"},
@@ -87,7 +87,7 @@ func TestRecordChangedTriggerNodeRunsEventWithParams(t *testing.T) {
 }
 
 func TestRecordChangedTriggerNodeSkipsUnmatchedEvent(t *testing.T) {
-	node := NewRecordChangedTriggerNode(history.NewMemoryStore())
+	node := NewNode(history.NewMemoryStore())
 	output, matched, err := node.RunTrigger(context.Background(), map[string]any{
 		"table": "contacts",
 	}, workflow.TriggerEvent{
@@ -106,7 +106,7 @@ func TestRecordChangedTriggerNodeSkipsUnmatchedEvent(t *testing.T) {
 }
 
 func TestRecordChangedTriggerNodeRequiresHistoryKey(t *testing.T) {
-	node := NewRecordChangedTriggerNode(history.NewMemoryStore())
+	node := NewNode(history.NewMemoryStore())
 	if _, err := node.Run(context.Background(), map[string]any{}, workflow.RuntimeInfo{}); err == nil {
 		t.Fatal("expected missing history_key error")
 	}

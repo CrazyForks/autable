@@ -1,14 +1,14 @@
-package nodes
+package listrow
 
 import "embed"
 
-//go:embed docs/*/*.md
+//go:embed docs/*.md
 var documentationFS embed.FS
 
-func documentation(name string) map[string]string {
+func Documentation() map[string]string {
 	docs := map[string]string{}
 	for _, language := range []string{"en-US", "zh-CN"} {
-		content, err := documentationFS.ReadFile("docs/" + language + "/" + name + ".md")
+		content, err := documentationFS.ReadFile("docs/" + language + ".md")
 		if err == nil {
 			docs[language] = string(content)
 		}

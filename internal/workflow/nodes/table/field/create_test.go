@@ -1,4 +1,4 @@
-package nodes
+package field
 
 import (
 	"context"
@@ -12,15 +12,35 @@ type fakeTableFieldRunner struct {
 	info  workflow.RuntimeInfo
 }
 
-func (runner *fakeTableFieldRunner) RunWorkflowTableFieldNode(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+func (runner *fakeTableFieldRunner) CreateFields(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
 	runner.input = input
 	runner.info = info
 	return map[string]any{"created": []map[string]any{{"name": "email", "type": "string"}}}, nil
 }
 
+func (runner *fakeTableFieldRunner) CreateRow(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return runner.CreateFields(context.Background(), input, info)
+}
+
+func (runner *fakeTableFieldRunner) UpdateRow(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return runner.CreateFields(context.Background(), input, info)
+}
+
+func (runner *fakeTableFieldRunner) UpsertRow(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return runner.CreateFields(context.Background(), input, info)
+}
+
+func (runner *fakeTableFieldRunner) DeleteRow(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return runner.CreateFields(context.Background(), input, info)
+}
+
+func (runner *fakeTableFieldRunner) ListRows(_ context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return runner.CreateFields(context.Background(), input, info)
+}
+
 func TestTableFieldNodeCallsRunner(t *testing.T) {
 	runner := &fakeTableFieldRunner{}
-	node := NewTableFieldNode(runner)
+	node := NewCreateNode(runner)
 	output, err := node.Run(context.Background(), map[string]any{
 		"table":  "contacts",
 		"fields": []any{"email"},
@@ -37,7 +57,7 @@ func TestTableFieldNodeCallsRunner(t *testing.T) {
 }
 
 func TestTableFieldNodeInfo(t *testing.T) {
-	info := NewTableFieldNode(&fakeTableFieldRunner{}).Info()
+	info := NewCreateNode(&fakeTableFieldRunner{}).Info()
 	if info.Type != "table.field.create" || len(info.Inputs) != 3 || info.Inputs[2].Name != "fields" {
 		t.Fatalf("unexpected field node info: %#v", info)
 	}

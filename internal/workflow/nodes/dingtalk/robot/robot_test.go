@@ -1,4 +1,4 @@
-package nodes
+package robot
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func TestDingTalkRobotNodeSendsWebhookTextMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	node := NewDingTalkRobotNodeForTest(server.Client(), server.URL)
+	node := NewNodeForTest(server.Client(), server.URL)
 	output, err := node.Run(ctx, map[string]any{
 		"content":     "Codetable alert",
 		"at_user_ids": []any{"user-a", "user-b"},
@@ -70,7 +70,7 @@ func TestDingTalkRobotNodeSendsWebhookTextMessage(t *testing.T) {
 }
 
 func TestDingTalkRobotNodeRequiresSecretsAndContent(t *testing.T) {
-	node := NewDingTalkRobotNodeForTest(nil, "http://127.0.0.1/robot/send")
+	node := NewNodeForTest(nil, "http://127.0.0.1/robot/send")
 	if _, err := node.Run(context.Background(), map[string]any{"content": "hello"}, workflow.RuntimeInfo{}); err == nil {
 		t.Fatal("expected missing access_token error")
 	}
@@ -80,7 +80,7 @@ func TestDingTalkRobotNodeRequiresSecretsAndContent(t *testing.T) {
 }
 
 func TestDingTalkRobotNodeIsAvailableInNodeInfos(t *testing.T) {
-	runner := workflow.NewRunner(nil, NewDingTalkRobotNode())
+	runner := workflow.NewRunner(nil, NewNode())
 	infos := runner.NodeInfos()
 	if len(infos) != 1 || infos[0].Type != "dingtalk.robot.send" {
 		t.Fatalf("expected dingtalk node info, got %#v", infos)

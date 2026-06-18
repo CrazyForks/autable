@@ -1,4 +1,4 @@
-package nodes
+package schedule
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestScheduleTriggerNodeEchoesScheduledAt(t *testing.T) {
-	node := ScheduleTriggerNode{}
+	node := Node{}
 	info := node.Info()
 	if !info.Trigger || !info.Stateless || info.Type != "time.schedule" {
 		t.Fatalf("unexpected node info: %#v", info)
@@ -36,7 +36,7 @@ func TestScheduleTriggerNodeEchoesScheduledAt(t *testing.T) {
 }
 
 func TestScheduleTriggerNodeRequiresScheduledAt(t *testing.T) {
-	if _, err := (ScheduleTriggerNode{}).Run(context.Background(), map[string]any{}, workflow.RuntimeInfo{}); err == nil {
+	if _, err := (Node{}).Run(context.Background(), map[string]any{}, workflow.RuntimeInfo{}); err == nil {
 		t.Fatal("expected scheduled_at error")
 	}
 }

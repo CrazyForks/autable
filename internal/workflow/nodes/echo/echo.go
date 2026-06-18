@@ -1,4 +1,4 @@
-package nodes
+package echo
 
 import (
 	"context"
@@ -6,22 +6,22 @@ import (
 	"codetable/internal/workflow"
 )
 
-type EchoNode struct{}
+type Node struct{}
 
-func (EchoNode) Info() workflow.NodeInfo {
+func (Node) Info() workflow.NodeInfo {
 	return workflow.NodeInfo{
 		Type:          "echo",
 		DisplayName:   "Echo",
 		Description:   "Returns its input unchanged.",
-		Documentation: documentation("echo"),
+		Documentation: Documentation(),
 		Inputs:        []workflow.Port{{Name: "value", Type: "any"}},
 		Outputs:       []workflow.Port{{Name: "value", Type: "any"}},
 		Stateless:     true,
 	}
 }
 
-func (EchoNode) Run(_ context.Context, input map[string]any, _ workflow.RuntimeInfo) (map[string]any, error) {
+func (Node) Run(_ context.Context, input map[string]any, _ workflow.RuntimeInfo) (map[string]any, error) {
 	return input, nil
 }
 
-var _ workflow.Node = EchoNode{}
+var _ workflow.Node = Node{}

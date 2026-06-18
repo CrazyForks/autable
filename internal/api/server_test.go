@@ -941,7 +941,8 @@ func TestWorkflowFieldCreateNodeAddsMissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+	codeTable := server.workflowCodeTableService()
+	output, err := codeTable.CreateFields(ctx, map[string]any{
 		"table": "contacts",
 		"fields": []any{
 			"name",
@@ -982,7 +983,7 @@ func TestWorkflowFieldCreateNodeAddsMissingFields(t *testing.T) {
 		t.Fatalf("expected legacy field to be restored, got %#v", legacy)
 	}
 
-	output, err = server.RunWorkflowTableFieldNode(ctx, map[string]any{
+	output, err = codeTable.CreateFields(ctx, map[string]any{
 		"table": "contacts",
 		"fields": []any{
 			"email",
@@ -999,7 +1000,7 @@ func TestWorkflowFieldCreateNodeAddsMissingFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err = server.RunWorkflowTableFieldNode(ctx, map[string]any{
+	output, err = codeTable.CreateFields(ctx, map[string]any{
 		"table":  "contacts",
 		"fields": []any{"email"},
 	}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "owner"})
@@ -1040,7 +1041,7 @@ func TestWorkflowFieldCreateNodeRejectsUnsafeFieldNames(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = server.RunWorkflowTableFieldNode(ctx, map[string]any{
+		_, err = server.workflowCodeTableService().CreateFields(ctx, map[string]any{
 			"table": "contacts",
 			"fields": map[string]any{
 				fieldName: "string",
@@ -1079,7 +1080,7 @@ func TestWorkflowFieldCreateNodeAllowsReadableBusinessFieldNames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+	_, err := server.workflowCodeTableService().CreateFields(ctx, map[string]any{
 		"table": "contacts",
 		"fields": map[string]any{
 			"当前负责人（人员）": "string",
@@ -1128,7 +1129,7 @@ func TestWorkflowFieldCreateNodeAddsExternalCreatedFieldsOnFirstRun(t *testing.T
 		t.Fatal(err)
 	}
 
-	output, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+	output, err := server.workflowCodeTableService().CreateFields(ctx, map[string]any{
 		"table": "b表",
 		"fields": map[string]any{
 			"Assignees":                   "string",
@@ -1197,7 +1198,7 @@ func TestWorkflowFieldCreateNodeRequiresTableWrite(t *testing.T) {
 	}}}
 	server, _, _ := newTestServerWithMetadataFile(t, catalog)
 
-	if _, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+	if _, err := server.workflowCodeTableService().CreateFields(ctx, map[string]any{
 		"table":  "contacts",
 		"fields": []any{"email"},
 	}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "viewer"}); !errors.Is(err, table.ErrPermissionDenied) {
@@ -1217,7 +1218,8 @@ func TestWorkflowRowUpsertUpdatesFirstMatchOrCreates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := server.RunWorkflowTableNode(ctx, "create", map[string]any{
+	codeTable := server.workflowCodeTableService()
+	created, err := codeTable.CreateRow(ctx, map[string]any{
 		"table":  "contacts",
 		"values": map[string]any{"name": "Old", "email": "remote-1", "status": "todo"},
 	}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"})
@@ -1226,7 +1228,7 @@ func TestWorkflowRowUpsertUpdatesFirstMatchOrCreates(t *testing.T) {
 	}
 	original := created["record"].(map[string]any)
 
-	updated, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+	updated, err := codeTable.UpsertRow(ctx, map[string]any{
 		"table":       "contacts",
 		"match_field": "email",
 		"values":      map[string]any{"name": "Updated", "email": "remote-1", "status": "done"},
@@ -1251,7 +1253,7 @@ func TestWorkflowRowUpsertUpdatesFirstMatchOrCreates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nooped, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+	nooped, err := codeTable.UpsertRow(ctx, map[string]any{
 		"table":       "contacts",
 		"match_field": "email",
 		"values":      map[string]any{"name": "Updated", "email": "remote-1", "status": "done"},
@@ -1270,7 +1272,7 @@ func TestWorkflowRowUpsertUpdatesFirstMatchOrCreates(t *testing.T) {
 		t.Fatalf("noop upsert should not create row history: before=%d after=%d", len(historyBefore), len(historyAfter))
 	}
 
-	upserted, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+	upserted, err := codeTable.UpsertRow(ctx, map[string]any{
 		"table":       "contacts",
 		"match_field": "email",
 		"values":      map[string]any{"name": "Created", "email": "remote-2", "status": "todo"},
@@ -1295,7 +1297,7 @@ func TestWorkflowRowUpsertRequiresMatchValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+	_, err := server.workflowCodeTableService().UpsertRow(ctx, map[string]any{
 		"table":       "contacts",
 		"match_field": "email",
 		"values":      map[string]any{"name": "Ada"},

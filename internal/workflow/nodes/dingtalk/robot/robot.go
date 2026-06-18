@@ -1,4 +1,4 @@
-package nodes
+package robot
 
 import (
 	"bytes"
@@ -16,20 +16,20 @@ import (
 
 const dingtalkRobotEndpoint = "https://oapi.dingtalk.com/robot/send"
 
-type DingTalkRobotNode struct {
+type Node struct {
 	client   *http.Client
 	endpoint string
 }
 
-func NewDingTalkRobotNode() DingTalkRobotNode {
-	return DingTalkRobotNode{
+func NewNode() Node {
+	return Node{
 		client:   http.DefaultClient,
 		endpoint: dingtalkRobotEndpoint,
 	}
 }
 
-func NewDingTalkRobotNodeForTest(client *http.Client, endpoint string) DingTalkRobotNode {
-	node := NewDingTalkRobotNode()
+func NewNodeForTest(client *http.Client, endpoint string) Node {
+	node := NewNode()
 	if client != nil {
 		node.client = client
 	}
@@ -39,12 +39,12 @@ func NewDingTalkRobotNodeForTest(client *http.Client, endpoint string) DingTalkR
 	return node
 }
 
-func (node DingTalkRobotNode) Info() workflow.NodeInfo {
+func (node Node) Info() workflow.NodeInfo {
 	return workflow.NodeInfo{
 		Type:          "dingtalk.robot.send",
 		DisplayName:   "DingTalk robot",
 		Description:   "Sends a text message through a DingTalk custom robot webhook.",
-		Documentation: documentation("dingtalk.robot.send"),
+		Documentation: Documentation(),
 		Inputs: []workflow.Port{
 			{Name: "content", Type: "string", Description: "Text content to send."},
 			{Name: "at_user_ids", Type: "string[]", Description: "Optional DingTalk user IDs to mention."},
@@ -63,7 +63,7 @@ func (node DingTalkRobotNode) Info() workflow.NodeInfo {
 	}
 }
 
-func (node DingTalkRobotNode) Run(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+func (node Node) Run(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
 	accessToken := strings.TrimSpace(info.Secrets["access_token"])
 	if accessToken == "" {
 		return nil, errors.New("dingtalk access_token secret is required")
@@ -127,7 +127,7 @@ func (node DingTalkRobotNode) Run(ctx context.Context, input map[string]any, inf
 	return output, nil
 }
 
-func (node DingTalkRobotNode) webhookURL(accessToken string) string {
+func (node Node) webhookURL(accessToken string) string {
 	parsed, err := url.Parse(node.endpoint)
 	if err != nil {
 		return node.endpoint
@@ -173,4 +173,4 @@ func stringSliceInput(input map[string]any, key string) []string {
 	}
 }
 
-var _ workflow.Node = DingTalkRobotNode{}
+var _ workflow.Node = Node{}

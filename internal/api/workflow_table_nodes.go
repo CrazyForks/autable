@@ -11,13 +11,41 @@ import (
 	"codetable/internal/permission"
 	"codetable/internal/table"
 	"codetable/internal/workflow"
-	"codetable/internal/workflow/nodes"
 )
 
-func (server *Server) RunWorkflowTableNode(ctx context.Context, kind string, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+type workflowCodeTableService struct {
+	server *Server
+}
+
+func (server *Server) workflowCodeTableService() workflowCodeTableService {
+	return workflowCodeTableService{server: server}
+}
+
+func (service workflowCodeTableService) CreateRow(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return service.runRow(ctx, "create", input, info)
+}
+
+func (service workflowCodeTableService) UpdateRow(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return service.runRow(ctx, "update", input, info)
+}
+
+func (service workflowCodeTableService) UpsertRow(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return service.runRow(ctx, "upsert", input, info)
+}
+
+func (service workflowCodeTableService) DeleteRow(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return service.runRow(ctx, "delete", input, info)
+}
+
+func (service workflowCodeTableService) ListRows(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return service.runRow(ctx, "list", input, info)
+}
+
+func (service workflowCodeTableService) runRow(ctx context.Context, kind string, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
 	if info.CreatorID == "" {
 		return nil, errors.New("workflow creator is required")
 	}
+	server := service.server
 	dbName, tableName, err := workflowTableTarget(input, info)
 	if err != nil {
 		return nil, err
@@ -257,13 +285,4 @@ func workflowRowRecord(row table.Row) map[string]any {
 		"record_id": row.RecordID,
 		"values":    row.Values,
 	}
-}
-
-func (server *Server) registerWorkflowTableNodes() {
-	server.runner.Register(nodes.NewTableRowNode(server, "create"))
-	server.runner.Register(nodes.NewTableRowNode(server, "update"))
-	server.runner.Register(nodes.NewTableRowNode(server, "upsert"))
-	server.runner.Register(nodes.NewTableRowNode(server, "delete"))
-	server.runner.Register(nodes.NewTableRowNode(server, "list"))
-	server.registerWorkflowTableFieldNodes()
 }

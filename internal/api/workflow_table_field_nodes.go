@@ -11,7 +11,6 @@ import (
 	"codetable/internal/permission"
 	"codetable/internal/table"
 	"codetable/internal/workflow"
-	"codetable/internal/workflow/nodes"
 )
 
 type workflowFieldMutation struct {
@@ -21,10 +20,11 @@ type workflowFieldMutation struct {
 	Fields   []metadata.Field
 }
 
-func (server *Server) RunWorkflowTableFieldNode(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+func (service workflowCodeTableService) CreateFields(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
 	if info.CreatorID == "" {
 		return nil, errors.New("workflow creator is required")
 	}
+	server := service.server
 	dbName, tableName, err := workflowTableTarget(input, info)
 	if err != nil {
 		return nil, err
@@ -213,10 +213,6 @@ func workflowFieldsOutput(fields []metadata.Field) []map[string]any {
 		})
 	}
 	return output
-}
-
-func (server *Server) registerWorkflowTableFieldNodes() {
-	server.runner.Register(nodes.NewTableFieldNode(server))
 }
 
 func stringInput(values map[string]any, key string) string {

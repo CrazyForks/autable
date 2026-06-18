@@ -180,7 +180,7 @@ func NewServer(catalog metadata.Catalog, system *systemdb.DB, tables *table.Serv
 		system,
 		tables,
 		historyStore,
-		workflow.NewRunner(historyStore, nodes.EchoNode{}, nodes.NewRecordChangedTriggerNode(historyStore), nodes.ScheduleTriggerNode{}, nodes.NewDingTalkRobotNode(), nodes.NewDingTalkNotableListRecordsNode()),
+		nil,
 	)
 }
 
@@ -194,7 +194,7 @@ func NewServerWithOIDCProviders(catalog metadata.Catalog, system *systemdb.DB, t
 		system,
 		tables,
 		historyStore,
-		workflow.NewRunner(historyStore, nodes.EchoNode{}, nodes.NewRecordChangedTriggerNode(historyStore), nodes.ScheduleTriggerNode{}, nodes.NewDingTalkRobotNode(), nodes.NewDingTalkNotableListRecordsNode()),
+		nil,
 		providers,
 	)
 }
@@ -209,8 +209,18 @@ func NewServerWithWorkflowRunnerAndOIDC(catalog metadata.Catalog, system *system
 		oidc:    append([]config.OIDCProvider(nil), providers...),
 		mux:     http.NewServeMux(),
 	}
+	if runner == nil {
+		runner = workflow.NewRunner(historyStore, nodes.All(nodes.Dependencies{
+			History:   historyStore,
+			CodeTable: server.workflowCodeTableService(),
+		})...)
+	} else {
+		for _, node := range nodes.CodeTableNodes(server.workflowCodeTableService()) {
+			runner.Register(node)
+		}
+	}
+	server.runner = runner
 	server.tables.SetRowChangeHandler(server.dispatchRowChangeEvent)
-	server.registerWorkflowTableNodes()
 	server.routes()
 	return server
 }

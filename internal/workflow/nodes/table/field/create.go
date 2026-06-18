@@ -1,29 +1,26 @@
-package nodes
+package field
 
 import (
 	"context"
 
 	"codetable/internal/workflow"
+	"codetable/internal/workflow/nodes/codetable"
 )
 
-type TableFieldRunner interface {
-	RunWorkflowTableFieldNode(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error)
+type CreateNode struct {
+	service codetable.Service
 }
 
-type TableFieldNode struct {
-	runner TableFieldRunner
+func NewCreateNode(service codetable.Service) CreateNode {
+	return CreateNode{service: service}
 }
 
-func NewTableFieldNode(runner TableFieldRunner) TableFieldNode {
-	return TableFieldNode{runner: runner}
-}
-
-func (node TableFieldNode) Info() workflow.NodeInfo {
+func (node CreateNode) Info() workflow.NodeInfo {
 	return workflow.NodeInfo{
 		Type:          "table.field.create",
 		DisplayName:   "Create table fields",
 		Description:   "Adds missing fields to a table through the server metadata API using the workflow creator permissions.",
-		Documentation: documentation("table.field.create"),
+		Documentation: Documentation(),
 		Inputs: []workflow.Port{
 			{Name: "database", Type: "string", Description: "Optional database name. Defaults to the workflow database."},
 			{Name: "table", Type: "string", Description: "Target table name."},
@@ -39,8 +36,8 @@ func (node TableFieldNode) Info() workflow.NodeInfo {
 	}
 }
 
-func (node TableFieldNode) Run(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
-	return node.runner.RunWorkflowTableFieldNode(ctx, input, info)
+func (node CreateNode) Run(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+	return node.service.CreateFields(ctx, input, info)
 }
 
-var _ workflow.Node = TableFieldNode{}
+var _ workflow.Node = CreateNode{}

@@ -1,4 +1,4 @@
-package nodes
+package listrecords
 
 import (
 	"context"
@@ -22,38 +22,38 @@ type dingTalkAccessTokenClient interface {
 	GetAccessToken(request *oauth2.GetAccessTokenRequest) (*oauth2.GetAccessTokenResponse, error)
 }
 
-type DingTalkNotableListRecordsNode struct {
+type Node struct {
 	notableClient     dingTalkNotableListRecordsClient
 	accessTokenClient dingTalkAccessTokenClient
 	clientErr         error
 }
 
-func NewDingTalkNotableListRecordsNode() DingTalkNotableListRecordsNode {
+func NewNode() Node {
 	config := &openapi.Config{
 		Protocol: stringPtr("HTTPS"),
 	}
 	notableClient, err := notable.NewClient(config)
 	if err != nil {
-		return DingTalkNotableListRecordsNode{clientErr: err}
+		return Node{clientErr: err}
 	}
 	accessTokenClient, err := oauth2.NewClient(config)
-	return DingTalkNotableListRecordsNode{
+	return Node{
 		notableClient:     notableClient,
 		accessTokenClient: accessTokenClient,
 		clientErr:         err,
 	}
 }
 
-func NewDingTalkNotableListRecordsNodeForTest(notableClient dingTalkNotableListRecordsClient, accessTokenClient dingTalkAccessTokenClient) DingTalkNotableListRecordsNode {
-	return DingTalkNotableListRecordsNode{notableClient: notableClient, accessTokenClient: accessTokenClient}
+func NewNodeForTest(notableClient dingTalkNotableListRecordsClient, accessTokenClient dingTalkAccessTokenClient) Node {
+	return Node{notableClient: notableClient, accessTokenClient: accessTokenClient}
 }
 
-func (node DingTalkNotableListRecordsNode) Info() workflow.NodeInfo {
+func (node Node) Info() workflow.NodeInfo {
 	return workflow.NodeInfo{
 		Type:          "dingtalk.notable.records.list",
 		DisplayName:   "DingTalk AI table records",
 		Description:   "Lists records from a DingTalk AI table through the DingTalk OpenAPI SDK.",
-		Documentation: documentation("dingtalk.notable.records.list"),
+		Documentation: Documentation(),
 		Inputs: []workflow.Port{
 			{Name: "field_id_or_names", Type: "string[]", Description: "Optional field IDs or names to return."},
 			{Name: "max_results", Type: "int", Description: "Optional page size."},
@@ -79,7 +79,7 @@ func (node DingTalkNotableListRecordsNode) Info() workflow.NodeInfo {
 	}
 }
 
-func (node DingTalkNotableListRecordsNode) Run(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
+func (node Node) Run(ctx context.Context, input map[string]any, info workflow.RuntimeInfo) (map[string]any, error) {
 	if node.clientErr != nil {
 		return nil, node.clientErr
 	}
@@ -133,7 +133,7 @@ func (node DingTalkNotableListRecordsNode) Run(ctx context.Context, input map[st
 	return output, nil
 }
 
-func (node DingTalkNotableListRecordsNode) accessToken(ctx context.Context, appKey string, appSecret string) (string, error) {
+func (node Node) accessToken(ctx context.Context, appKey string, appSecret string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -279,6 +279,34 @@ func int32Input(input map[string]any, key string) (int32, bool) {
 	}
 }
 
+func stringInput(input map[string]any, key string) string {
+	if value, ok := input[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func stringSliceInput(input map[string]any, key string) []string {
+	value, ok := input[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok && text != "" {
+				values = append(values, text)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
+}
+
 func anySlice(value any) []interface{} {
 	if value == nil {
 		return nil
@@ -326,4 +354,4 @@ func cloneAnyMapFromInterface(values map[string]interface{}) map[string]any {
 	return cloned
 }
 
-var _ workflow.Node = DingTalkNotableListRecordsNode{}
+var _ workflow.Node = Node{}
