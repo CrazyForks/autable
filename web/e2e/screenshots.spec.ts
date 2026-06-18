@@ -1,0 +1,196 @@
+import { type Page, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Visual capture spec. Not an assertion test: it drives the real backend + UI
+// and writes screenshots to e2e/.shots so we can eyeball styling.
+
+const shotsDir = join(dirname(fileURLToPath(import.meta.url)), ".shots");
+mkdirSync(shotsDir, { recursive: true });
+
+let sequence = 0;
+
+async function api(page: Page, method: string, path: string, body?: unknown) {
+  return page.evaluate(
+    async ({ method: requestMethod, path: requestPath, body: requestBody }) => {
+      const response = await fetch(requestPath, {
+        method: requestMethod,
+        headers: requestBody === undefined ? undefined : { "Content-Type": "application/json" },
+        body: requestBody === undefined ? undefined : JSON.stringify(requestBody)
+      });
+      const text = await response.text();
+      const json = text ? JSON.parse(text) : null;
+      if (!response.ok) {
+        throw new Error(`${requestMethod} ${requestPath} failed: ${response.status} ${text}`);
+      }
+      return json;
+    },
+    { method, path, body }
+  );
+}
+
+async function registerUser(page: Page) {
+  sequence += 1;
+  const email = `shot-${Date.now()}-${sequence}@example.com`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Login" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Email").fill(email);
+  await dialog.getByLabel("Password").fill("correct horse");
+  await dialog.getByRole("button", { name: "Register" }).click();
+  await page.getByRole("button", { name: email }).waitFor();
+  return { email };
+}
+
+async function shot(page: Page, name: string) {
+  await page.screenshot({ path: join(shotsDir, `${name}.png`) });
+}
+
+async function navShot(page: Page, name: string) {
+  // Clip just the two nav columns so we can inspect icon/text/selection detail.
+  await page.screenshot({ path: join(shotsDir, `${name}.png`), clip: { x: 0, y: 0, width: 522, height: 900 } });
+}
+
+test("capture workspace screenshots", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // Login dialog before auth.
+  await page.goto("/");
+  await page.getByRole("button", { name: "Login" }).click();
+  await page.getByRole("dialog").waitFor();
+  await page.getByRole("button", { name: "Register" }).waitFor();
+  await page.waitForTimeout(600);
+  await shot(page, "01-login-dialog");
+  await page.keyboard.press("Escape");
+
+  const { email } = await registerUser(page);
+  const suffix = `${Date.now()}-${sequence}`;
+  const databaseName = `shots${suffix}`;
+  const tableName = "contacts";
+  await api(page, "POST", "/api/databases", {
+    name: databaseName,
+    sqlite_path: `./data/${databaseName}.sqlite`
+  });
+  await api(page, "POST", `/api/databases/${databaseName}/tables`, {
+    name: tableName,
+    display_name: "Contacts",
+    fields: [
+      { name: "name", type: "string", deleted: false },
+      { name: "email", type: "string", deleted: false },
+      { name: "status", type: "string", deleted: false },
+      { name: "score", type: "int", deleted: false }
+    ],
+    views: [
+      {
+        name: "active",
+        display_name: "Active",
+        filters: [{ field: "status", op: "eq", value: "Active" }],
+        sorts: []
+      }
+    ]
+  });
+  const people = [
+    ["Ada Lovelace", "ada@example.com", "Active", 91],
+    ["Grace Hopper", "grace@example.com", "Review", 88],
+    ["Margaret Hamilton", "margaret@example.com", "Active", 95],
+    ["Katherine Johnson", "katherine@example.com", "Backlog", 99],
+    ["Dorothy Vaughan", "dorothy@example.com", "Active", 84]
+  ] as const;
+  for (const [name, mail, status, score] of people) {
+    await api(page, "POST", `/api/tables/${databaseName}/${tableName}/rows`, {
+      values: { name, email: mail, status, score }
+    });
+  }
+  await api(page, "POST", `/api/databases/${databaseName}/workflows`, {
+    database_name: databaseName,
+    name: `welcome-${suffix}`,
+    script:
+      "function instances(info) {\n  return { row_change: { node: 'table.record.changed', variables: [{ name: 'label', type: 'string' }], secrets: [{ name: 'token', type: 'string' }] } };\n}\n\nfunction trigger(info) {\n  return { instance: 'row_change', params: { table: 'contacts', operations: ['create', 'update'] } };\n}\n\nfunction run(info) {\n  return { record_id: 1, name: 'Ada Lovelace' };\n}",
+    secrets: {},
+    variables: {}
+  });
+  await api(page, "POST", `/api/databases/${databaseName}/forms`, {
+    database_name: databaseName,
+    name: `signup-${suffix}`,
+    script:
+      "function render(api, root) {\n  root.append(\n    api.input({ name: 'name', label: 'Name' }),\n    api.input({ name: 'email', label: 'Email', type: 'email' }),\n    api.select({ name: 'status', label: 'Status', options: ['Active', 'Review', 'Backlog'] }),\n    api.submit('Create record')\n  );\n  return { table: 'contacts', fields: { name: 'name', email: 'email', status: 'status' } };\n}"
+  });
+  await page.reload();
+  await page.getByRole("button", { name: databaseName }).waitFor();
+  await page.getByRole("button", { name: /Contacts/ }).waitFor();
+
+  // Table view.
+  await page.getByRole("button", { name: /Contacts/ }).click();
+  await page.locator(".codetable-grid").waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, "02-table-view");
+  await navShot(page, "nav-01-table");
+
+  // Filter popover.
+  await page.getByRole("button", { name: "Active", exact: true }).click();
+  await page.getByRole("button", { name: "Filter" }).click();
+  await page.getByLabel("View filters").waitFor();
+  await page.waitForTimeout(200);
+  await shot(page, "03-table-filter-popover");
+  await page.keyboard.press("Escape");
+
+  // Add field popover.
+  await page.getByRole("button", { name: "Add field" }).click();
+  await page.getByRole("group", { name: "Add field" }).waitFor();
+  await page.getByLabel("New field type").selectOption("relation");
+  await page.waitForTimeout(200);
+  await shot(page, "04-table-add-field");
+  await page.keyboard.press("Escape");
+
+  // Record drawer.
+  await page.getByRole("gridcell", { name: "Ada Lovelace", exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "View details" }).click();
+  await page.getByRole("complementary", { name: "Record panel" }).waitFor();
+  await page.waitForTimeout(200);
+  await shot(page, "05-record-drawer");
+  await page.getByRole("button", { name: "Close record panel" }).click();
+
+  // Workflow view.
+  await page.getByRole("button", { name: "Workflow", exact: true }).click();
+  await page.getByText("Instances").waitFor();
+  await page.waitForTimeout(500);
+  await shot(page, "06-workflow-editor");
+  await navShot(page, "nav-02-workflow");
+
+  // Node catalog dialog.
+  await page.getByRole("button", { name: "Workflow nodes" }).click();
+  await page.getByRole("dialog", { name: "Workflow node catalog" }).waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, "07-workflow-node-catalog");
+  await page.keyboard.press("Escape");
+
+  // Workflow run + history.
+  await page.getByRole("button", { name: "Run" }).click();
+  await page.getByText(/Workflow run saved/).waitFor();
+  await page.getByRole("tab", { name: "History" }).click();
+  await page.getByLabel("Workflow run flow").waitFor();
+  await page.waitForTimeout(600);
+  await shot(page, "08-workflow-history");
+
+  // Form view.
+  await page.getByRole("button", { name: "Form", exact: true }).click();
+  await page.getByText("Preview").waitFor();
+  await page.waitForTimeout(400);
+  await shot(page, "09-form-editor");
+
+  // Permission view.
+  await page.getByRole("button", { name: "Permission", exact: true }).click();
+  await page.getByRole("textbox", { name: "New role name" }).fill("editor");
+  await page.getByRole("button", { name: "Create Role" }).click();
+  await page.getByRole("button", { name: /editor/ }).waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, "10-permission-matrix");
+
+  // Narrow viewport (responsive) on the permission matrix.
+  await page.setViewportSize({ width: 760, height: 900 });
+  await page.waitForTimeout(400);
+  await shot(page, "11-narrow-permission");
+  await page.setViewportSize({ width: 1440, height: 900 });
+});

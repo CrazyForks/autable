@@ -405,12 +405,6 @@ function WorkspaceApp() {
               {view === "form" && selectedForm ? ` / ${selectedForm.name}` : ""}
               {view === "permission" ? " / permissions" : ""}
             </Text>
-            <Text size={200}>
-              {view === "table" && `${tableWorkspace.displayedRows.length} of ${tableWorkspace.rows.length} records`}
-              {view === "workflow" && `${workflows.length} workflows`}
-              {view === "form" && `${forms.length} forms`}
-              {view === "permission" && `${roles.length} roles`}
-            </Text>
           </div>
           <Toolbar aria-label="Workspace actions">
             <ToolbarButton aria-label="Switch language" onClick={cycleLanguage}>

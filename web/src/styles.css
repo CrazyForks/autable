@@ -48,11 +48,40 @@ select {
 }
 
 .primary-sidebar {
-  background: var(--colorNeutralBackground1);
+  background: var(--colorNeutralBackground3);
 }
 
 .secondary-sidebar {
-  background: var(--colorNeutralBackground3);
+  background: var(--colorNeutralBackground1);
+  box-shadow: var(--shadow4);
+}
+
+.secondary-db-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stronger, consistent selection feedback across both nav levels. */
+.database-nav [aria-current="page"],
+.resource-nav [aria-current="page"] {
+  position: relative;
+  background-color: var(--colorBrandBackground2);
+  color: var(--colorBrandForeground2);
+  font-weight: 600;
+}
+
+.database-nav [aria-current="page"]::before,
+.resource-nav [aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 5px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background-color: var(--colorBrandStroke1);
 }
 
 .sidebar-heading,
@@ -126,6 +155,18 @@ select {
 
 .account-slot {
   margin-top: auto;
+}
+
+.account-slot .fui-Button {
+  justify-content: flex-start;
+}
+
+.account-email {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .create-rowline {
@@ -748,7 +789,9 @@ select {
 }
 
 .run-history-item span {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-history-item span:last-child {
@@ -1070,8 +1113,18 @@ select {
   font-size: 13px;
 }
 
-.permission-row span:first-child {
+.permission-row > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-row .fui-Select {
+  flex: 0 0 auto;
+  width: 110px;
 }
 
 .member-list-item {

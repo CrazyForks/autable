@@ -167,7 +167,6 @@ export function WorkspaceNavigation({
           <Nav
             className="database-nav"
             aria-label="Database list"
-            density="small"
             selectedValue={`${database.name}:${view}`}
             selectedCategoryValue={database.name}
             openCategories={database.name ? [database.name] : []}
@@ -201,7 +200,7 @@ export function WorkspaceNavigation({
           <div className="account-slot">
             {currentUser ? (
               <Button icon={<PersonRegular />} onClick={onLogout}>
-                {currentUser.email}
+                <span className="account-email">{currentUser.email}</span>
               </Button>
             ) : (
               <Button icon={<PersonRegular />} appearance="primary" onClick={onOpenLogin}>
@@ -215,13 +214,10 @@ export function WorkspaceNavigation({
       <NavDrawer className="secondary-sidebar" type="inline" open>
         <NavDrawerHeader>
           <div className="secondary-title">
-            <Text weight="semibold">
-              {view === "table" && "Tables"}
-              {view === "workflow" && "Workflows"}
-              {view === "form" && "Forms"}
-              {view === "permission" && "Roles"}
+            <Text size={200}>Database</Text>
+            <Text weight="semibold" className="secondary-db-name" title={database.name || undefined}>
+              {database.name || "No database"}
             </Text>
-            <Text size={200}>{database.name || "No database"}</Text>
           </div>
         </NavDrawerHeader>
         <NavDrawerBody>
@@ -281,7 +277,6 @@ export function WorkspaceNavigation({
               <Nav
                 className="resource-nav"
                 aria-label="Role list"
-                density="small"
                 selectedValue={selectedRole?.name ?? ""}
                 onNavItemSelect={(_, data) => onSelectRoleName(data.value)}
               >
@@ -348,7 +343,6 @@ function ResourceNav(props: {
       <Nav
         className="resource-nav"
         aria-label={props.ariaLabel}
-        density="small"
         selectedValue={props.selectedID ? String(props.selectedID) : ""}
         onNavItemSelect={(_, data) => props.onSelect(Number(data.value))}
       >
@@ -445,7 +439,6 @@ function TableNav(props: {
       <Nav
         className="resource-nav"
         aria-label="Table list"
-        density="small"
         selectedValue={props.table.name ? `${props.table.name}:view:${props.selectedTableView}` : ""}
         selectedCategoryValue={props.table.name}
         openCategories={props.table.name ? [props.table.name] : []}
