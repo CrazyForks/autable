@@ -2121,7 +2121,7 @@ func (server *Server) validateGrantResource(ctx context.Context, dbName string, 
 			return errors.New("field grant requires field")
 		}
 		field, ok := tableMeta.Field(grant.Field)
-		if !ok || field.Deleted || field.Name == "record_id" {
+		if !ok || field.Deleted || strings.HasPrefix(field.Name, "ct_") {
 			return fmt.Errorf("field %s.%s.%s not found", dbName, tableName, grant.Field)
 		}
 	case permission.ScopeWorkflow:
@@ -2353,7 +2353,7 @@ func formPermissionLevel(perms permission.Set, actorID string, form systemdb.For
 }
 
 func canReadRowHistory(perms permission.Set, actorID, resource string, tableMeta metadata.Table) bool {
-	if perms.CanReadField(actorID, resource, "record_id") {
+	if perms.CanReadField(actorID, resource, "ct_record_id") {
 		return true
 	}
 	for _, field := range tableMeta.ActiveFields() {

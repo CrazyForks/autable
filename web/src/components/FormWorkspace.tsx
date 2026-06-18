@@ -1,10 +1,11 @@
 import { useMemo, type FormEvent } from "react";
-import { Button, Input, Select, Text } from "@fluentui/react-components";
+import { Button, Input, Text } from "@fluentui/react-components";
 import { DismissRegular, SaveRegular, TabDesktopLinkRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type { FormDefinition } from "../api";
 import { formEditorExtraLibs } from "../editorTypes";
 import type { FormElement, FormRenderResult } from "../formRuntime";
+import { FormPreviewFields } from "./FormPreviewFields";
 import { JavaScriptEditor } from "./JavaScriptEditor";
 
 type FormWorkspaceProps = {
@@ -78,43 +79,13 @@ export function FormWorkspace({
       <form className="form-preview" onSubmit={(event) => onSubmit(undefined, event)}>
         <Text weight="semibold">{t("common.preview")}</Text>
         {renderedForm.error && <Text className="form-error">{renderedForm.error}</Text>}
-        {renderedForm.elements.map((element) => {
-          if (element.kind === "input") {
-            return (
-              <label key={element.name} className="field-stack">
-                <span>{element.label}</span>
-                <Input
-                  type={element.inputType}
-                  value={formValues[element.name] ?? ""}
-                  onChange={(_, data) => onFormValueChange(element.name, data.value)}
-                />
-              </label>
-            );
-          }
-          if (element.kind === "select") {
-            return (
-              <label key={element.name} className="field-stack">
-                <span>{element.label}</span>
-                <Select
-                  value={formValues[element.name] ?? element.options[0] ?? ""}
-                  onChange={(_, data) => onFormValueChange(element.name, data.value)}
-                >
-                  {element.options.map((option) => (
-                    <option key={option}>{option}</option>
-                  ))}
-                </Select>
-              </label>
-            );
-          }
-          if (element.kind === "html") {
-            return <div key={element.html} className="form-html" dangerouslySetInnerHTML={{ __html: element.html }} />;
-          }
-          return (
-            <Button key={element.label} type="button" appearance="primary" onClick={() => void onSubmit(element)}>
-              {element.label}
-            </Button>
-          );
-        })}
+        <FormPreviewFields
+          databaseName={databaseName}
+          elements={renderedForm.elements}
+          formValues={formValues}
+          onFormValueChange={onFormValueChange}
+          onSubmit={onSubmit}
+        />
       </form>
     </div>
   );

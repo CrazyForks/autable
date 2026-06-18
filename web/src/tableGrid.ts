@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { textEditor, type Column } from "react-data-grid";
 import type { Field, RowRecord } from "./api";
 
-export type TableGridRow = Record<string, unknown> & { record_id: number };
+export type TableGridRow = Record<string, unknown> & { ct_record_id: number };
 
 export type RelationLabelMap = Record<string, Record<number, string>>;
 
@@ -17,7 +17,7 @@ export function buildTableColumns(
     minWidth: Math.max(128, field.name.length * 14),
     resizable: true,
     renderEditCell: textEditor,
-    editable: (row) => Number.isFinite(row.record_id) && field.type !== "formula" && (field.permission_level ?? 2) >= 2,
+    editable: (row) => Number.isFinite(row.ct_record_id) && field.type !== "formula" && (field.permission_level ?? 2) >= 2,
     renderCell: ({ row }) => {
       if (field.type !== "relation") {
         return String(row[field.name] ?? "");
@@ -51,5 +51,5 @@ export function displayTableCellValue(row: TableGridRow, field: Field, relationL
 }
 
 export function rowRecordToValues(row: RowRecord): TableGridRow {
-  return { record_id: row.record_id, ...row.values };
+  return { ...row.values, ct_record_id: row.record_id };
 }

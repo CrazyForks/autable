@@ -4,6 +4,7 @@
     "allRecords": "All records",
     "baseTable": "base table",
     "cancel": "Cancel",
+    "clear": "Clear",
     "close": "Close",
     "create": "Create",
     "delete": "Delete",
@@ -39,10 +40,19 @@
     "password": "Password"
   },
   "form": {
+    "chooseRelation": "Choose",
     "formScriptLabel": "Form JavaScript",
+    "loadingRelationRecords": "Loading records",
+    "noRelationRecords": "No records",
+    "noRelationSelected": "No record selected",
     "publishedForm": "Published form",
     "publishedFormLink": "Published form link",
     "publish": "Publish",
+    "relationDialogTitle": "Choose {{table}} record",
+    "relationLoadFailed": "Relation records failed to load",
+    "relationRecords": "Relation records",
+    "relationView": "View: {{view}}",
+    "selectedRecord": "Record {{id}}",
     "unpublish": "Unpublish"
   },
   "language": {

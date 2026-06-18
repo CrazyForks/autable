@@ -6,9 +6,9 @@ func TestEvaluateFormDefinition(t *testing.T) {
 	definition, err := Evaluate(`
 		function render(api, root) {
 			try {
-				root.append(api.input({ name: "person_name" }), api.submit("Submit"));
+				root.append(api.input({ field: "name" }), api.input({ field: "email" }), api.submit("Submit"));
 			} finally {
-				return { table: "contacts", fields: { person_name: "name", person_email: "email" } };
+				return { table: "contacts" };
 			}
 		}
 	`)
@@ -18,17 +18,23 @@ func TestEvaluateFormDefinition(t *testing.T) {
 	if definition.Table != "contacts" {
 		t.Fatalf("unexpected table: %#v", definition)
 	}
-	if definition.Fields["person_name"] != "name" || definition.Fields["person_email"] != "email" {
+	if definition.Fields["name"] != "name" || definition.Fields["email"] != "email" {
 		t.Fatalf("unexpected fields: %#v", definition.Fields)
 	}
 }
 
 func TestEvaluateRequiresDefinition(t *testing.T) {
-	if _, err := Evaluate(`root.append(api.input({ name: "name" }))`); err == nil {
+	if _, err := Evaluate(`root.append(api.input({ field: "name" }))`); err == nil {
 		t.Fatal("expected missing render function error")
 	}
-	if _, err := Evaluate(`function render() { return { fields: { name: "name" } }; }`); err == nil {
+	if _, err := Evaluate(`function render() { return {}; }`); err == nil {
 		t.Fatal("expected missing table error")
+	}
+	if _, err := Evaluate(`function render(api, root) { root.append(api.input({ name: "name" })); return { table: "contacts" }; }`); err == nil {
+		t.Fatal("expected missing field error")
+	}
+	if _, err := Evaluate(`function render(api, root) { root.append(api.input()); return { table: "contacts" }; }`); err == nil {
+		t.Fatal("expected missing field error")
 	}
 }
 
@@ -39,13 +45,28 @@ func TestEvaluateAllowsDisplayDOMOperations(t *testing.T) {
 			note.textContent = "Custom note";
 			note.classList.add("note");
 			root.element.appendChild(note);
-			return { table: "contacts", fields: { name: "name" } };
+			return { table: "contacts" };
 		}
 	`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if definition.Table != "contacts" || definition.Fields["name"] != "name" {
+	if definition.Table != "contacts" || len(definition.Fields) != 0 {
+		t.Fatalf("unexpected definition: %#v", definition)
+	}
+}
+
+func TestEvaluateAllowsRelationInput(t *testing.T) {
+	definition, err := Evaluate(`
+		function render(api, root) {
+			root.append(api.relation({ field: "owner", table: "users", view: "active" }), api.submit("Submit"));
+			return { table: "tasks" };
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.Table != "tasks" || definition.Fields["owner"] != "owner" {
 		t.Fatalf("unexpected definition: %#v", definition)
 	}
 }

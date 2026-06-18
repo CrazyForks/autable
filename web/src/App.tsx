@@ -265,7 +265,7 @@ function WorkspaceApp() {
         {
           name,
           display_name: name,
-          fields: [{ name: "name", type: "string", deleted: false }],
+          fields: [],
           views: []
         }
       );

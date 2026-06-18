@@ -288,9 +288,9 @@ func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = service.UpdateRow(ctx, catalog, writePerms, "u1", "db", "contacts", row.RecordID, map[string]any{"record_id": 99})
+	_, err = service.UpdateRow(ctx, catalog, writePerms, "u1", "db", "contacts", row.RecordID, map[string]any{"ct_record_id": 99})
 	if !errors.Is(err, ErrPermissionDenied) {
-		t.Fatalf("expected record_id permission error, got %v", err)
+		t.Fatalf("expected ct_record_id permission error, got %v", err)
 	}
 	_, err = service.UpdateRow(ctx, catalog, readPerms, "u1", "db", "contacts", row.RecordID, map[string]any{"name": "Grace"})
 	if !errors.Is(err, ErrPermissionDenied) {

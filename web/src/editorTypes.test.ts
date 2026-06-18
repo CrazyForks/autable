@@ -55,6 +55,7 @@ describe("editorTypes", () => {
     const content = formEditorExtraLibs().map((lib) => lib.content).join("\n");
 
     expect(content).toContain("interface CodeTableFormAPI");
+    expect(content).toContain("relation(config:");
     expect(content).toContain("function render(api: CodeTableFormAPI, root: CodeTableFormRoot): CodeTableFormDefinition");
   });
 });

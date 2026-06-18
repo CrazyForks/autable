@@ -1,11 +1,12 @@
 export type FormElement =
   | {
       kind: "input";
-      name: string;
+      field: string;
       label: string;
       inputType: "text" | "email" | "search" | "tel" | "url" | "password";
     }
-  | { kind: "select"; name: string; label: string; options: string[] }
+  | { kind: "select"; field: string; label: string; options: string[] }
+  | { kind: "relation"; field: string; label: string; table: string; view?: string }
   | { kind: "submit"; label: string }
   | { kind: "html"; html: string };
 
@@ -19,15 +20,22 @@ export type FormRenderResult = {
 };
 
 type InputConfig = {
-  name: string;
+  field: string;
   label?: string;
   type?: string;
 };
 
 type SelectConfig = {
-  name: string;
+  field: string;
   label?: string;
   options?: string[];
+};
+
+type RelationConfig = {
+  field: string;
+  label?: string;
+  table: string;
+  view?: string;
 };
 
 const inputTypes = new Set<InputType>(["text", "email", "search", "tel", "url", "password"]);
@@ -47,18 +55,34 @@ export function renderFormScript(script: string): FormRenderResult {
     }
   };
   const api = {
-    input: (config: InputConfig): FormElement => ({
-      kind: "input",
-      name: String(config.name),
-      label: config.label ?? config.name,
-      inputType: normalizeInputType(config.type)
-    }),
-    select: (config: SelectConfig): FormElement => ({
-      kind: "select",
-      name: String(config.name),
-      label: config.label ?? config.name,
-      options: Array.isArray(config.options) ? config.options.map(String) : []
-    }),
+    input: (config: InputConfig): FormElement => {
+      const field = formControlField(config);
+      return {
+        kind: "input",
+        field,
+        label: config.label ?? field,
+        inputType: normalizeInputType(config.type)
+      };
+    },
+    select: (config: SelectConfig): FormElement => {
+      const field = formControlField(config);
+      return {
+        kind: "select",
+        field,
+        label: config.label ?? field,
+        options: Array.isArray(config.options) ? config.options.map(String) : []
+      };
+    },
+    relation: (config: RelationConfig): FormElement => {
+      const field = formControlField(config);
+      return {
+        kind: "relation",
+        field,
+        label: config.label ?? field,
+        table: String(config.table),
+        view: config.view ? String(config.view) : undefined
+      };
+    },
     submit: (label: string): FormElement => ({
       kind: "submit",
       label: String(label)
@@ -72,7 +96,8 @@ export function renderFormScript(script: string): FormRenderResult {
     if (rootElement && rootElement.childNodes.length > 0) {
       elements.push({ kind: "html", html: rootElement.innerHTML });
     }
-    return { elements, table: definition.table, fields: definition.fields };
+    const fields = Object.fromEntries(elements.flatMap((element) => ("field" in element ? [[element.field, element.field]] : [])));
+    return { elements, table: definition.table, fields };
   } catch (error) {
     return {
       elements: [],
@@ -85,19 +110,11 @@ function formDefinitionFromValue(value: unknown): Required<Pick<FormRenderResult
   if (!value || typeof value !== "object") {
     throw new Error("form render must return a definition object");
   }
-  const maybeDefinition = value as { table?: unknown; fields?: unknown };
-  if (typeof maybeDefinition.table !== "string" || !maybeDefinition.fields || typeof maybeDefinition.fields !== "object") {
-    throw new Error("form render must return table and fields");
+  const maybeDefinition = value as { table?: unknown };
+  if (typeof maybeDefinition.table !== "string" || maybeDefinition.table === "") {
+    throw new Error("form render must return table");
   }
-  const fields = Object.fromEntries(
-    Object.entries(maybeDefinition.fields as Record<string, unknown>)
-      .filter(([, fieldName]) => typeof fieldName === "string")
-      .map(([inputID, fieldName]) => [inputID, String(fieldName)])
-  );
-  if (maybeDefinition.table === "" || Object.keys(fields).length === 0) {
-    throw new Error("form render must return table and fields");
-  }
-  return { table: maybeDefinition.table, fields };
+  return { table: maybeDefinition.table, fields: {} };
 }
 
 function normalizeInputType(value: string | undefined): InputType {
@@ -105,6 +122,17 @@ function normalizeInputType(value: string | undefined): InputType {
     return value as InputType;
   }
   return "text";
+}
+
+function formControlField(config: unknown): string {
+  if (!config || typeof config !== "object") {
+    throw new Error("form controls require field");
+  }
+  const field = (config as { field?: unknown }).field;
+  if (typeof field !== "string" || field === "") {
+    throw new Error("form controls require field");
+  }
+  return field;
 }
 
 function appendFormItem(elements: FormElement[], rootElement: HTMLDivElement | undefined, item: FormElement | string | Node) {
@@ -126,5 +154,5 @@ function isFormElement(value: unknown): value is FormElement {
     return false;
   }
   const kind = (value as { kind?: unknown }).kind;
-  return kind === "input" || kind === "select" || kind === "submit" || kind === "html";
+  return kind === "input" || kind === "select" || kind === "relation" || kind === "submit" || kind === "html";
 }

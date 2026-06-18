@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"codetable/internal/metadata"
 	"codetable/internal/permission"
@@ -132,7 +133,7 @@ func (server *Server) upsertWorkflowTableRow(ctx context.Context, catalog metada
 		return table.Row{}, "", fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	matchFieldMeta, ok := tableMeta.Field(matchField)
-	if !ok {
+	if !ok || strings.HasPrefix(matchFieldMeta.Name, "ct_") {
 		return table.Row{}, "", fmt.Errorf("%w: %s", metadata.ErrUnknownField, matchField)
 	}
 	matchValue, err := workflowNormalizeComparableValue(matchFieldMeta, values[matchField])

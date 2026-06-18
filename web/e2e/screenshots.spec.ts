@@ -130,7 +130,7 @@ test("capture workspace screenshots", async ({ page }) => {
     database_name: databaseName,
     name: `signup-${suffix}`,
     script:
-      "function render(api, root) {\n  root.append(\n    api.input({ name: 'name', label: 'Name' }),\n    api.input({ name: 'email', label: 'Email', type: 'email' }),\n    api.select({ name: 'status', label: 'Status', options: ['Active', 'Review', 'Backlog'] }),\n    api.submit('Create record')\n  );\n  return { table: 'contacts', fields: { name: 'name', email: 'email', status: 'status' } };\n}"
+      "function render(api, root) {\n  root.append(\n    api.input({ field: 'name', label: 'Name' }),\n    api.input({ field: 'email', label: 'Email', type: 'email' }),\n    api.select({ field: 'status', label: 'Status', options: ['Active', 'Review', 'Backlog'] }),\n    api.submit('Create record')\n  );\n  return { table: 'contacts' };\n}"
   });
   await page.reload();
   await page.getByRole("button", { name: databaseName }).waitFor();

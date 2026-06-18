@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Button, Input, Select, Text } from "@fluentui/react-components";
+import { Button, Text } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import {
   listOIDCProviders,
@@ -15,6 +15,7 @@ import {
 } from "../api";
 import { renderFormScript, type FormElement } from "../formRuntime";
 import { AuthDialog } from "./AuthDialog";
+import { FormPreviewFields } from "./FormPreviewFields";
 
 type PublishedFormPageProps = {
   token: string;
@@ -129,17 +130,17 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
     if (!submitElement && !renderedForm.elements.some((element) => element.kind === "submit")) {
       return;
     }
-    if (!renderedForm.table || !renderedForm.fields || Object.keys(renderedForm.fields).length === 0) {
+    if (!renderedForm.table) {
       setStatus(t("status.publishedFormDefinitionRequired"));
       return;
     }
     const values = Object.fromEntries(
       renderedForm.elements.flatMap((element) => {
-        if (element.kind === "input") {
-          return [[element.name, formValues[element.name] ?? ""]];
+        if (element.kind === "input" || element.kind === "relation") {
+          return [[element.field, formValues[element.field] ?? ""]];
         }
         if (element.kind === "select") {
-          return [[element.name, formValues[element.name] ?? element.options[0] ?? ""]];
+          return [[element.field, formValues[element.field] ?? element.options[0] ?? ""]];
         }
         return [];
       })
@@ -170,43 +171,13 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
         {form ? (
           <form className="form-preview published-form-card" onSubmit={(event) => void submitForm(undefined, event)}>
             {renderedForm.error && <Text className="form-error">{renderedForm.error}</Text>}
-            {renderedForm.elements.map((element) => {
-              if (element.kind === "input") {
-                return (
-                  <label key={element.name} className="field-stack">
-                    <span>{element.label}</span>
-                    <Input
-                      type={element.inputType}
-                      value={formValues[element.name] ?? ""}
-                      onChange={(_, data) => setFormValues((current) => ({ ...current, [element.name]: data.value }))}
-                    />
-                  </label>
-                );
-              }
-              if (element.kind === "select") {
-                return (
-                  <label key={element.name} className="field-stack">
-                    <span>{element.label}</span>
-                    <Select
-                      value={formValues[element.name] ?? element.options[0] ?? ""}
-                      onChange={(_, data) => setFormValues((current) => ({ ...current, [element.name]: data.value }))}
-                    >
-                      {element.options.map((option) => (
-                        <option key={option}>{option}</option>
-                      ))}
-                    </Select>
-                  </label>
-                );
-              }
-              if (element.kind === "html") {
-                return <div key={element.html} className="form-html" dangerouslySetInnerHTML={{ __html: element.html }} />;
-              }
-              return (
-                <Button key={element.label} type="button" appearance="primary" onClick={() => void submitForm(element)}>
-                  {element.label}
-                </Button>
-              );
-            })}
+            <FormPreviewFields
+              databaseName={form.database_name}
+              elements={renderedForm.elements}
+              formValues={formValues}
+              onFormValueChange={(name, value) => setFormValues((current) => ({ ...current, [name]: value }))}
+              onSubmit={submitForm}
+            />
           </form>
         ) : (
           <div className="empty-state">

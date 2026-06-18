@@ -21,9 +21,9 @@ const views: TableView[] = [
 describe("tableViews", () => {
   it("applies base view filters and child sorts", () => {
     const rows = [
-      { record_id: 1, name: "Ada", status: "Active" },
-      { record_id: 2, name: "Grace", status: "Active" },
-      { record_id: 3, name: "Linus", status: "Archived" }
+      { ct_record_id: 1, name: "Ada", status: "Active" },
+      { ct_record_id: 2, name: "Grace", status: "Active" },
+      { ct_record_id: 3, name: "Linus", status: "Archived" }
     ];
 
     expect(applyTableView(rows, views, "active-desc").map((row) => row.name)).toEqual(["Grace", "Ada"]);
@@ -43,7 +43,7 @@ describe("tableViews", () => {
   });
 
   it("handles missing and cyclic views without recursing forever", () => {
-    const rows = [{ record_id: 1, name: "Ada" }];
+    const rows = [{ ct_record_id: 1, name: "Ada" }];
     const cyclic: TableView[] = [
       { name: "a", display_name: "a", base_view: "b", filters: [{ field: "name", op: "eq", value: "Grace" }], sorts: [] },
       { name: "b", display_name: "b", base_view: "a", filters: [], sorts: [] }

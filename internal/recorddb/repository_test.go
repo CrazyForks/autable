@@ -70,7 +70,7 @@ func TestRepositoryPersistsRowsAcrossReopenWithRealColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stored map[string]any
-	if err := db.Table("contacts").Where(map[string]any{"record_id": row.RecordID}).Take(&stored).Error; err != nil {
+	if err := db.Table("contacts").Where(map[string]any{recordIDColumn: row.RecordID}).Take(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
 	if stored["name"] != "Ada" || stored["email"] != "ada@example.com" {
@@ -79,7 +79,7 @@ func TestRepositoryPersistsRowsAcrossReopenWithRealColumns(t *testing.T) {
 	if _, ok := stored["values"]; ok {
 		t.Fatalf("records must not use values json column anymore: %#v", stored)
 	}
-	if int64Value(stored["created_at"]) <= 0 || int64Value(stored["updated_at"]) <= 0 {
+	if int64Value(stored[createdAtColumn]) <= 0 || int64Value(stored[updatedAtColumn]) <= 0 {
 		t.Fatalf("expected millisecond integer timestamps, got %#v", stored)
 	}
 	if err := repository.Close(); err != nil {
@@ -131,7 +131,7 @@ func TestRepositorySupportsUnsafeLogicalTableNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stored map[string]any
-	if err := db.Table(physicalTableName(tableMeta.Name)).Where(map[string]any{"record_id": row.RecordID}).Take(&stored).Error; err != nil {
+	if err := db.Table(physicalTableName(tableMeta.Name)).Where(map[string]any{recordIDColumn: row.RecordID}).Take(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
 	if stored["name"] != "Ada" || int64Value(stored["count"]) != 2 {
@@ -171,6 +171,41 @@ func TestRepositorySupportsExternalFieldsNamedCreatedAndUpdated(t *testing.T) {
 	}
 }
 
+func TestRepositoryAllowsUserRecordIDField(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "workspace.sqlite")
+	catalog := metadata.Catalog{Databases: []metadata.Database{{Name: "workspace", SQLitePath: path}}}
+	tableMeta := metadata.Table{Name: "tasks", Fields: []metadata.Field{{Name: "record_id", Type: "string"}}}
+
+	repository, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	row, err := repository.CreateRow(ctx, "workspace", tableMeta, map[string]any{"record_id": "remote-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.RecordID != 1 || row.Values["record_id"] != "remote-1" {
+		t.Fatalf("unexpected record_id field row: %#v", row)
+	}
+	db, err := repository.database("workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]any
+	if err := db.Table("tasks").Where(map[string]any{recordIDColumn: row.RecordID}).Take(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if int64Value(stored[recordIDColumn]) != 1 || stored["record_id"] != "remote-1" {
+		t.Fatalf("expected system ct_record_id and user record_id columns, got %#v", stored)
+	}
+}
+
 func TestRepositoryAutoMigrateHandlesExistingPhysicalExternalField(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "workspace.sqlite")
@@ -190,7 +225,7 @@ func TestRepositoryAutoMigrateHandlesExistingPhysicalExternalField(t *testing.T)
 		t.Fatal(err)
 	}
 	tableName := physicalTableName("b表")
-	if err := db.Exec(`CREATE TABLE ` + tableName + ` (record_id integer primary key autoincrement, created_at integer not null, updated_at integer not null, Created text)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE ` + tableName + ` (ct_record_id integer primary key autoincrement, ct_created_at integer not null, ct_updated_at integer not null, Created text)`).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,10 +257,10 @@ func TestRepositoryReadsExistingPhysicalColumnWithDifferentCase(t *testing.T) {
 		t.Fatal(err)
 	}
 	tableName := physicalTableName("b表")
-	if err := db.Exec(`CREATE TABLE ` + tableName + ` (record_id integer primary key autoincrement, created_at integer not null, updated_at integer not null, created text)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE ` + tableName + ` (ct_record_id integer primary key autoincrement, ct_created_at integer not null, ct_updated_at integer not null, created text)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO ` + tableName + ` (created_at, updated_at, created) VALUES (1, 1, 'remote-created')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO ` + tableName + ` (ct_created_at, ct_updated_at, created) VALUES (1, 1, 'remote-created')`).Error; err != nil {
 		t.Fatal(err)
 	}
 

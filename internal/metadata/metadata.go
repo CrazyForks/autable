@@ -242,10 +242,13 @@ func (table Table) validate(dbName string, tableIndex int) error {
 	if table.Name == "" {
 		return fmt.Errorf("database %q tables[%d].name is required", dbName, tableIndex)
 	}
-	seenFields := map[string]struct{}{"record_id": {}}
+	seenFields := map[string]struct{}{}
 	for _, field := range table.Fields {
 		if field.Name == "" {
 			return fmt.Errorf("database %q table %q contains a field without a name", dbName, table.Name)
+		}
+		if strings.HasPrefix(field.Name, "ct_") {
+			return fmt.Errorf("database %q table %q field %q uses reserved prefix ct_", dbName, table.Name, field.Name)
 		}
 		if _, ok := seenFields[field.Name]; ok {
 			return fmt.Errorf("database %q table %q field %q is duplicated or reserved", dbName, table.Name, field.Name)
@@ -341,8 +344,8 @@ func (table Table) ActiveFields() []Field {
 }
 
 func (table Table) Field(name string) (Field, bool) {
-	if name == "record_id" {
-		return Field{Name: "record_id", Type: "int"}, true
+	if name == "ct_record_id" {
+		return Field{Name: "ct_record_id", Type: "int"}, true
 	}
 	for _, field := range table.Fields {
 		if field.Name == name {

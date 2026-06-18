@@ -328,7 +328,7 @@ export function TableWorkspace({
           className="codetable-grid rdg-light"
           columns={gridColumns}
           rows={displayedRows}
-          rowKeyGetter={(row) => row.record_id}
+          rowKeyGetter={(row) => row.ct_record_id}
           onRowsChange={(nextRows, data) => {
             void onRowsChange(nextRows, data);
           }}
@@ -338,7 +338,7 @@ export function TableWorkspace({
           onCellContextMenu={(args, event) => {
             event.preventGridDefault();
             event.preventDefault();
-            const recordID = Number(args.row?.record_id);
+            const recordID = Number(args.row?.ct_record_id);
             if (Number.isFinite(recordID)) {
               onSelectRecordID(recordID);
               setRecordMenu({ x: event.clientX, y: event.clientY, recordID });
@@ -577,15 +577,15 @@ function RelationDrawer({
         <div>
           <Text weight="semibold">{relation.table.display_name || relation.table.name}</Text>
           <Text size={200}>
-            {relation.field.name} {"->"} {t("table.record")} {relation.row.record_id}
+            {relation.field.name} {"->"} {t("table.record")} {relation.row.ct_record_id}
           </Text>
         </div>
         <Button icon={<DismissRegular />} appearance="subtle" aria-label={t("common.close")} onClick={onClose} />
       </div>
       <div className="record-detail-list">
         <label className="field-stack">
-          <span>record_id</span>
-          <Input aria-label={t("table.valueLabel", { name: "record_id" })} readOnly value={String(relation.row.record_id)} />
+          <span>ct_record_id</span>
+          <Input aria-label={t("table.valueLabel", { name: "ct_record_id" })} readOnly value={String(relation.row.ct_record_id)} />
         </label>
         {fields.map((field) => (
           <label key={field.name} className="field-stack">
@@ -760,7 +760,7 @@ function ViewFilterPopover({
             disabled={!canEditView}
           >
             <option value="">{t("table.noSort")}</option>
-            <option value="record_id">record_id</option>
+            <option value="ct_record_id">ct_record_id</option>
             {activeFields.map((field) => (
               <option key={field.name} value={field.name}>
                 {field.name}

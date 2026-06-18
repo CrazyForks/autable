@@ -4,6 +4,7 @@
     "allRecords": "全部记录",
     "baseTable": "基础表",
     "cancel": "取消",
+    "clear": "清空",
     "close": "关闭",
     "create": "创建",
     "delete": "删除",
@@ -39,10 +40,19 @@
     "password": "密码"
   },
   "form": {
+    "chooseRelation": "选择",
     "formScriptLabel": "表单 JavaScript",
+    "loadingRelationRecords": "正在加载记录",
+    "noRelationRecords": "没有记录",
+    "noRelationSelected": "未选择记录",
     "publishedForm": "公开表单",
     "publishedFormLink": "公开表单链接",
     "publish": "发布",
+    "relationDialogTitle": "选择 {{table}} 记录",
+    "relationLoadFailed": "关联记录加载失败",
+    "relationRecords": "关联记录",
+    "relationView": "视图：{{view}}",
+    "selectedRecord": "记录 {{id}}",
     "unpublish": "取消发布"
   },
   "language": {

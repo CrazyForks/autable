@@ -249,7 +249,7 @@ func TestFormDefinitionAutoincrementsID(t *testing.T) {
 	saved, err := db.SaveForm(ctx, FormDefinition{
 		DatabaseName: "workspace",
 		Name:         "contact-intake",
-		Script:       "function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }",
+		Script:       "function render(api, root) { root.append(api.input({ field: 'email' }), api.submit('Save')); return { table: 'contacts' }; }",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ func TestFormPublishTokenPersists(t *testing.T) {
 	saved, err := db.SaveForm(ctx, FormDefinition{
 		DatabaseName: "workspace",
 		Name:         "contact-intake",
-		Script:       "function render(api, root) { root.append(api.input({ name: 'email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }",
+		Script:       "function render(api, root) { root.append(api.input({ field: 'email' }), api.submit('Save')); return { table: 'contacts' }; }",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +306,7 @@ func TestFormPublishTokenPersists(t *testing.T) {
 		ID:           saved.ID,
 		DatabaseName: "workspace",
 		Name:         "contact-intake",
-		Script:       "function render(api, root) { root.append(api.input({ name: 'name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }",
+		Script:       "function render(api, root) { root.append(api.input({ field: 'name' }), api.submit('Save')); return { table: 'contacts' }; }",
 	})
 	if err != nil {
 		t.Fatal(err)

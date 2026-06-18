@@ -5,10 +5,10 @@ describe("renderFormScript", () => {
   it("executes form JavaScript against the form api and root", () => {
     const result = renderFormScript(`
       function render(api, root) {
-        const email = api.input({ name: "email", label: "Email", type: "email" });
-        const status = api.select({ name: "status", options: ["Active", "Review"] });
+        const email = api.input({ field: "email", label: "Email", type: "email" });
+        const status = api.select({ field: "status", options: ["Active", "Review"] });
         root.append(email, status, api.submit("Create record"));
-        return { table: "contacts", fields: { email: "email", status: "status" } };
+        return { table: "contacts" };
       }
     `);
 
@@ -16,8 +16,8 @@ describe("renderFormScript", () => {
     expect(result.table).toBe("contacts");
     expect(result.fields).toEqual({ email: "email", status: "status" });
     expect(result.elements).toEqual([
-      { kind: "input", name: "email", label: "Email", inputType: "email" },
-      { kind: "select", name: "status", label: "status", options: ["Active", "Review"] },
+      { kind: "input", field: "email", label: "Email", inputType: "email" },
+      { kind: "select", field: "status", label: "status", options: ["Active", "Review"] },
       { kind: "submit", label: "Create record" }
     ]);
   });
@@ -29,19 +29,53 @@ describe("renderFormScript", () => {
     expect(result.error).toContain("render is not defined");
   });
 
-  it("supports function forms that return the backend submit mapping", () => {
+  it("supports field-bound inputs", () => {
     const result = renderFormScript(`
       function render(api, root) {
-        root.append(api.input({ name: "person_name", label: "Name" }), api.submit("Submit"));
-        return { table: "contacts", fields: { person_name: "name" } };
+        root.append(api.input({ field: "name", label: "Name" }), api.submit("Submit"));
+        return { table: "contacts" };
       }
     `);
 
     expect(result.error).toBeUndefined();
     expect(result.table).toBe("contacts");
-    expect(result.fields).toEqual({ person_name: "name" });
+    expect(result.fields).toEqual({ name: "name" });
     expect(result.elements).toEqual([
-      { kind: "input", name: "person_name", label: "Name", inputType: "text" },
+      { kind: "input", field: "name", label: "Name", inputType: "text" },
+      { kind: "submit", label: "Submit" }
+    ]);
+  });
+
+  it("rejects controls without field configs", () => {
+    const oldNameResult = renderFormScript(`
+      function render(api, root) {
+        root.append(api.input({ name: "name" }));
+        return { table: "contacts" };
+      }
+    `);
+    const missingConfigResult = renderFormScript(`
+      function render(api, root) {
+        root.append(api.input());
+        return { table: "contacts" };
+      }
+    `);
+
+    expect(oldNameResult.error).toContain("form controls require field");
+    expect(missingConfigResult.error).toContain("form controls require field");
+  });
+
+  it("supports relation inputs with a target table and view", () => {
+    const result = renderFormScript(`
+      function render(api, root) {
+        root.append(api.relation({ field: "owner", label: "Owner", table: "users", view: "active" }), api.submit("Submit"));
+        return { table: "tasks" };
+      }
+    `);
+
+    expect(result.error).toBeUndefined();
+    expect(result.fields).toEqual({ owner: "owner" });
+    expect(result.elements).toEqual([
+      { kind: "relation", field: "owner", label: "Owner", table: "users", view: "active" },
       { kind: "submit", label: "Submit" }
     ]);
   });
@@ -59,7 +93,7 @@ describe("renderFormScript", () => {
         const note = document.createElement("strong");
         note.textContent = "Custom note";
         root.element.appendChild(note);
-        return { table: "contacts", fields: { name: "name" } };
+        return { table: "contacts" };
       }
     `);
 

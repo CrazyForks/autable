@@ -63,7 +63,7 @@ const formFixture = [
     database_name: "workspace",
     name: "contact-intake",
     script:
-      'function render(api, root) { root.append(api.input({ name: "name", label: "Name" }), api.submit("Create record")); return { table: "contacts", fields: { name: "name" } }; }',
+      'function render(api, root) { root.append(api.input({ field: "name", label: "Name" }), api.submit("Create record")); return { table: "contacts" }; }',
     permission_level: 2
   },
   {
@@ -71,7 +71,7 @@ const formFixture = [
     database_name: "workspace",
     name: "quick-status",
     script:
-      'function render(api, root) { root.append(api.select({ name: "status", label: "Status", options: ["Active", "Review"] }), api.submit("Update status")); return { table: "contacts", fields: { status: "status" } }; }',
+      'function render(api, root) { root.append(api.select({ field: "status", label: "Status", options: ["Active", "Review"] }), api.submit("Update status")); return { table: "contacts" }; }',
     permission_level: 2
   }
 ];
@@ -330,7 +330,7 @@ describe("App", () => {
           JSON.stringify({
             name: "projects",
             display_name: "projects",
-            fields: [{ name: "name", type: "string", deleted: false }],
+            fields: [],
             views: []
           }),
           { status: 201 }
@@ -347,7 +347,7 @@ describe("App", () => {
                   {
                     name: "projects",
                     display_name: "projects",
-                    fields: [{ name: "name", type: "string", deleted: false }],
+                    fields: [],
                     views: []
                   }
                 ]
@@ -626,7 +626,7 @@ describe("App", () => {
             id: 9,
             database_name: "workspace",
             name: "targeted-contact",
-            script: "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Create contact')); return { table: 'contacts', fields: { name: 'name' } }; }"
+            script: "function render(api, root) { root.append(api.input({ field: 'name', label: 'Name' }), api.submit('Create contact')); return { table: 'contacts' }; }"
           }
         ]);
       }

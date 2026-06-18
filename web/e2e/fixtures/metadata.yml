@@ -32,5 +32,5 @@ databases:
                 op: not_empty
                 value: null
             sorts:
-              - field: record_id
+              - field: ct_record_id
                 direction: desc

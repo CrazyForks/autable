@@ -41,14 +41,16 @@ declare global {
   type CodeTableFormInputType = "text" | "email" | "search" | "tel" | "url" | "password";
 
   type CodeTableFormElement =
-    | { kind: "input"; name: string; label: string; inputType: CodeTableFormInputType }
-    | { kind: "select"; name: string; label: string; options: string[] }
+    | { kind: "input"; field: string; label: string; inputType: CodeTableFormInputType }
+    | { kind: "select"; field: string; label: string; options: string[] }
+    | { kind: "relation"; field: string; label: string; table: string; view?: string }
     | { kind: "submit"; label: string }
     | { kind: "html"; html: string };
 
   interface CodeTableFormAPI {
-    input(config: { name: string; label?: string; type?: CodeTableFormInputType }): CodeTableFormElement;
-    select(config: { name: string; label?: string; options: string[] }): CodeTableFormElement;
+    input(config: { field: string; label?: string; type?: CodeTableFormInputType }): CodeTableFormElement;
+    relation(config: { field: string; label?: string; table: string; view?: string }): CodeTableFormElement;
+    select(config: { field: string; label?: string; options: string[] }): CodeTableFormElement;
     submit(label: string): CodeTableFormElement;
   }
 
@@ -60,7 +62,6 @@ declare global {
 
   interface CodeTableFormDefinition {
     table: string;
-    fields: Record<string, string>;
   }
 
   function render(api: CodeTableFormAPI, root: CodeTableFormRoot): CodeTableFormDefinition;

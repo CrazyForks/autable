@@ -409,23 +409,20 @@ export function useWorkflowFormWorkspace({
     if (!submitElement && !renderedForm.elements.some((element) => element.kind === "submit")) {
       return;
     }
-    if (!databaseName || !renderedForm.table || !renderedForm.fields) {
+    if (!databaseName || !renderedForm.table) {
       onStatus(t("status.formRenderTargetRequired"));
       return;
     }
-    const inputValues = Object.fromEntries(
+    const values = Object.fromEntries(
       renderedForm.elements.flatMap((element) => {
-        if (element.kind === "input") {
-          return [[element.name, formValues[element.name] ?? ""]];
+        if (element.kind === "input" || element.kind === "relation") {
+          return [[element.field, formValues[element.field] ?? ""]];
         }
         if (element.kind === "select") {
-          return [[element.name, formValues[element.name] ?? element.options[0] ?? ""]];
+          return [[element.field, formValues[element.field] ?? element.options[0] ?? ""]];
         }
         return [];
       })
-    );
-    const values = Object.fromEntries(
-      Object.entries(renderedForm.fields).map(([inputID, fieldName]) => [fieldName, inputValues[inputID] ?? ""])
     );
     try {
       const saved = await createRow(databaseName, renderedForm.table, values);
@@ -571,7 +568,7 @@ function defaultFormScript(targetTable: string) {
  * @returns {CodeTableFormDefinition}
  */
 function render(api, root) {
-  root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit'));
-  return { table: ${targetTable}, fields: { name: 'name' } };
+  root.append(api.input({ field: 'name', label: 'Name' }), api.submit('Submit'));
+  return { table: ${targetTable} };
 }`;
 }

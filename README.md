@@ -16,7 +16,7 @@ This repository currently contains the backend core primitives:
 - `config.yml` loading and validation, including OIDC settings.
 - YAML metadata for databases and tables, including soft-deleted fields.
 - Authenticated database/table creation that writes metadata YAML and grants database/table owner permissions.
-- Hidden, auto-incrementing `record_id` handling.
+- Hidden, auto-incrementing `ct_record_id` handling for user table storage.
 - Per-metadata-database SQLite row persistence through GORM.
 - Row create/update history written to LevelDB-compatible storage.
 - Table views with composable `base_view`, filters, and sorts.
@@ -32,8 +32,8 @@ This repository currently contains the backend core primitives:
 - A `table.record.changed` trigger node that accepts an `rhistory_db_table_record_id_timestamp` key and exposes the decoded row change.
 - Workflow JavaScript editing with JSON editors for GitHub Actions-style secrets and variables.
 - Git-managed artifacts live under `repository.path`: table metadata at `metadata/main.yml`, workflow JavaScript at `workflow/<database>/<workflow>.js`, and form JavaScript at `form/<database>/<form>.js`.
-- A form JavaScript runtime that requires `function render(api, root)` to render controls and return `{ table, fields }`.
-- Form submissions send input JSON; the backend executes the form JavaScript to resolve the target table and input-to-field mapping before writing records.
+- A form JavaScript runtime that requires `function render(api, root)` to render controls with `field` configs and return `{ table }`.
+- Form submissions send input JSON; the backend executes the form JavaScript to resolve the target table and field-bound controls before writing records.
 
 ## Development Rules
 

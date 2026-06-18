@@ -5,7 +5,24 @@ import (
 	"testing"
 )
 
-func TestCatalogValidateRejectsUserRecordID(t *testing.T) {
+func TestCatalogValidateRejectsReservedCTPrefix(t *testing.T) {
+	catalog := Catalog{Databases: []Database{{
+		Name:       "main",
+		SQLitePath: "./main.sqlite",
+		Tables: []Table{{
+			Name: "tasks",
+			Fields: []Field{
+				{Name: "ct_record_id", Type: "string"},
+			},
+		}},
+	}}}
+
+	if err := catalog.Validate(); err == nil {
+		t.Fatal("expected reserved field validation error")
+	}
+}
+
+func TestCatalogValidateAllowsUserRecordID(t *testing.T) {
 	catalog := Catalog{Databases: []Database{{
 		Name:       "main",
 		SQLitePath: "./main.sqlite",
@@ -17,8 +34,8 @@ func TestCatalogValidateRejectsUserRecordID(t *testing.T) {
 		}},
 	}}}
 
-	if err := catalog.Validate(); err == nil {
-		t.Fatal("expected reserved field validation error")
+	if err := catalog.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -54,7 +71,7 @@ func TestResolveViewComposesBaseView(t *testing.T) {
 				Name:     "active-review",
 				BaseView: "active",
 				Filters:  []ViewFilter{{Field: "name", Op: "contains", Value: "Ada"}},
-				Sorts:    []ViewSort{{Field: "record_id", Direction: "desc"}},
+				Sorts:    []ViewSort{{Field: "ct_record_id", Direction: "desc"}},
 			},
 		},
 	}

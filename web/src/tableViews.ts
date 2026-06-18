@@ -32,7 +32,7 @@ export function applyTableView<T extends Record<string, unknown>>(rows: T[], vie
       }
       return sortDef.direction === "desc" ? rightValue.localeCompare(leftValue) : leftValue.localeCompare(rightValue);
     }
-    return Number(left.record_id ?? 0) - Number(right.record_id ?? 0);
+    return Number(left.ct_record_id ?? 0) - Number(right.ct_record_id ?? 0);
   });
 }
 
@@ -59,5 +59,8 @@ export function resolveTableView(views: TableView[], name: string, visiting: Set
 }
 
 function rowValue(row: Record<string, unknown>, field: string) {
+  if (field === "ct_record_id") {
+    return row.ct_record_id;
+  }
   return row[field];
 }

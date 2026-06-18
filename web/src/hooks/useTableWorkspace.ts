@@ -71,11 +71,11 @@ export function useTableWorkspace({
     [rows, rowsViewName, table.views, selectedTableView]
   );
   const displayedRecordIDs = useMemo(
-    () => displayedRows.map((row) => Number(row.record_id)).filter((recordID) => Number.isFinite(recordID)),
+    () => displayedRows.map((row) => Number(row.ct_record_id)).filter((recordID) => Number.isFinite(recordID)),
     [displayedRows]
   );
   const selectedRow = useMemo(
-    () => displayedRows.find((row) => Number(row.record_id) === selectedRecordID) ?? null,
+    () => displayedRows.find((row) => Number(row.ct_record_id) === selectedRecordID) ?? null,
     [displayedRows, selectedRecordID]
   );
   const relationLabels = useMemo(() => {
@@ -85,10 +85,10 @@ export function useTableWorkspace({
         continue;
       }
       const targetTable = tables.find((item) => item.name === field.relation_table);
-      const labelField = targetTable?.fields.find((item) => !item.deleted && item.name !== "record_id")?.name;
+      const labelField = targetTable?.fields.find((item) => !item.deleted && !item.name.startsWith("ct_"))?.name;
       labels[field.name] = {};
       for (const row of relationRows[field.relation_table] ?? []) {
-        labels[field.name][Number(row.record_id)] = String((labelField ? row[labelField] : row.record_id) ?? "");
+        labels[field.name][Number(row.ct_record_id)] = String((labelField ? row[labelField] : row.ct_record_id) ?? "");
       }
     }
     return labels;
@@ -97,7 +97,7 @@ export function useTableWorkspace({
     () =>
       buildTableColumns(activeFields, relationLabels, (field, recordID) => {
         const targetTable = tables.find((item) => item.name === field.relation_table);
-        const row = relationRows[field.relation_table ?? ""]?.find((item) => Number(item.record_id) === recordID);
+        const row = relationRows[field.relation_table ?? ""]?.find((item) => Number(item.ct_record_id) === recordID);
         if (targetTable && row) {
           setRelationDetail({ field, table: targetTable, row });
         }
@@ -198,12 +198,12 @@ export function useTableWorkspace({
     }
     setRows((current) => [...current, row as TableGridRow]);
     setRowsViewName("local");
-    setSelectedRecordID(Number(row.record_id));
+    setSelectedRecordID(Number(row.ct_record_id));
     setRowHistory([]);
   }
 
   function selectGridCell(args: CellSelectArgs<TableGridRow>) {
-    const recordID = Number(args.row?.record_id);
+    const recordID = Number(args.row?.ct_record_id);
     if (Number.isFinite(recordID)) {
       setSelectedRecordID(recordID);
       setRowHistory([]);
@@ -219,24 +219,24 @@ export function useTableWorkspace({
     if (
       !nextRow ||
       !previousRow ||
-      field === "record_id" ||
+      field === "ct_record_id" ||
       fieldMeta?.type === "formula" ||
       (fieldMeta?.permission_level ?? 2) < 2
     ) {
       return;
     }
-    const recordID = Number(nextRow.record_id);
+    const recordID = Number(nextRow.ct_record_id);
     const nextValue = nextRow[field] ?? "";
     if (previousRow[field] === nextValue) {
       return;
     }
     setRows((current) =>
-      current.map((item) => (Number(item.record_id) === recordID ? { ...item, [field]: nextValue } : item))
+      current.map((item) => (Number(item.ct_record_id) === recordID ? { ...item, [field]: nextValue } : item))
     );
     try {
       const saved = await updateRow(databaseName, table.name, recordID, { [field]: nextValue });
       setRows((current) =>
-        current.map((item) => (Number(item.record_id) === saved.record_id ? rowRecordToValues(saved) : item))
+        current.map((item) => (Number(item.ct_record_id) === saved.record_id ? rowRecordToValues(saved) : item))
       );
       setRowsViewName("local");
       setSelectedRecordID(saved.record_id);
@@ -272,7 +272,7 @@ export function useTableWorkspace({
       onStatus(t("status.fieldNameRequired"));
       return;
     }
-    if (name === "record_id" || table.fields.some((field) => field.name === name && !field.deleted)) {
+    if (name.startsWith("ct_") || table.fields.some((field) => field.name === name && !field.deleted)) {
       onStatus(t("status.fieldAlreadyExists", { name }));
       return;
     }
@@ -407,7 +407,9 @@ export function useTableWorkspace({
     }
     const writableFields = activeFields.filter((field) => field.type !== "formula");
     const values = Object.fromEntries(writableFields.map((field) => [field.name, field.name === "status" ? "Review" : ""]));
-    values.name = `New record ${rows.length + 1}`;
+    if (writableFields.some((field) => field.name === "name")) {
+      values.name = `New record ${rows.length + 1}`;
+    }
     try {
       const saved = await createRow(databaseName, table.name, values);
       setRows((current) => [...current, rowRecordToValues(saved)]);
@@ -436,7 +438,7 @@ export function useTableWorkspace({
       );
       const saved = await updateRow(databaseName, table.name, selectedRecordID, values);
       setRows((current) =>
-      current.map((item) => (Number(item.record_id) === saved.record_id ? rowRecordToValues(saved) : item))
+        current.map((item) => (Number(item.ct_record_id) === saved.record_id ? rowRecordToValues(saved) : item))
       );
       setRowsViewName("local");
       setSelectedRecordID(saved.record_id);
@@ -454,7 +456,7 @@ export function useTableWorkspace({
     }
     try {
       const deleted = await deleteRow(databaseName, table.name, recordID);
-      setRows((current) => current.filter((item) => Number(item.record_id) !== deleted.record_id));
+      setRows((current) => current.filter((item) => Number(item.ct_record_id) !== deleted.record_id));
       setRowsViewName("local");
       setSelectedRecordID(0);
       setRowHistory([]);

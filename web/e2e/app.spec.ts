@@ -212,7 +212,7 @@ async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
     database_name: databaseName,
     name: `quick-status-${suffix}`,
     script:
-      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.input({ name: 'email', label: 'Email', type: 'email' }), api.select({ name: 'status', label: 'Status', options: ['Active', 'Review'] }), api.submit('Create record')); return { table: 'contacts', fields: { name: 'name', email: 'email', status: 'status' } }; }"
+      "function render(api, root) { root.append(api.input({ field: 'name', label: 'Name' }), api.input({ field: 'email', label: 'Email', type: 'email' }), api.select({ field: 'status', label: 'Status', options: ['Active', 'Review'] }), api.submit('Create record')); return { table: 'contacts' }; }"
   });
   await page.reload();
   await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
@@ -277,7 +277,7 @@ test("shows database-owned workflow and form lists across table owners", async (
   await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     name: formName,
     script:
-      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }"
+      "function render(api, root) { root.append(api.input({ field: 'name', label: 'Name' }), api.submit('Save')); return { table: 'contacts' }; }"
   });
 
   await api(page, "POST", "/api/auth/logout");
@@ -318,7 +318,7 @@ test("hides workflow and form resources without resource permission", async ({ p
   await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     name: formName,
     script:
-      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Save')); return { table: 'contacts', fields: { name: 'name' } }; }"
+      "function render(api, root) { root.append(api.input({ field: 'name', label: 'Name' }), api.submit('Save')); return { table: 'contacts' }; }"
   });
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: resourceUser.id,
@@ -373,7 +373,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
   const form = (await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     name: formName,
     script:
-      "function render(api, root) { root.append(api.input({ name: 'name', label: 'Name' }), api.submit('Submit record')); return { table: 'contacts', fields: { name: 'name' } }; }"
+      "function render(api, root) { root.append(api.input({ field: 'name', label: 'Name' }), api.submit('Submit record')); return { table: 'contacts' }; }"
   })) as { id: number };
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: readOnlyUser.id,
@@ -867,7 +867,7 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
 
   const formName = `repo-form-${suffix}`;
   const formScript =
-    "function render(api, root) { root.append(api.input({ name: 'email', label: 'Email' }), api.submit('Save')); return { table: 'contacts', fields: { email: 'email' } }; }";
+    "function render(api, root) { root.append(api.input({ field: 'email', label: 'Email' }), api.submit('Save')); return { table: 'contacts' }; }";
   const form = (await api(page, "POST", `/api/databases/${databaseName}/forms`, {
     database_name: databaseName,
     name: formName,
@@ -882,7 +882,7 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
   );
   expect(readFileSync(formPath, "utf8")).toBe(formScript);
   const editedFormScript =
-    "function render(api, root) { root.append(api.input({ name: 'from_file', label: 'From file' }), api.submit('Save')); return { table: 'contacts', fields: { from_file: 'name' } }; }";
+    "function render(api, root) { root.append(api.input({ field: 'name', label: 'From file' }), api.submit('Save')); return { table: 'contacts' }; }";
   writeFileSync(formPath, editedFormScript);
   const loadedForm = (await api(page, "GET", `/api/forms/${form.id}`)) as { script: string };
   expect(loadedForm.script).toBe(editedFormScript);
@@ -902,7 +902,7 @@ test("covers form runtime preview and submit through the real backend", async ({
   await fillMonacoEditor(
     page,
     "Form JavaScript",
-    "function render(api, root) {\n  root.append(\n    api.input({ name: 'name', label: 'Name' }),\n    api.input({ name: 'email', label: 'Email', type: 'email' }),\n    api.submit('Submit')\n  );\n  return { table: 'contacts', fields: { name: 'name', email: 'email' } };\n}"
+    "function render(api, root) {\n  root.append(\n    api.input({ field: 'name', label: 'Name' }),\n    api.input({ field: 'email', label: 'Email', type: 'email' }),\n    api.submit('Submit')\n  );\n  return { table: 'contacts' };\n}"
   );
   await expect(page.getByRole("textbox", { name: "Email", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save" }).click();

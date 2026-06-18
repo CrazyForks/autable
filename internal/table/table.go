@@ -283,7 +283,7 @@ func validateWritableFields(tableMeta metadata.Table, perms permission.Set, acto
 		if !ok {
 			return fmt.Errorf("%w: %s", metadata.ErrUnknownField, fieldName)
 		}
-		if field.Name == "record_id" {
+		if strings.HasPrefix(field.Name, "ct_") {
 			return fmt.Errorf("%w: %s", ErrPermissionDenied, fieldName)
 		}
 		if field.Deleted {
@@ -455,7 +455,7 @@ func applySorts(rows []Row, sorts []metadata.ViewSort) {
 }
 
 func rowValue(row Row, field string) any {
-	if field == "record_id" {
+	if field == "ct_record_id" {
 		return row.RecordID
 	}
 	return row.Values[field]

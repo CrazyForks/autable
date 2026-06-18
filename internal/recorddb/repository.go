@@ -23,6 +23,12 @@ import (
 
 var ErrUnknownDatabase = errors.New("unknown database")
 
+const (
+	recordIDColumn  = "ct_record_id"
+	createdAtColumn = "ct_created_at"
+	updatedAtColumn = "ct_updated_at"
+)
+
 type Repository struct {
 	mu  sync.RWMutex
 	dbs map[string]*gorm.DB
@@ -87,7 +93,7 @@ func (repository *Repository) CreateRow(ctx context.Context, dbName string, tabl
 		}
 		var row map[string]any
 		if err := tx.Table(physicalTableName(tableMeta.Name)).
-			Order(clause.OrderByColumn{Column: clause.Column{Name: "record_id"}, Desc: true}).
+			Order(clause.OrderByColumn{Column: clause.Column{Name: recordIDColumn}, Desc: true}).
 			Limit(1).
 			Take(&row).
 			Error; err != nil {
@@ -112,7 +118,7 @@ func (repository *Repository) UpdateRow(ctx context.Context, dbName string, tabl
 	}
 	result := db.WithContext(ctx).
 		Table(physicalTableName(tableMeta.Name)).
-		Where(map[string]any{"record_id": recordID}).
+		Where(map[string]any{recordIDColumn: recordID}).
 		Updates(updateValues(values))
 	if result.Error != nil {
 		return table.Row{}, result.Error
@@ -134,7 +140,7 @@ func (repository *Repository) DeleteRow(ctx context.Context, dbName string, tabl
 	}
 	if err := db.WithContext(ctx).
 		Table(physicalTableName(tableMeta.Name)).
-		Where(map[string]any{"record_id": recordID}).
+		Where(map[string]any{recordIDColumn: recordID}).
 		Delete(&map[string]any{}).
 		Error; err != nil {
 		return table.Row{}, err
@@ -153,7 +159,7 @@ func (repository *Repository) Row(ctx context.Context, dbName string, tableMeta 
 	var record map[string]any
 	err = db.WithContext(ctx).
 		Table(physicalTableName(tableMeta.Name)).
-		Where(map[string]any{"record_id": recordID}).
+		Where(map[string]any{recordIDColumn: recordID}).
 		Take(&record).
 		Error
 	if err != nil {
@@ -173,18 +179,18 @@ func (repository *Repository) RestoreRow(ctx context.Context, dbName string, tab
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record map[string]any
 		err := tx.Table(physicalTableName(tableMeta.Name)).
-			Where(map[string]any{"record_id": row.RecordID}).
+			Where(map[string]any{recordIDColumn: row.RecordID}).
 			Take(&record).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		values := insertValues(row.Values)
-		values["record_id"] = row.RecordID
+		values[recordIDColumn] = row.RecordID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return tx.Table(physicalTableName(tableMeta.Name)).Create(values).Error
 		}
 		return tx.Table(physicalTableName(tableMeta.Name)).
-			Where(map[string]any{"record_id": row.RecordID}).
+			Where(map[string]any{recordIDColumn: row.RecordID}).
 			Updates(updateValues(row.Values)).Error
 	})
 }
@@ -200,7 +206,7 @@ func (repository *Repository) Rows(ctx context.Context, dbName string, tableMeta
 	var records []map[string]any
 	err = db.WithContext(ctx).
 		Table(physicalTableName(tableMeta.Name)).
-		Order(clause.OrderByColumn{Column: clause.Column{Name: "record_id"}}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: recordIDColumn}}).
 		Find(&records).
 		Error
 	if err != nil {
@@ -257,17 +263,17 @@ func dynamicModel(tableMeta metadata.Table) any {
 		{
 			Name: "RecordID",
 			Type: reflect.TypeOf(int64(0)),
-			Tag:  `gorm:"primaryKey;autoIncrement;column:record_id"`,
+			Tag:  `gorm:"primaryKey;autoIncrement;column:ct_record_id"`,
 		},
 		{
 			Name: "CreatedAt",
 			Type: reflect.TypeOf(int64(0)),
-			Tag:  `gorm:"autoCreateTime:milli;not null;column:created_at"`,
+			Tag:  `gorm:"autoCreateTime:milli;not null;column:ct_created_at"`,
 		},
 		{
 			Name: "UpdatedAt",
 			Type: reflect.TypeOf(int64(0)),
-			Tag:  `gorm:"autoUpdateTime:milli;not null;column:updated_at"`,
+			Tag:  `gorm:"autoUpdateTime:milli;not null;column:ct_updated_at"`,
 		},
 	}
 	for index, field := range tableMeta.ActiveFields() {
@@ -332,24 +338,24 @@ func sqliteType(fieldType string) string {
 
 func insertValues(values map[string]any) map[string]any {
 	next := cloneValues(values)
-	delete(next, "created_at")
-	delete(next, "updated_at")
+	delete(next, createdAtColumn)
+	delete(next, updatedAtColumn)
 	now := time.Now().UTC().UnixMilli()
-	next["created_at"] = now
-	next["updated_at"] = now
+	next[createdAtColumn] = now
+	next[updatedAtColumn] = now
 	return next
 }
 
 func updateValues(values map[string]any) map[string]any {
 	next := cloneValues(values)
-	delete(next, "created_at")
-	delete(next, "updated_at")
-	next["updated_at"] = time.Now().UTC().UnixMilli()
+	delete(next, createdAtColumn)
+	delete(next, updatedAtColumn)
+	next[updatedAtColumn] = time.Now().UTC().UnixMilli()
 	return next
 }
 
 func mapToRow(tableMeta metadata.Table, record map[string]any) table.Row {
-	recordID := int64Value(record["record_id"])
+	recordID := int64Value(record[recordIDColumn])
 	values := map[string]any{}
 	for _, field := range tableMeta.ActiveFields() {
 		values[field.Name] = recordValue(record, field.Name)
