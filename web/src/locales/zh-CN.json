@@ -308,6 +308,7 @@
     "noNodesAvailable": "暂无工作流节点",
     "noWorkflowSelected": "未选择工作流",
     "noRunsYet": "暂无运行记录",
+    "payloadTabs": "工作流运行数据标签",
     "runList": "工作流运行节点",
     "runInput": "运行输入",
     "runOutput": "运行输出",

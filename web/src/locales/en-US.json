@@ -308,6 +308,7 @@
     "noNodesAvailable": "No workflow nodes available",
     "noWorkflowSelected": "No workflow selected",
     "noRunsYet": "No runs yet",
+    "payloadTabs": "Workflow run payload tabs",
     "runList": "Workflow run nodes",
     "runInput": "Run input",
     "runOutput": "Run output",

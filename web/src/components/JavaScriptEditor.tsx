@@ -7,6 +7,7 @@ type JavaScriptEditorProps = {
   canWrite: boolean;
   extraLibs?: EditorExtraLib[];
   label: string;
+  language?: "javascript" | "json";
   onChange: (script: string) => void;
   path: string;
   testID: string;
@@ -20,7 +21,16 @@ type Disposable = {
 const configuredMonacos = new WeakSet<object>();
 const extraLibDisposables = new Map<string, { content: string; disposable: Disposable }>();
 
-export function JavaScriptEditor({ canWrite, extraLibs = [], label, onChange, path, testID, value }: JavaScriptEditorProps) {
+export function JavaScriptEditor({
+  canWrite,
+  extraLibs = [],
+  label,
+  language = "javascript",
+  onChange,
+  path,
+  testID,
+  value
+}: JavaScriptEditorProps) {
   const { t } = useTranslation();
   const monaco = useMonaco();
   const normalizedExtraLibs = useMemo(
@@ -29,26 +39,28 @@ export function JavaScriptEditor({ canWrite, extraLibs = [], label, onChange, pa
   );
 
   useEffect(() => {
-    if (!monaco) {
+    if (!monaco || language !== "javascript") {
       return;
     }
     configureJavaScriptLanguage(monaco);
     installExtraLibs(monaco, normalizedExtraLibs);
-  }, [monaco, normalizedExtraLibs]);
+  }, [language, monaco, normalizedExtraLibs]);
 
   const beforeMount = useCallback((nextMonaco: Monaco) => {
-    configureJavaScriptLanguage(nextMonaco);
-    installExtraLibs(nextMonaco, normalizedExtraLibs);
-  }, [normalizedExtraLibs]);
+    if (language === "javascript") {
+      configureJavaScriptLanguage(nextMonaco);
+      installExtraLibs(nextMonaco, normalizedExtraLibs);
+    }
+  }, [language, normalizedExtraLibs]);
 
   return (
     <div className="javascript-editor-shell">
       <MonacoEditor
         beforeMount={beforeMount}
         className="javascript-editor"
-        defaultLanguage="javascript"
+        defaultLanguage={language}
         height="100%"
-        language="javascript"
+        language={language}
         loading={<span className="flow-empty">{t("common.loadingEditor")}</span>}
         onChange={(nextValue) => onChange(nextValue ?? "")}
         options={{

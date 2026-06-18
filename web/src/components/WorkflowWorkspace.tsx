@@ -269,10 +269,7 @@ function WorkflowHistoryView({
                     {selectedItem.subtitle && <Text size={200}>{selectedItem.subtitle}</Text>}
                     {selectedItem.error && <Text size={200}>{selectedItem.error}</Text>}
                   </div>
-                  <div className="run-item-payloads">
-                    {selectedItem.input && <RunPayload title={t("common.input")} value={selectedItem.input} />}
-                    {selectedItem.output && <RunPayload title={t("common.output")} value={selectedItem.output} />}
-                  </div>
+                  <RunPayloadTabs item={selectedItem} />
                 </>
               ) : (
                 <Text size={200}>{t("workflow.selectRunItem")}</Text>
@@ -633,13 +630,43 @@ function secretMask(length: number): string {
   return length > 0 ? "x".repeat(length) : "";
 }
 
-function RunPayload({ title, value }: { title: string; value: Record<string, unknown> }) {
+function RunPayloadTabs({ item }: { item: WorkflowRunListItem }) {
+  const { t } = useTranslation();
+  const [selectedPayload, setSelectedPayload] = useState<"input" | "output">("input");
+  const payloads = [
+    item.input ? { id: "input" as const, label: t("common.input"), value: item.input } : undefined,
+    item.output ? { id: "output" as const, label: t("common.output"), value: item.output } : undefined
+  ].filter((payload): payload is { id: "input" | "output"; label: string; value: Record<string, unknown> } => Boolean(payload));
+  const activePayload = payloads.find((payload) => payload.id === selectedPayload) ?? payloads[0];
+
+  if (!activePayload) {
+    return null;
+  }
+
   return (
-    <div className="run-payload">
-      <Text size={200} weight="semibold">
-        {title}
-      </Text>
-      <pre>{JSON.stringify(value, null, 2)}</pre>
+    <div className="run-payload-tabs">
+      <TabList
+        selectedValue={activePayload.id}
+        onTabSelect={(_, data) => setSelectedPayload(data.value as "input" | "output")}
+        aria-label={t("workflow.payloadTabs")}
+      >
+        {payloads.map((payload) => (
+          <Tab key={payload.id} value={payload.id}>
+            {payload.label}
+          </Tab>
+        ))}
+      </TabList>
+      <div className="run-payload-editor">
+        <JavaScriptEditor
+          canWrite={false}
+          label={activePayload.label}
+          language="json"
+          onChange={() => undefined}
+          path={`workflow-run-${item.id}-${activePayload.id}.json`}
+          testID={`workflow-run-${activePayload.id}-editor`}
+          value={JSON.stringify(activePayload.value, null, 2)}
+        />
+      </div>
     </div>
   );
 }
