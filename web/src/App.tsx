@@ -454,6 +454,7 @@ function WorkspaceApp() {
               onNewViewFilterValueChange={tableWorkspace.setNewViewFilterValue}
               onNewViewSortDirectionChange={tableWorkspace.setNewViewSortDirection}
               onNewViewSortFieldChange={tableWorkspace.setNewViewSortField}
+              onMoveFieldPosition={tableWorkspace.moveFieldPosition}
               onRowsChange={tableWorkspace.editGridRows}
               onSelectGridCell={tableWorkspace.selectGridCell}
               onSelectRecordID={tableWorkspace.setSelectedRecordID}

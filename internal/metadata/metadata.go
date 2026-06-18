@@ -218,6 +218,68 @@ func (catalog Catalog) UpdateTable(dbName, tableName string, table Table) (Catal
 	return Catalog{}, fmt.Errorf("database %q not found", dbName)
 }
 
+func (catalog Catalog) MoveFieldToStart(dbName, tableName, fieldName string) (Catalog, error) {
+	return catalog.moveField(dbName, tableName, fieldName, 0)
+}
+
+func (catalog Catalog) MoveFieldBefore(dbName, tableName, fieldName, targetFieldName string) (Catalog, error) {
+	return catalog.moveFieldRelative(dbName, tableName, fieldName, targetFieldName, false)
+}
+
+func (catalog Catalog) MoveFieldAfter(dbName, tableName, fieldName, targetFieldName string) (Catalog, error) {
+	return catalog.moveFieldRelative(dbName, tableName, fieldName, targetFieldName, true)
+}
+
+func (catalog Catalog) moveFieldRelative(dbName, tableName, fieldName, targetFieldName string, after bool) (Catalog, error) {
+	if targetFieldName == "" {
+		return Catalog{}, errors.New("target field is required")
+	}
+	if fieldName == targetFieldName {
+		return Catalog{}, errors.New("field cannot be moved relative to itself")
+	}
+	table, ok := catalog.Table(dbName, tableName)
+	if !ok {
+		return Catalog{}, fmt.Errorf("database %q table %q not found", dbName, tableName)
+	}
+	fields := slices.Clone(table.Fields)
+	sourceIndex := slices.IndexFunc(fields, func(field Field) bool { return field.Name == fieldName })
+	if sourceIndex < 0 {
+		return Catalog{}, fmt.Errorf("field %q not found", fieldName)
+	}
+	moved := fields[sourceIndex]
+	fields = slices.Delete(fields, sourceIndex, sourceIndex+1)
+	targetIndex := slices.IndexFunc(fields, func(field Field) bool { return field.Name == targetFieldName })
+	if targetIndex < 0 {
+		return Catalog{}, fmt.Errorf("target field %q not found", targetFieldName)
+	}
+	if after {
+		targetIndex++
+	}
+	fields = slices.Insert(fields, targetIndex, moved)
+	table.Fields = fields
+	return catalog.UpdateTable(dbName, tableName, table)
+}
+
+func (catalog Catalog) moveField(dbName, tableName, fieldName string, index int) (Catalog, error) {
+	if fieldName == "" {
+		return Catalog{}, errors.New("field is required")
+	}
+	table, ok := catalog.Table(dbName, tableName)
+	if !ok {
+		return Catalog{}, fmt.Errorf("database %q table %q not found", dbName, tableName)
+	}
+	fields := slices.Clone(table.Fields)
+	sourceIndex := slices.IndexFunc(fields, func(field Field) bool { return field.Name == fieldName })
+	if sourceIndex < 0 {
+		return Catalog{}, fmt.Errorf("field %q not found", fieldName)
+	}
+	moved := fields[sourceIndex]
+	fields = slices.Delete(fields, sourceIndex, sourceIndex+1)
+	fields = slices.Insert(fields, index, moved)
+	table.Fields = fields
+	return catalog.UpdateTable(dbName, tableName, table)
+}
+
 func validateFieldTypesUnchanged(existing Table, next Table) error {
 	existingTypes := map[string]Field{}
 	for _, field := range existing.Fields {

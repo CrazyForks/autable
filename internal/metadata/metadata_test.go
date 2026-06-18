@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -20,6 +21,14 @@ func TestCatalogValidateRejectsReservedCTPrefix(t *testing.T) {
 	if err := catalog.Validate(); err == nil {
 		t.Fatal("expected reserved field validation error")
 	}
+}
+
+func fieldNames(fields []Field) []string {
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		names = append(names, field.Name)
+	}
+	return names
 }
 
 func TestCatalogValidateAllowsUserRecordID(t *testing.T) {
@@ -222,6 +231,52 @@ func TestUpdateTableRejectsFieldTypeChange(t *testing.T) {
 	table, ok := updated.Table("workspace", "contacts")
 	if !ok || len(table.Fields) != 2 {
 		t.Fatalf("expected adding a new field to be allowed, got %#v", table)
+	}
+}
+
+func TestMoveFieldPreservesUnmentionedFields(t *testing.T) {
+	catalog := Catalog{Databases: []Database{{
+		Name:       "workspace",
+		SQLitePath: "./data/workspace.sqlite",
+		Tables: []Table{{
+			Name: "contacts",
+			Fields: []Field{
+				{Name: "name", Type: "string"},
+				{Name: "hidden", Type: "string"},
+				{Name: "email", Type: "string"},
+				{Name: "status", Type: "string"},
+			},
+		}},
+	}}}
+
+	updated, err := catalog.MoveFieldBefore("workspace", "contacts", "status", "name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := updated.Table("workspace", "contacts")
+	if !ok {
+		t.Fatal("expected contacts table")
+	}
+	if got := fieldNames(table.Fields); !slices.Equal(got, []string{"status", "name", "hidden", "email"}) {
+		t.Fatalf("unexpected field order: %#v", got)
+	}
+
+	updated, err = updated.MoveFieldAfter("workspace", "contacts", "status", "email")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, _ = updated.Table("workspace", "contacts")
+	if got := fieldNames(table.Fields); !slices.Equal(got, []string{"name", "hidden", "email", "status"}) {
+		t.Fatalf("unexpected field order: %#v", got)
+	}
+
+	updated, err = updated.MoveFieldToStart("workspace", "contacts", "email")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, _ = updated.Table("workspace", "contacts")
+	if got := fieldNames(table.Fields); !slices.Equal(got, []string{"email", "name", "hidden", "status"}) {
+		t.Fatalf("unexpected field order: %#v", got)
 	}
 }
 

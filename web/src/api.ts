@@ -221,6 +221,32 @@ export async function updateTableMetadata(
   return response.json() as Promise<TableMetadata>;
 }
 
+export type FieldPositionRequest =
+  | { position: "start"; before?: never; after?: never }
+  | { before: string; position?: never; after?: never }
+  | { after: string; position?: never; before?: never };
+
+export async function moveTableFieldPosition(
+  dbName: string,
+  tableName: string,
+  fieldName: string,
+  position: FieldPositionRequest
+): Promise<TableMetadata> {
+  const response = await fetch(
+    `/api/databases/${encodeURIComponent(dbName)}/tables/${encodeURIComponent(tableName)}/fields/${encodeURIComponent(fieldName)}/position`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(position)
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error ?? "field position update failed");
+  }
+  return response.json() as Promise<TableMetadata>;
+}
+
 export async function createRow(
   dbName: string,
   tableName: string,

@@ -57,6 +57,7 @@ type TableWorkspaceProps = {
   onNewViewFilterValueChange: (value: string) => void;
   onNewViewSortDirectionChange: (value: TableViewSort["direction"]) => void;
   onNewViewSortFieldChange: (value: string) => void;
+  onMoveFieldPosition: (sourceFieldName: string, targetFieldName: string) => void | Promise<void>;
   onSelectGridCell: (args: CellSelectArgs<TableGridRow>) => void;
   onSelectRecordID: (recordID: number) => void;
   onSelectedRowValueChange: (fieldName: string, value: string) => void;
@@ -106,6 +107,7 @@ export function TableWorkspace({
   onNewViewFilterValueChange,
   onNewViewSortDirectionChange,
   onNewViewSortFieldChange,
+  onMoveFieldPosition,
   onSelectGridCell,
   onSelectRecordID,
   onSelectedRowValueChange,
@@ -185,6 +187,7 @@ export function TableWorkspace({
         }
         return {
           ...column,
+          draggable: canWriteTable,
           renderHeaderCell: () => (
             <FieldHeader
               canWriteTable={canWriteTable}
@@ -209,6 +212,7 @@ export function TableWorkspace({
         minWidth: 48,
         resizable: false,
         editable: false,
+        draggable: false,
         renderHeaderCell: () => (
           <button
             type="button"
@@ -334,6 +338,9 @@ export function TableWorkspace({
           }}
           onSelectedCellChange={(args) => {
             onSelectGridCell(args);
+          }}
+          onColumnsReorder={(sourceColumnKey, targetColumnKey) => {
+            void onMoveFieldPosition(sourceColumnKey, targetColumnKey);
           }}
           onCellContextMenu={(args, event) => {
             event.preventGridDefault();

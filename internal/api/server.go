@@ -98,6 +98,12 @@ type workflowRunRequest struct {
 	Inputs map[string]any `json:"inputs"`
 }
 
+type fieldPositionRequest struct {
+	Position string `json:"position,omitempty"`
+	Before   string `json:"before,omitempty"`
+	After    string `json:"after,omitempty"`
+}
+
 type workflowRunResponse struct {
 	HistoryKey string              `json:"history_key"`
 	Run        history.WorkflowRun `json:"run"`
@@ -243,6 +249,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/databases/", server.handleGetDatabaseResource)
 	server.mux.HandleFunc("POST /api/databases/", server.handlePostDatabaseResource)
 	server.mux.HandleFunc("PUT /api/databases/", server.handlePutDatabaseResource)
+	server.mux.HandleFunc("PATCH /api/databases/", server.handlePatchDatabaseResource)
 	server.mux.HandleFunc("GET /api/workflow/nodes", server.handleWorkflowNodes)
 	server.mux.HandleFunc("POST /api/workflows", server.handleSaveWorkflow)
 	server.mux.HandleFunc("POST /api/workflows/", server.handleRunWorkflow)
@@ -1017,6 +1024,37 @@ func (server *Server) handlePutDatabaseResource(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (server *Server) handlePatchDatabaseResource(w http.ResponseWriter, r *http.Request) {
+	dbName, tableName, fieldName, ok := parseDatabaseTableFieldPositionPath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	actorID, ok := server.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if !server.requireDatabaseOrSpecificTableWrite(w, r, actorID, dbName, tableName) {
+		return
+	}
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var request fieldPositionRequest
+	if err := readJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	tableMeta, err := server.moveField(r.Context(), dbName, tableName, fieldName, request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, visibleTableMetadata(perms, actorID, dbName, tableMeta))
+}
+
 func (server *Server) handleUpdateTableMetadata(w http.ResponseWriter, r *http.Request, dbName, tableName string) {
 	actorID, ok := server.requireUserID(w, r)
 	if !ok {
@@ -1730,6 +1768,29 @@ func parseDatabaseTablePath(path string) (string, string, bool) {
 	return parts[2], parts[4], true
 }
 
+func parseDatabaseTableFieldPositionPath(path string) (string, string, string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 8 || parts[0] != "api" || parts[1] != "databases" || parts[3] != "tables" || parts[5] != "fields" || parts[7] != "position" {
+		return "", "", "", false
+	}
+	if parts[2] == "" || parts[4] == "" || parts[6] == "" {
+		return "", "", "", false
+	}
+	dbName, err := url.PathUnescape(parts[2])
+	if err != nil || dbName == "" {
+		return "", "", "", false
+	}
+	tableName, err := url.PathUnescape(parts[4])
+	if err != nil || tableName == "" {
+		return "", "", "", false
+	}
+	fieldName, err := url.PathUnescape(parts[6])
+	if err != nil || fieldName == "" {
+		return "", "", "", false
+	}
+	return dbName, tableName, fieldName, true
+}
+
 func parseRoleActionPath(path string) (string, string, string, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 6 || parts[0] != "api" || parts[1] != "databases" || parts[3] != "roles" {
@@ -1971,6 +2032,54 @@ func (server *Server) updateTable(ctx context.Context, dbName, tableName string,
 	}
 	server.catalog = next
 	return nil
+}
+
+func (server *Server) moveField(ctx context.Context, dbName, tableName, fieldName string, request fieldPositionRequest) (metadata.Table, error) {
+	if server.metadataPath == "" {
+		return metadata.Table{}, errors.New("metadata writes are not configured")
+	}
+	targets := 0
+	if request.Position != "" {
+		targets++
+	}
+	if request.Before != "" {
+		targets++
+	}
+	if request.After != "" {
+		targets++
+	}
+	if targets != 1 {
+		return metadata.Table{}, errors.New("field position must specify exactly one of position, before, or after")
+	}
+	server.catalogMu.Lock()
+	defer server.catalogMu.Unlock()
+	var (
+		next metadata.Catalog
+		err  error
+	)
+	switch {
+	case request.Position != "":
+		if request.Position != "start" {
+			return metadata.Table{}, errors.New("field position must be start")
+		}
+		next, err = server.catalog.MoveFieldToStart(dbName, tableName, fieldName)
+	case request.Before != "":
+		next, err = server.catalog.MoveFieldBefore(dbName, tableName, fieldName, request.Before)
+	case request.After != "":
+		next, err = server.catalog.MoveFieldAfter(dbName, tableName, fieldName, request.After)
+	}
+	if err != nil {
+		return metadata.Table{}, err
+	}
+	tableMeta, ok := next.Table(dbName, tableName)
+	if !ok {
+		return metadata.Table{}, fmt.Errorf("database %q table %q not found", dbName, tableName)
+	}
+	if err := metadata.Save(server.metadataPath, next); err != nil {
+		return metadata.Table{}, err
+	}
+	server.catalog = next
+	return tableMeta, nil
 }
 
 func (server *Server) requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {

@@ -7,6 +7,7 @@ import {
   listRowHistory,
   listRows,
   loadMetadata,
+  moveTableFieldPosition,
   updateRow,
   updateTableMetadata,
   type Catalog,
@@ -244,6 +245,31 @@ export function useTableWorkspace({
       onStatus(t("status.updatedRecord", { id: saved.record_id }));
     } catch (error) {
       onStatus(error instanceof Error ? error.message : t("status.rowUpdateFailed"));
+    }
+  }
+
+  async function moveFieldPosition(sourceFieldName: string, targetFieldName: string) {
+    if (!databaseName || !table.name) {
+      onStatus(t("status.selectTableBeforeMetadata"));
+      return;
+    }
+    if (sourceFieldName === targetFieldName || sourceFieldName === "__add_field__" || targetFieldName === "__add_field__") {
+      return;
+    }
+    if (!activeFields.some((field) => field.name === sourceFieldName) || !activeFields.some((field) => field.name === targetFieldName)) {
+      onStatus(t("status.fieldReorderInvalid"));
+      return;
+    }
+    const sourceIndex = activeFields.findIndex((field) => field.name === sourceFieldName);
+    const targetIndex = activeFields.findIndex((field) => field.name === targetFieldName);
+    const request = sourceIndex < targetIndex ? { after: targetFieldName } : { before: targetFieldName };
+    try {
+      await moveTableFieldPosition(databaseName, table.name, sourceFieldName, request);
+      const nextCatalog = await loadMetadata();
+      onCatalogChanged(nextCatalog, table.name, selectedTableView);
+      onStatus(t("status.reorderedField", { name: sourceFieldName }));
+    } catch (error) {
+      onStatus(error instanceof Error ? error.message : t("status.fieldReorderFailed"));
     }
   }
 
@@ -508,6 +534,7 @@ export function useTableWorkspace({
     deleteFieldFromCanvas,
     deleteSelectedRow,
     editGridRows,
+    moveFieldPosition,
     loadSelectedRowHistory,
     resetRows,
     setNewFieldName,

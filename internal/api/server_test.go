@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,6 +33,14 @@ import (
 	"codetable/internal/table"
 	"codetable/internal/workflow"
 )
+
+func metadataFieldNames(fields []metadata.Field) []string {
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		names = append(names, field.Name)
+	}
+	return names
+}
 
 func TestPasswordAuthSessionLifecycle(t *testing.T) {
 	server, _ := newTestServer(t)
@@ -860,6 +869,52 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 	}
 	if len(resolved.Filters) != 1 || len(resolved.Sorts) != 1 {
 		t.Fatalf("expected composed based view, got %#v", resolved)
+	}
+}
+
+func TestTableOwnerCanMoveFieldPosition(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "workspace",
+		SQLitePath: "./data/workspace.sqlite",
+		Tables: []metadata.Table{{
+			Name: "contacts",
+			Fields: []metadata.Field{
+				{Name: "name", Type: "string"},
+				{Name: "hidden", Type: "string"},
+				{Name: "email", Type: "string"},
+				{Name: "status", Type: "string"},
+			},
+		}},
+	}}}
+	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "workspace.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/databases/workspace/tables/contacts/fields/status/position", bytes.NewBufferString(`{"before":"name"}`))
+	request.AddCookie(testSessionCookie(t, system, "owner"))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected field move 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	loaded, err := metadata.Load(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tableMeta, ok := loaded.Table("workspace", "contacts")
+	if !ok {
+		t.Fatal("expected contacts table")
+	}
+	if got := metadataFieldNames(tableMeta.Fields); !slices.Equal(got, []string{"status", "name", "hidden", "email"}) {
+		t.Fatalf("unexpected field order: %#v", got)
 	}
 }
 
