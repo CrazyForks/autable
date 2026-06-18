@@ -47,8 +47,10 @@ type Server struct {
 type codeFileStore interface {
 	SaveWorkflowScript(context.Context, systemdb.WorkflowDefinition) error
 	LoadWorkflowScript(context.Context, systemdb.WorkflowDefinition) (string, bool, error)
+	DeleteWorkflowScript(context.Context, systemdb.WorkflowDefinition) error
 	SaveFormScript(context.Context, systemdb.FormDefinition) error
 	LoadFormScript(context.Context, systemdb.FormDefinition) (string, bool, error)
+	DeleteFormScript(context.Context, systemdb.FormDefinition) error
 }
 
 type createDatabaseRequest struct {
@@ -755,12 +757,8 @@ func (server *Server) handleSaveWorkflow(w http.ResponseWriter, r *http.Request)
 	if workflow.ID == 0 {
 		workflow.CreatorID = actorID
 	}
-	saved, err := server.system.SaveWorkflow(r.Context(), workflow)
+	saved, err := server.saveWorkflowDefinition(r.Context(), workflow)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := server.saveWorkflowScriptFile(r.Context(), saved); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -895,12 +893,8 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 		if workflow.ID == 0 {
 			workflow.CreatorID = actorID
 		}
-		saved, err := server.system.SaveWorkflow(r.Context(), workflow)
+		saved, err := server.saveWorkflowDefinition(r.Context(), workflow)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if err := server.saveWorkflowScriptFile(r.Context(), saved); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -927,12 +921,8 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			return
 		}
 		form.DatabaseName = dbName
-		saved, err := server.system.SaveForm(r.Context(), form)
+		saved, err := server.saveFormDefinition(r.Context(), form)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if err := server.saveFormScriptFile(r.Context(), saved); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -1421,12 +1411,8 @@ func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
 	if form.ID != 0 && !server.requireExistingFormDatabase(w, r, form.ID, form.DatabaseName) {
 		return
 	}
-	saved, err := server.system.SaveForm(r.Context(), form)
+	saved, err := server.saveFormDefinition(r.Context(), form)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := server.saveFormScriptFile(r.Context(), saved); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -1485,9 +1471,20 @@ func (server *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Reques
 	if !server.requireResourceWrite(w, r, actorID, permission.ScopeWorkflow, id) {
 		return
 	}
+	workflow, err := server.system.Workflow(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
 	if err := server.system.DeleteWorkflow(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if server.codeFiles != nil {
+		if err := server.codeFiles.DeleteWorkflowScript(r.Context(), workflow); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1505,9 +1502,20 @@ func (server *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request) {
 	if !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, id) {
 		return
 	}
+	form, err := server.system.Form(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
 	if err := server.system.DeleteForm(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if server.codeFiles != nil {
+		if err := server.codeFiles.DeleteFormScript(r.Context(), form); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -2370,20 +2378,6 @@ func readableHistoryValues(values map[string]any, perms permission.Set, actorID,
 	return readable
 }
 
-func (server *Server) saveWorkflowScriptFile(ctx context.Context, workflow systemdb.WorkflowDefinition) error {
-	if server.codeFiles == nil {
-		return nil
-	}
-	return server.codeFiles.SaveWorkflowScript(ctx, workflow)
-}
-
-func (server *Server) saveFormScriptFile(ctx context.Context, form systemdb.FormDefinition) error {
-	if server.codeFiles == nil {
-		return nil
-	}
-	return server.codeFiles.SaveFormScript(ctx, form)
-}
-
 func (server *Server) workflowDefinitionsWithFileScripts(ctx context.Context, workflows []systemdb.WorkflowDefinition) ([]systemdb.WorkflowDefinition, error) {
 	if server.codeFiles == nil {
 		return workflows, nil
@@ -2411,6 +2405,33 @@ func (server *Server) workflowDefinitionWithFileScript(ctx context.Context, work
 		workflow.Script = script
 	}
 	return workflow, nil
+}
+
+func (server *Server) saveWorkflowDefinition(ctx context.Context, workflow systemdb.WorkflowDefinition) (systemdb.WorkflowDefinition, error) {
+	var previous *systemdb.WorkflowDefinition
+	if workflow.ID != 0 {
+		existing, err := server.system.Workflow(ctx, workflow.ID)
+		if err != nil {
+			return systemdb.WorkflowDefinition{}, err
+		}
+		previous = &existing
+	}
+	saved, err := server.system.SaveWorkflow(ctx, workflow)
+	if err != nil {
+		return systemdb.WorkflowDefinition{}, err
+	}
+	if server.codeFiles == nil {
+		return saved, nil
+	}
+	if err := server.codeFiles.SaveWorkflowScript(ctx, saved); err != nil {
+		return systemdb.WorkflowDefinition{}, err
+	}
+	if previous != nil && (previous.DatabaseName != saved.DatabaseName || previous.Name != saved.Name) {
+		if err := server.codeFiles.DeleteWorkflowScript(ctx, *previous); err != nil {
+			return systemdb.WorkflowDefinition{}, err
+		}
+	}
+	return saved, nil
 }
 
 func workflowResponsesFromDefinitions(workflows []systemdb.WorkflowDefinition) []workflowDefinitionResponse {
@@ -2506,6 +2527,33 @@ func (server *Server) formDefinitionWithFileScript(ctx context.Context, form sys
 		form.Script = script
 	}
 	return form, nil
+}
+
+func (server *Server) saveFormDefinition(ctx context.Context, form systemdb.FormDefinition) (systemdb.FormDefinition, error) {
+	var previous *systemdb.FormDefinition
+	if form.ID != 0 {
+		existing, err := server.system.Form(ctx, form.ID)
+		if err != nil {
+			return systemdb.FormDefinition{}, err
+		}
+		previous = &existing
+	}
+	saved, err := server.system.SaveForm(ctx, form)
+	if err != nil {
+		return systemdb.FormDefinition{}, err
+	}
+	if server.codeFiles == nil {
+		return saved, nil
+	}
+	if err := server.codeFiles.SaveFormScript(ctx, saved); err != nil {
+		return systemdb.FormDefinition{}, err
+	}
+	if previous != nil && (previous.DatabaseName != saved.DatabaseName || previous.Name != saved.Name) {
+		if err := server.codeFiles.DeleteFormScript(ctx, *previous); err != nil {
+			return systemdb.FormDefinition{}, err
+		}
+	}
+	return saved, nil
 }
 
 func (server *Server) grantResourceOwner(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {

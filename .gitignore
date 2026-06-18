@@ -26,3 +26,8 @@ web/playwright-report/
 web/e2e/.runtime/
 web/e2e/.shots/
 .playwright-mcp/
+
+# Example repository runtime artifacts.
+examples/metadata/
+examples/workflow/
+examples/form/

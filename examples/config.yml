@@ -5,7 +5,7 @@ system_db:
 history:
   path: "./data/leveldb"
 repository:
-  path: "./workspace"
+  path: "./examples"
 oidc:
   providers:
     - name: "example"

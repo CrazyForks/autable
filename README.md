@@ -31,7 +31,7 @@ This repository currently contains the backend core primitives:
 - Synchronous JavaScript workflow runs through registered stateless nodes, with each run persisted as `whistory_id_timestamp`.
 - A `table.record.changed` trigger node that accepts an `rhistory_db_table_record_id_timestamp` key and exposes the decoded row change.
 - Workflow JavaScript editing with JSON editors for GitHub Actions-style secrets and variables.
-- Workflow and form JavaScript files saved to and read from `repository.path` for git-managed code artifacts.
+- Git-managed artifacts live under `repository.path`: table metadata at `metadata/main.yml`, workflow JavaScript at `workflow/<database>/<workflow>.js`, and form JavaScript at `form/<database>/<form>.js`.
 - A form JavaScript runtime that requires `function render(api, root)` to render controls and return `{ table, fields }`.
 - Form submissions send input JSON; the backend executes the form JavaScript to resolve the target table and input-to-field mapping before writing records.
 
@@ -51,10 +51,10 @@ This repository currently contains the backend core primitives:
 go test ./...
 ```
 
-Run the API server with git-managed config and metadata:
+Run the API server with git-managed config. The server loads metadata from `repository.path/metadata/main.yml`:
 
 ```sh
-go run ./cmd/codetable -config examples/config.yml -metadata examples/metadata/main.yml
+go run ./cmd/codetable -config examples/config.yml
 ```
 
 Run the frontend:

@@ -22,7 +22,7 @@ func TestStoreWritesWorkflowAndFormScripts(t *testing.T) {
 	if err := store.SaveWorkflowScript(ctx, workflow); err != nil {
 		t.Fatal(err)
 	}
-	workflowScript, err := os.ReadFile(filepath.Join(store.root, "workflows", "workspace", "00000000000000000001-welcome-contact.js"))
+	workflowScript, err := os.ReadFile(filepath.Join(store.root, "workflow", "workspace", "welcome-contact.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestStoreWritesWorkflowAndFormScripts(t *testing.T) {
 	if err := store.SaveFormScript(ctx, form); err != nil {
 		t.Fatal(err)
 	}
-	formScript, err := os.ReadFile(filepath.Join(store.root, "forms", "workspace", "00000000000000000002-quick-status.js"))
+	formScript, err := os.ReadFile(filepath.Join(store.root, "form", "workspace", "quick-status.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,37 +48,45 @@ func TestStoreWritesWorkflowAndFormScripts(t *testing.T) {
 	}
 }
 
-func TestStoreRemovesOldFileWhenResourceIsRenamed(t *testing.T) {
+func TestStorePreservesReadableUnicodeNames(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(t.TempDir())
+
+	workflow := systemdb.WorkflowDefinition{
+		ID:           1,
+		DatabaseName: "客户库",
+		Name:         "欢迎 联系人",
+		Script:       "function run() {}",
+	}
+	if err := store.SaveWorkflowScript(ctx, workflow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(store.root, "workflow", "客户库", "欢迎-联系人.js")); err != nil {
+		t.Fatalf("expected readable unicode workflow path, got %v", err)
+	}
+}
+
+func TestStoreDeletesScriptFiles(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(t.TempDir())
 	workflow := systemdb.WorkflowDefinition{
 		ID:           1,
 		DatabaseName: "workspace",
-		Name:         "old name",
+		Name:         "notify",
 		Script:       "old",
 	}
 	if err := store.SaveWorkflowScript(ctx, workflow); err != nil {
 		t.Fatal(err)
 	}
-	workflow.Name = "new name"
-	workflow.Script = "new"
-	if err := store.SaveWorkflowScript(ctx, workflow); err != nil {
+	if err := store.DeleteWorkflowScript(ctx, workflow); err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := os.Stat(filepath.Join(store.root, "workflows", "workspace", "00000000000000000001-old-name.js")); !os.IsNotExist(err) {
-		t.Fatalf("expected old workflow script to be removed, got %v", err)
-	}
-	newScript, err := os.ReadFile(filepath.Join(store.root, "workflows", "workspace", "00000000000000000001-new-name.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(newScript) != "new" {
-		t.Fatalf("unexpected renamed script: %s", newScript)
+	if _, err := os.Stat(filepath.Join(store.root, "workflow", "workspace", "notify.js")); !os.IsNotExist(err) {
+		t.Fatalf("expected workflow script to be removed, got %v", err)
 	}
 }
 
-func TestStoreLoadsScriptFilesByCurrentPathOrID(t *testing.T) {
+func TestStoreLoadsScriptFilesByCurrentPath(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(t.TempDir())
 	workflow := systemdb.WorkflowDefinition{
@@ -99,14 +107,5 @@ func TestStoreLoadsScriptFilesByCurrentPathOrID(t *testing.T) {
 	}
 	if !ok || script != "file copy" {
 		t.Fatalf("expected workflow script from file, got ok=%v script=%q", ok, script)
-	}
-
-	workflow.Name = "renamed-in-db"
-	script, ok, err = store.LoadWorkflowScript(ctx, workflow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok || script != "file copy" {
-		t.Fatalf("expected workflow script fallback by id, got ok=%v script=%q", ok, script)
 	}
 }

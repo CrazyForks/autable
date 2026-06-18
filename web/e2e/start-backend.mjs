@@ -7,11 +7,13 @@ const e2eDir = dirname(fileURLToPath(import.meta.url));
 const webDir = resolve(e2eDir, "..");
 const rootDir = resolve(webDir, "..");
 const runtimeDir = join(e2eDir, ".runtime");
-const metadataPath = join(runtimeDir, "metadata.yml");
+const repositoryPath = join(runtimeDir, "workspace");
+const metadataPath = join(repositoryPath, "metadata", "main.yml");
 const configPath = join(runtimeDir, "config.yml");
 
 rmSync(runtimeDir, { force: true, recursive: true });
 mkdirSync(join(runtimeDir, "data"), { recursive: true });
+mkdirSync(join(repositoryPath, "metadata"), { recursive: true });
 copyFileSync(join(e2eDir, "fixtures", "metadata.yml"), metadataPath);
 writeFileSync(
   configPath,
@@ -23,7 +25,7 @@ writeFileSync(
     "history:",
     `  path: "${join(runtimeDir, "data", "leveldb")}"`,
     "repository:",
-    `  path: "${join(runtimeDir, "workspace")}"`,
+    `  path: "${repositoryPath}"`,
     "oidc:",
     "  providers: []",
     ""
@@ -32,7 +34,7 @@ writeFileSync(
 
 const child = spawn(
   "go",
-  ["run", "./cmd/codetable", "-config", configPath, "-metadata", metadataPath],
+  ["run", "./cmd/codetable", "-config", configPath],
   {
     cwd: rootDir,
     env: { ...process.env, GOTOOLCHAIN: "local" },

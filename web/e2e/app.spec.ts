@@ -851,9 +851,9 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
   const workflowPath = join(
     runtimeDir,
     "workspace",
-    "workflows",
+    "workflow",
     databaseName,
-    `${String(workflow.id).padStart(20, "0")}-${workflowName}.js`
+    `${workflowName}.js`
   );
   expect(readFileSync(workflowPath, "utf8")).toBe(workflowScript);
   const editedWorkflowScript = "function instances(info) { return { noop: 'echo' }; }\nfunction run() { return { source: 'file' }; }";
@@ -876,9 +876,9 @@ test("persists workflow and form JavaScript into the repository path", async ({ 
   const formPath = join(
     runtimeDir,
     "workspace",
-    "forms",
+    "form",
     databaseName,
-    `${String(form.id).padStart(20, "0")}-${formName}.js`
+    `${formName}.js`
   );
   expect(readFileSync(formPath, "utf8")).toBe(formScript);
   const editedFormScript =

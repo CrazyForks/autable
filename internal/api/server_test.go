@@ -1372,14 +1372,16 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	if workflow.ID != 1 || form.ID != 1 {
 		t.Fatalf("expected autoincrement ids, got workflow=%d form=%d", workflow.ID, form.ID)
 	}
-	workflowScript, err := os.ReadFile(filepath.Join(codeRoot, "workflows", "db", "00000000000000000001-notify.js"))
+	workflowPath := filepath.Join(codeRoot, "workflow", "db", "notify.js")
+	workflowScript, err := os.ReadFile(workflowPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(workflowScript) != workflow.Script {
 		t.Fatalf("unexpected workflow code file: %s", workflowScript)
 	}
-	formScript, err := os.ReadFile(filepath.Join(codeRoot, "forms", "db", "00000000000000000001-contact-intake.js"))
+	formPath := filepath.Join(codeRoot, "form", "db", "contact-intake.js")
+	formScript, err := os.ReadFile(formPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1387,7 +1389,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 		t.Fatalf("unexpected form code file: %s", formScript)
 	}
 	fileWorkflowScript := "function instances(info) { return { noop: \"echo\" }; } function run(info) { return { message: info.inputs.name + '-from-file' }; }"
-	if err := os.WriteFile(filepath.Join(codeRoot, "workflows", "db", "00000000000000000001-notify.js"), []byte(fileWorkflowScript), 0o644); err != nil {
+	if err := os.WriteFile(workflowPath, []byte(fileWorkflowScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	getWorkflow = httptest.NewRequest(http.MethodGet, "/api/workflows/1", nil)
@@ -1420,7 +1422,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	}
 
 	fileFormScript := "function render(api, root) { root.append(api.input({ name: 'from_file' }), api.submit('Save')); return { table: 'contacts', fields: { from_file: 'name' } }; }"
-	if err := os.WriteFile(filepath.Join(codeRoot, "forms", "db", "00000000000000000001-contact-intake.js"), []byte(fileFormScript), 0o644); err != nil {
+	if err := os.WriteFile(formPath, []byte(fileFormScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	getForm := httptest.NewRequest(http.MethodGet, "/api/forms/1", nil)
@@ -1436,6 +1438,26 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	}
 	if reloadedForm.Script != fileFormScript {
 		t.Fatalf("expected form script from repository file, got %q", reloadedForm.Script)
+	}
+
+	renameWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"id":1,
+		"name":"renamed-notify",
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return { renamed: true }; }",
+		"secrets":{},
+		"variables":{}
+	}`))
+	renameWorkflow.AddCookie(testSessionCookie(t, system, "u1"))
+	renameWorkflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(renameWorkflowRecorder, renameWorkflow)
+	if renameWorkflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow rename 201, got %d: %s", renameWorkflowRecorder.Code, renameWorkflowRecorder.Body.String())
+	}
+	if _, err := os.Stat(workflowPath); !os.IsNotExist(err) {
+		t.Fatalf("expected old workflow file to be removed, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(codeRoot, "workflow", "db", "renamed-notify.js")); err != nil {
+		t.Fatalf("expected renamed workflow file, got %v", err)
 	}
 }
 

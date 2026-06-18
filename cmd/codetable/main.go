@@ -14,26 +14,28 @@ import (
 	"codetable/internal/history"
 	"codetable/internal/metadata"
 	"codetable/internal/recorddb"
+	"codetable/internal/repository"
 	"codetable/internal/systemdb"
 	"codetable/internal/table"
 )
 
 func main() {
 	configPath := flag.String("config", "config.yml", "path to codetable config.yml")
-	metadataPath := flag.String("metadata", "metadata/main.yml", "path to table metadata yaml")
 	flag.Parse()
 
-	if err := run(context.Background(), *configPath, *metadataPath); err != nil {
+	if err := run(context.Background(), *configPath); err != nil {
 		slog.Error("codetable stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, configPath, metadataPath string) error {
+func run(ctx context.Context, configPath string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
+	repoLayout := repository.NewLayout(cfg.Repository.Path)
+	metadataPath := repoLayout.MetadataPath()
 	catalog, err := metadata.Load(metadataPath)
 	if err != nil {
 		return err
