@@ -31,3 +31,5 @@ web/e2e/.shots/
 examples/metadata/
 examples/workflow/
 examples/form/
+
+local_data/
