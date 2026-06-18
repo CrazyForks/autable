@@ -9,6 +9,12 @@ import {
   DialogTrigger,
   Field as FluentField,
   Input,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   Popover,
   PopoverSurface,
   PopoverTrigger,
@@ -17,8 +23,7 @@ import {
   TabList,
   Text,
 } from "@fluentui/react-components";
-import { EditRegular, InfoRegular, PlayRegular, SaveRegular } from "@fluentui/react-icons";
-import { Background, Controls, ReactFlow, type Edge, type Node } from "@xyflow/react";
+import { EditRegular, HistoryRegular, InfoRegular, PlayRegular, SaveRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type {
   WorkflowDefinition,
@@ -56,16 +61,14 @@ type WorkflowWorkspaceProps = {
 
 type WorkflowTab = "editor" | "history";
 
-type WorkflowFlowNodeData = {
-  label: ReactNode;
+type WorkflowRunListItem = {
+  id: string;
   title: string;
   subtitle?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   error?: string;
 };
-
-type WorkflowFlowNode = Node<WorkflowFlowNodeData>;
 
 export function WorkflowWorkspace({
   databaseName,
@@ -199,68 +202,88 @@ function WorkflowHistoryView({
   workflowRuns: WorkflowRunResponse[];
 }) {
   const { t } = useTranslation();
-  const [selectedNodeID, setSelectedNodeID] = useState("run-input");
-  const { nodes, edges } = useMemo(() => runFlowElements(selectedRun, t), [selectedRun, t]);
-  const selectedNode = nodes.find((node) => node.id === selectedNodeID) ?? nodes[0];
+  const [selectedRunItemID, setSelectedRunItemID] = useState("run-input");
+  const runItems = useMemo(() => runListItems(selectedRun, t), [selectedRun, t]);
+  const selectedItem = runItems.find((item) => item.id === selectedRunItemID) ?? runItems[0];
+  const selectedRunLabel = selectedRun ? new Date(selectedRun.run.timestamp).toLocaleString() : t("workflow.noRunsYet");
 
   return (
     <div className="workflow-history-tab">
-      <div className="run-history-list" aria-label={t("workflow.historyList")}>
-        {workflowRuns.length > 0 ? (
-          workflowRuns.map((run) => (
-            <button
-              key={run.history_key}
-              className={run.history_key === selectedRun?.history_key ? "run-history-item selected" : "run-history-item"}
-              type="button"
-              onClick={() => {
-                onSelectRunKey(run.history_key);
-                setSelectedNodeID("run-input");
-              }}
+      <div className="workflow-run-toolbar">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <MenuButton
+              className="workflow-run-history-button"
+              icon={<HistoryRegular />}
+              disabled={workflowRuns.length === 0}
+              aria-label={t("workflow.historyList")}
             >
-              <span>{run.history_key}</span>
-              <span>{new Date(run.run.timestamp).toLocaleString()}</span>
-            </button>
-          ))
-        ) : (
-          <span className="flow-empty">{t("workflow.noRunsYet")}</span>
-        )}
+              {selectedRunLabel}
+            </MenuButton>
+          </MenuTrigger>
+          <MenuPopover className="workflow-run-history-menu">
+            <MenuList className="workflow-run-history-menu-list">
+              {workflowRuns.map((run) => {
+                const runLabel = new Date(run.run.timestamp).toLocaleString();
+                return (
+                  <MenuItem
+                    key={run.history_key}
+                    onClick={() => {
+                      onSelectRunKey(run.history_key);
+                      setSelectedRunItemID("run-input");
+                    }}
+                  >
+                    {runLabel}
+                  </MenuItem>
+                );
+              })}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </div>
-      <div className="workflow-run-flow-shell">
-        <div className="workflow-run-flow" aria-label={t("workflow.flow")}>
-          {selectedRun ? (
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              fitView
-              nodesDraggable={false}
-              nodesConnectable={false}
-              onNodeClick={(_, node) => setSelectedNodeID(node.id)}
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background />
-              <Controls showInteractive={false} />
-            </ReactFlow>
-          ) : (
+      <div className="workflow-run-detail-shell">
+        {workflowRuns.length > 0 ? (
+          <>
+            <div className="workflow-run-node-list" aria-label={t("workflow.runList")}>
+              {runItems.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={runNodeItemClassName(item, item.id === selectedItem?.id)}
+                  onClick={() => setSelectedRunItemID(item.id)}
+                >
+                  <span className="workflow-run-node-index">{index + 1}</span>
+                  <span className="workflow-run-node-main">
+                    <span>{item.title}</span>
+                    {item.subtitle && <span>{item.subtitle}</span>}
+                    {item.error && <span>{item.error}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="workflow-run-inspector" aria-label={t("workflow.inspector")}>
+              {selectedItem ? (
+                <>
+                  <div className="workflow-run-inspector-header">
+                    <Text weight="semibold">{selectedItem.title}</Text>
+                    {selectedItem.subtitle && <Text size={200}>{selectedItem.subtitle}</Text>}
+                    {selectedItem.error && <Text size={200}>{selectedItem.error}</Text>}
+                  </div>
+                  <div className="run-item-payloads">
+                    {selectedItem.input && <RunPayload title={t("common.input")} value={selectedItem.input} />}
+                    {selectedItem.output && <RunPayload title={t("common.output")} value={selectedItem.output} />}
+                  </div>
+                </>
+              ) : (
+                <Text size={200}>{t("workflow.selectRunItem")}</Text>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="workflow-run-empty">
             <span className="flow-empty">{t("workflow.noRunsYet")}</span>
-          )}
-        </div>
-        <div className="workflow-run-inspector" aria-label={t("workflow.inspector")}>
-          {selectedNode ? (
-            <>
-              <div className="workflow-run-inspector-header">
-                <Text weight="semibold">{selectedNode.data.title}</Text>
-                {selectedNode.data.subtitle && <Text size={200}>{selectedNode.data.subtitle}</Text>}
-                {selectedNode.data.error && <Text size={200}>{selectedNode.data.error}</Text>}
-              </div>
-              <div className="flow-step-payloads">
-                {selectedNode.data.input && <RunPayload title={t("common.input")} value={selectedNode.data.input} />}
-                {selectedNode.data.output && <RunPayload title={t("common.output")} value={selectedNode.data.output} />}
-              </div>
-            </>
-          ) : (
-            <Text size={200}>{t("workflow.selectNode")}</Text>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -328,72 +351,47 @@ function NodeCatalogDialog({ language, workflowNodes }: { language: string; work
   );
 }
 
-function runFlowElements(
+function runListItems(
   runResponse: WorkflowRunResponse | null,
   t: ReturnType<typeof useTranslation>["t"]
-): { nodes: WorkflowFlowNode[]; edges: Edge[] } {
+): WorkflowRunListItem[] {
   if (!runResponse) {
-    return { nodes: [], edges: [] };
+    return [];
   }
   const runInputTitle = t("workflow.runInput");
   const runOutputTitle = t("workflow.runOutput");
-  const nodes: WorkflowFlowNode[] = [
+  return [
     {
       id: "run-input",
-      type: "input",
-      position: { x: 0, y: 0 },
-      data: {
-        title: runInputTitle,
-        input: runResponse.run.inputs ?? {},
-        label: <FlowNodeLabel title={runInputTitle} subtitle={runResponse.history_key} />
-      }
+      title: runInputTitle,
+      input: runResponse.run.inputs ?? {}
     },
-    ...runResponse.run.steps.map((step, index): WorkflowFlowNode => {
+    ...runResponse.run.steps.map((step, index): WorkflowRunListItem => {
       const id = `step-${index}`;
       return {
         id,
-        position: { x: 260 * (index + 1), y: 0 },
-        className: step.error ? "workflow-flow-node-error" : undefined,
-        data: {
-          title: step.node_id,
-          subtitle: step.node_type,
-          input: step.input ?? {},
-          output: step.output ?? {},
-          error: step.error,
-          label: <FlowNodeLabel title={step.node_id} subtitle={step.node_type} error={step.error} />
-        }
+        title: step.node_id,
+        subtitle: step.node_type,
+        input: step.input ?? {},
+        output: step.output ?? {},
+        error: step.error
       };
     }),
     {
       id: "run-output",
-      type: "output",
-      position: { x: 260 * (runResponse.run.steps.length + 1), y: 0 },
-      className: runResponse.run.error ? "workflow-flow-node-error" : undefined,
-      data: {
-        title: runOutputTitle,
-        output: runResponse.run.outputs ?? {},
-        error: runResponse.run.error,
-        label: <FlowNodeLabel title={runOutputTitle} subtitle={runResponse.run.error} error={runResponse.run.error} />
-      }
+      title: runOutputTitle,
+      output: runResponse.run.outputs ?? {},
+      error: runResponse.run.error
     }
   ];
-  const edges = nodes.slice(0, -1).map((node, index): Edge => ({
-    id: `${node.id}-${nodes[index + 1].id}`,
-    source: node.id,
-    target: nodes[index + 1].id,
-    type: "smoothstep"
-  }));
-  return { nodes, edges };
 }
 
-function FlowNodeLabel({ title, subtitle, error }: { title: string; subtitle?: string; error?: string }) {
-  return (
-    <div className="workflow-flow-node-label">
-      <span>{title}</span>
-      {subtitle && <span>{subtitle}</span>}
-      {error && <span>{error}</span>}
-    </div>
-  );
+function runNodeItemClassName(item: WorkflowRunListItem, selected: boolean): string {
+  return [
+    "workflow-run-node-item",
+    selected ? "selected" : "",
+    item.error ? "error" : ""
+  ].filter(Boolean).join(" ");
 }
 
 function nodeDocumentation(node: WorkflowNodeInfo, language: string): string {
@@ -637,7 +635,7 @@ function secretMask(length: number): string {
 
 function RunPayload({ title, value }: { title: string; value: Record<string, unknown> }) {
   return (
-    <div className="flow-payload">
+    <div className="run-payload">
       <Text size={200} weight="semibold">
         {title}
       </Text>

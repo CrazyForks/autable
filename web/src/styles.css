@@ -725,64 +725,104 @@ select {
 
 .workflow-history-tab {
   display: grid;
-  grid-template-columns: 420px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
 }
 
-.workflow-run-flow-shell {
+.workflow-run-toolbar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.workflow-run-history-button {
+  max-width: 360px;
+  width: min(360px, 100%);
+  justify-content: flex-start;
+}
+
+.workflow-run-history-menu {
+  max-height: min(420px, calc(100vh - 120px));
+  overflow: hidden;
+}
+
+.workflow-run-history-menu-list {
+  max-height: inherit;
+  overflow-y: auto;
+}
+
+.workflow-run-detail-shell {
   display: grid;
-  grid-template-rows: minmax(260px, 1fr) minmax(150px, auto);
+  grid-template-columns: minmax(260px, 0.42fr) minmax(0, 0.58fr);
   gap: 12px;
   min-width: 0;
   min-height: 0;
 }
 
-.workflow-run-flow {
+.workflow-run-node-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
-  min-height: 260px;
-  overflow: hidden;
+  min-height: 0;
+  overflow: auto;
   border: 1px solid var(--colorNeutralStroke2);
   background: var(--colorNeutralBackground1);
+  padding: 10px;
 }
 
-.workflow-run-flow .react-flow__node {
-  min-width: 180px;
-  max-width: 220px;
-  border-color: var(--colorNeutralStroke1);
-  box-shadow: var(--shadow4);
+.workflow-run-node-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--colorNeutralStroke2);
+  background: var(--colorNeutralBackground1);
+  text-align: left;
+  cursor: pointer;
 }
 
-.workflow-run-flow .react-flow__node.selected {
+.workflow-run-node-item.selected {
   border-color: var(--colorBrandStroke1);
-  box-shadow: var(--shadow8);
+  background: var(--colorBrandBackground2);
 }
 
-.workflow-run-flow .react-flow__edge-path {
-  stroke: var(--colorBrandStroke1);
-  stroke-width: 2;
+.workflow-run-node-item.error {
+  border-color: var(--colorStatusDangerForeground1);
+  background: var(--colorStatusDangerBackground1);
 }
 
-.workflow-flow-node-error {
-  border-color: var(--colorStatusDangerForeground1) !important;
+.workflow-run-node-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--colorNeutralBackground3);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.workflow-flow-node-label {
+.workflow-run-node-main {
   display: flex;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-  text-align: left;
 }
 
-.workflow-flow-node-label span {
+.workflow-run-node-main span {
   overflow-wrap: anywhere;
 }
 
-.workflow-flow-node-label span:first-child {
+.workflow-run-node-main span:first-child {
   font-weight: 600;
 }
 
-.workflow-flow-node-label span:not(:first-child) {
+.workflow-run-node-main span:not(:first-child) {
   color: var(--colorNeutralForeground3);
   font-size: 12px;
 }
@@ -803,62 +843,15 @@ select {
   min-width: 0;
 }
 
-.flow-line {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+.workflow-run-empty {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
-.run-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0;
-  height: 100%;
-  overflow: auto;
-}
-
-.run-history-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--colorNeutralStroke2);
-  background: var(--colorNeutralBackground1);
-  text-align: left;
-  cursor: pointer;
-}
-
-.run-history-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.run-history-item span:last-child {
-  color: var(--colorNeutralForeground3);
-  font-size: 12px;
-}
-
-.run-history-item.selected {
-  border-color: var(--colorBrandStroke1);
-  background: var(--colorBrandBackground2);
-}
-
-.flow-step,
 .flow-empty {
   padding: 9px 10px;
   border-left: 3px solid var(--colorBrandStroke1);
   background: var(--colorBrandBackground2);
-}
-
-.flow-step.error {
-  border-left-color: var(--colorStatusDangerForeground1);
-  background: var(--colorStatusDangerBackground1);
 }
 
 .flow-empty {
@@ -867,25 +860,18 @@ select {
   color: var(--colorNeutralForeground3);
 }
 
-.flow-step-title {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.flow-step-payloads {
+.run-item-payloads {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
 
-.flow-payload {
+.run-payload {
   min-width: 0;
 }
 
-.flow-payload pre {
+.run-payload pre {
   margin: 4px 0 0;
   max-height: 120px;
   overflow: auto;

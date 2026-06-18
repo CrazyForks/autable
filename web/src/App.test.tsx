@@ -497,9 +497,11 @@ describe("App", () => {
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
     await userEvent.click(screen.getByRole("tab", { name: "History" }));
-    await waitFor(() =>
-      expect(screen.getAllByText("whistory_00000000000000000001_00000000000000000100").length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByRole("button", { name: "Workflow run history" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Workflow run history" })).toHaveTextContent(
+      new Date(1781604000000).toLocaleString()
     );
+    expect(screen.queryByText("whistory_00000000000000000001_00000000000000000100")).not.toBeInTheDocument();
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
     expect(screen.getAllByText("Run input").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Run output").length).toBeGreaterThan(0);
