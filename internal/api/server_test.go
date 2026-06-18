@@ -1921,6 +1921,7 @@ func TestWorkflowNodesAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedTypes := []string{
+		"dingtalk.notable.records.list",
 		"dingtalk.robot.send",
 		"echo",
 		"table.record.changed",
@@ -1952,6 +1953,16 @@ func TestWorkflowNodesAPI(t *testing.T) {
 	}
 	if len(dingtalk.Secrets) != 1 || dingtalk.Secrets[0].Name != "access_token" {
 		t.Fatalf("expected dingtalk node secrets: %#v", dingtalk)
+	}
+	notable := byType["dingtalk.notable.records.list"]
+	if len(notable.Inputs) != 4 || notable.Inputs[0].Name != "field_id_or_names" {
+		t.Fatalf("expected dingtalk notable node inputs: %#v", notable)
+	}
+	if len(notable.Variables) != 3 || notable.Variables[0].Name != "base_id" || notable.Variables[1].Name != "sheet_id_or_name" || notable.Variables[2].Name != "operator_id" {
+		t.Fatalf("expected dingtalk notable node variables: %#v", notable)
+	}
+	if len(notable.Secrets) != 2 || notable.Secrets[0].Name != "app_key" || notable.Secrets[1].Name != "app_secret" {
+		t.Fatalf("expected dingtalk notable node secrets: %#v", notable)
 	}
 	if !byType["table.record.changed"].Trigger || len(byType["table.record.changed"].Inputs) == 0 || len(byType["table.record.changed"].Outputs) == 0 || !byType["time.schedule"].Trigger {
 		t.Fatalf("expected trigger node ports: %#v", nodes)
