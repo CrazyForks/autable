@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -821,6 +822,181 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 	}
 	if len(resolved.Filters) != 1 || len(resolved.Sorts) != 1 {
 		t.Fatalf("expected composed based view, got %#v", resolved)
+	}
+}
+
+func TestWorkflowFieldCreateNodeAddsMissingFields(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "workspace",
+		SQLitePath: filepath.Join(t.TempDir(), "workspace.sqlite"),
+		Tables: []metadata.Table{{
+			Name: "contacts",
+			Fields: []metadata.Field{
+				{Name: "name", Type: "string"},
+				{Name: "legacy", Type: "string", Deleted: true},
+			},
+		}},
+	}}}
+	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "workspace.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+		"table": "contacts",
+		"fields": []any{
+			"name",
+			map[string]any{"name": "email", "type": "string"},
+			map[string]any{"name": "score", "type": "float"},
+			map[string]any{"name": "legacy", "type": "string"},
+		},
+	}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := output["created"].([]map[string]any)
+	restored := output["restored"].([]map[string]any)
+	existing := output["existing"].([]map[string]any)
+	if len(created) != 2 || created[0]["name"] != "email" || created[1]["name"] != "score" {
+		t.Fatalf("unexpected created fields: %#v", output)
+	}
+	if len(restored) != 1 || restored[0]["name"] != "legacy" {
+		t.Fatalf("unexpected restored fields: %#v", output)
+	}
+	if len(existing) != 1 || existing[0]["name"] != "name" {
+		t.Fatalf("unexpected existing fields: %#v", output)
+	}
+
+	loaded, err := metadata.Load(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tableMeta, ok := loaded.Table("workspace", "contacts")
+	if !ok {
+		t.Fatal("expected contacts table")
+	}
+	if _, ok := tableMeta.Field("email"); !ok {
+		t.Fatalf("expected email field in metadata, got %#v", tableMeta.Fields)
+	}
+	legacy, _ := tableMeta.Field("legacy")
+	if legacy.Deleted {
+		t.Fatalf("expected legacy field to be restored, got %#v", legacy)
+	}
+
+	output, err = server.RunWorkflowTableFieldNode(ctx, map[string]any{
+		"table": "contacts",
+		"fields": []any{
+			"email",
+			map[string]any{"name": "score", "type": "float"},
+		},
+	}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(output["created"].([]map[string]any)) != 0 || len(output["existing"].([]map[string]any)) != 2 {
+		t.Fatalf("expected idempotent second call, got %#v", output)
+	}
+}
+
+func TestWorkflowFieldCreateNodeRequiresTableWrite(t *testing.T) {
+	ctx := context.Background()
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "workspace",
+		SQLitePath: filepath.Join(t.TempDir(), "workspace.sqlite"),
+		Tables: []metadata.Table{{
+			Name:   "contacts",
+			Fields: []metadata.Field{{Name: "name", Type: "string"}},
+		}},
+	}}}
+	server, _, _ := newTestServerWithMetadataFile(t, catalog)
+
+	if _, err := server.RunWorkflowTableFieldNode(ctx, map[string]any{
+		"table":  "contacts",
+		"fields": []any{"email"},
+	}, workflow.RuntimeInfo{DatabaseName: "workspace", CreatorID: "viewer"}); !errors.Is(err, table.ErrPermissionDenied) {
+		t.Fatalf("expected permission denied, got %v", err)
+	}
+}
+
+func TestWorkflowRowUpsertUpdatesFirstMatchOrCreates(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := server.RunWorkflowTableNode(ctx, "create", map[string]any{
+		"table":  "contacts",
+		"values": map[string]any{"name": "Old", "email": "remote-1", "status": "todo"},
+	}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := created["record"].(map[string]any)
+
+	updated, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+		"table":       "contacts",
+		"match_field": "email",
+		"values":      map[string]any{"name": "Updated", "email": "remote-1", "status": "done"},
+	}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated["operation"] != "update" {
+		t.Fatalf("expected update operation, got %#v", updated)
+	}
+	updatedRecord := updated["record"].(map[string]any)
+	if updatedRecord["record_id"] != original["record_id"] {
+		t.Fatalf("expected existing record to be updated, got original=%#v updated=%#v", original, updatedRecord)
+	}
+	updatedValues := updatedRecord["values"].(map[string]any)
+	if updatedValues["name"] != "Updated" || updatedValues["status"] != "done" {
+		t.Fatalf("unexpected updated values: %#v", updatedValues)
+	}
+
+	upserted, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+		"table":       "contacts",
+		"match_field": "email",
+		"values":      map[string]any{"name": "Created", "email": "remote-2", "status": "todo"},
+	}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upserted["operation"] != "create" {
+		t.Fatalf("expected create operation, got %#v", upserted)
+	}
+}
+
+func TestWorkflowRowUpsertRequiresMatchValue(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeTable,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := server.RunWorkflowTableNode(ctx, "upsert", map[string]any{
+		"table":       "contacts",
+		"match_field": "email",
+		"values":      map[string]any{"name": "Ada"},
+	}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"})
+	if err == nil || !strings.Contains(err.Error(), "values.email is required") {
+		t.Fatalf("expected missing match value error, got %v", err)
 	}
 }
 
@@ -1924,10 +2100,12 @@ func TestWorkflowNodesAPI(t *testing.T) {
 		"dingtalk.notable.records.list",
 		"dingtalk.robot.send",
 		"echo",
+		"table.field.create",
 		"table.record.changed",
 		"table.row.create",
 		"table.row.delete",
 		"table.row.list",
+		"table.row.upsert",
 		"table.row.update",
 		"time.schedule",
 	}
@@ -1953,6 +2131,14 @@ func TestWorkflowNodesAPI(t *testing.T) {
 	}
 	if len(dingtalk.Secrets) != 1 || dingtalk.Secrets[0].Name != "access_token" {
 		t.Fatalf("expected dingtalk node secrets: %#v", dingtalk)
+	}
+	fieldCreate := byType["table.field.create"]
+	if len(fieldCreate.Inputs) != 3 || fieldCreate.Inputs[0].Name != "database" || fieldCreate.Inputs[2].Name != "fields" {
+		t.Fatalf("expected table field create inputs: %#v", fieldCreate)
+	}
+	upsert := byType["table.row.upsert"]
+	if len(upsert.Inputs) != 4 || upsert.Inputs[2].Name != "match_field" || upsert.Outputs[1].Name != "operation" {
+		t.Fatalf("expected table row upsert ports: %#v", upsert)
 	}
 	notable := byType["dingtalk.notable.records.list"]
 	if len(notable.Inputs) != 4 || notable.Inputs[0].Name != "field_id_or_names" {

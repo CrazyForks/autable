@@ -50,6 +50,24 @@ func (node TableRowNode) Info() workflow.NodeInfo {
 			Outputs:   []workflow.Port{{Name: "record", Type: "RowRecord"}},
 			Stateless: true,
 		}
+	case "upsert":
+		return workflow.NodeInfo{
+			Type:          "table.row.upsert",
+			DisplayName:   "Update or create row",
+			Description:   "Updates the first row matching a field value, or creates a row when no match exists.",
+			Documentation: documentation("table.row.upsert"),
+			Inputs: []workflow.Port{
+				{Name: "database", Type: "string"},
+				{Name: "table", Type: "string"},
+				{Name: "match_field", Type: "string"},
+				{Name: "values", Type: "object"},
+			},
+			Outputs: []workflow.Port{
+				{Name: "record", Type: "RowRecord"},
+				{Name: "operation", Type: "string"},
+			},
+			Stateless: true,
+		}
 	case "delete":
 		return workflow.NodeInfo{
 			Type:          "table.row.delete",

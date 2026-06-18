@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
+	"codetable/internal/metadata"
+	"codetable/internal/permission"
 	"codetable/internal/table"
 	"codetable/internal/workflow"
 	"codetable/internal/workflow/nodes"
@@ -42,6 +45,17 @@ func (server *Server) RunWorkflowTableNode(ctx context.Context, kind string, inp
 		}
 		row, err := server.tables.UpdateRow(ctx, catalog, perms, info.CreatorID, dbName, tableName, recordID, values)
 		return workflowRowOutput(row, err)
+	case "upsert":
+		values, err := workflowValuesInput(input)
+		if err != nil {
+			return nil, err
+		}
+		matchField, err := workflowMatchFieldInput(input, values)
+		if err != nil {
+			return nil, err
+		}
+		row, operation, err := server.upsertWorkflowTableRow(ctx, catalog, perms, info.CreatorID, dbName, tableName, matchField, values)
+		return workflowRowMutationOutput(row, operation, err)
 	case "delete":
 		recordID, err := workflowRecordIDInput(input)
 		if err != nil {
@@ -86,6 +100,17 @@ func workflowValuesInput(input map[string]any) (map[string]any, error) {
 	return values, nil
 }
 
+func workflowMatchFieldInput(input map[string]any, values map[string]any) (string, error) {
+	matchField, _ := input["match_field"].(string)
+	if matchField == "" {
+		return "", errors.New("match_field is required")
+	}
+	if _, ok := values[matchField]; !ok {
+		return "", fmt.Errorf("values.%s is required", matchField)
+	}
+	return matchField, nil
+}
+
 func workflowRecordIDInput(input map[string]any) (int64, error) {
 	switch value := input["record_id"].(type) {
 	case int:
@@ -101,11 +126,41 @@ func workflowRecordIDInput(input map[string]any) (int64, error) {
 	}
 }
 
+func (server *Server) upsertWorkflowTableRow(ctx context.Context, catalog metadata.Catalog, perms permission.Set, actorID string, dbName string, tableName string, matchField string, values map[string]any) (table.Row, string, error) {
+	matchValue := values[matchField]
+	rows, err := server.tables.Rows(ctx, catalog, perms, actorID, dbName, tableName, "")
+	if err != nil {
+		return table.Row{}, "", err
+	}
+	for _, row := range rows {
+		if workflowValuesEqual(row.Values[matchField], matchValue) {
+			updated, err := server.tables.UpdateRow(ctx, catalog, perms, actorID, dbName, tableName, row.RecordID, values)
+			return updated, "update", err
+		}
+	}
+	created, err := server.tables.CreateRow(ctx, catalog, perms, actorID, dbName, tableName, values)
+	return created, "create", err
+}
+
+func workflowValuesEqual(left any, right any) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return fmt.Sprint(left) == fmt.Sprint(right)
+}
+
 func workflowRowOutput(row table.Row, err error) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"record": workflowRowRecord(row)}, nil
+}
+
+func workflowRowMutationOutput(row table.Row, operation string, err error) (map[string]any, error) {
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"record": workflowRowRecord(row), "operation": operation}, nil
 }
 
 func workflowRowRecord(row table.Row) map[string]any {
@@ -118,6 +173,8 @@ func workflowRowRecord(row table.Row) map[string]any {
 func (server *Server) registerWorkflowTableNodes() {
 	server.runner.Register(nodes.NewTableRowNode(server, "create"))
 	server.runner.Register(nodes.NewTableRowNode(server, "update"))
+	server.runner.Register(nodes.NewTableRowNode(server, "upsert"))
 	server.runner.Register(nodes.NewTableRowNode(server, "delete"))
 	server.runner.Register(nodes.NewTableRowNode(server, "list"))
+	server.registerWorkflowTableFieldNodes()
 }
