@@ -56,6 +56,8 @@ describe("editorTypes", () => {
     const content = formEditorExtraLibs().map((lib) => lib.content).join("\n");
 
     expect(content).toContain("interface CodeTableFormAPI");
+    expect(content).toContain("type CodeTableFormScannerConfig = { confirm?: boolean }");
+    expect(content).toContain("scanner?: boolean | CodeTableFormScannerConfig");
     expect(content).toContain("relation(config:");
     expect(content).toContain("function stableStringify(value: unknown): string;");
     expect(content).toContain("function render(api: CodeTableFormAPI, root: CodeTableFormRoot): CodeTableFormDefinition");

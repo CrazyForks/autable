@@ -854,6 +854,79 @@ select {
   min-height: 360px;
 }
 
+.scanner-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.scanner-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.scanner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scanner-video-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--colorNeutralStroke2);
+  background: var(--colorNeutralBackground3);
+  aspect-ratio: 4 / 3;
+}
+
+.scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scanner-reticle {
+  position: absolute;
+  inset: 20%;
+  border: 2px solid var(--colorBrandForeground1);
+  border-radius: 6px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.scanner-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.scanner-overlay polygon {
+  fill: rgba(16, 124, 16, 0.18);
+  stroke: #107c10;
+  stroke-width: 8;
+  vector-effect: non-scaling-stroke;
+}
+
+.scanner-detected-value {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--colorNeutralStroke2);
+  border-radius: 6px;
+  background: var(--colorNeutralBackground1);
+}
+
+.scanner-detected-value code {
+  overflow-wrap: anywhere;
+  font-family: var(--fontFamilyMonospace);
+  font-size: 13px;
+}
+
 .relation-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

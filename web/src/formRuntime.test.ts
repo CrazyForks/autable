@@ -101,6 +101,20 @@ describe("renderFormScript", () => {
     expect(result.actions.button_1).toEqual(expect.any(Function));
   });
 
+  it("supports scanner confirmation before writing an input value", () => {
+    const result = renderFormScript(`
+      function render(api, root) {
+        root.append(api.input({ field: "asset_code", label: "Asset code", scanner: { confirm: true } }));
+        return { table: "assets" };
+      }
+    `);
+
+    expect(result.error).toBeUndefined();
+    expect(result.elements).toEqual([
+      { kind: "input", field: "asset_code", label: "Asset code", inputType: "text", scanner: { confirm: true }, onChangeActionID: undefined }
+    ]);
+  });
+
   it("provides stableStringify as a stringifyValue replacement", () => {
     const result = renderFormScript(`
       function render(api, root) {

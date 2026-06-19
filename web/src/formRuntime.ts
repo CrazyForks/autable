@@ -4,7 +4,7 @@ export type FormElement =
       field: string;
       label: string;
       inputType: "text" | "email" | "search" | "tel" | "url" | "password";
-      scanner?: boolean;
+      scanner?: boolean | ScannerConfig;
       onChangeActionID?: string;
     }
   | { kind: "select"; field: string; label: string; options: string[] }
@@ -14,6 +14,9 @@ export type FormElement =
   | { kind: "html"; html: string };
 
 type InputType = Extract<FormElement, { kind: "input" }>["inputType"];
+export type ScannerConfig = {
+  confirm?: boolean;
+};
 export type FormAction = (api: FormActionAPI) => unknown | Promise<unknown>;
 
 export type FormRenderResult = {
@@ -28,7 +31,7 @@ type InputConfig = {
   field: string;
   label?: string;
   type?: string;
-  scanner?: boolean;
+  scanner?: boolean | ScannerConfig;
   onChange?: FormAction;
 };
 
@@ -93,7 +96,7 @@ export function renderFormScript(script: string): FormRenderResult {
         field,
         label: config.label ?? field,
         inputType: normalizeInputType(config.type),
-        scanner: Boolean(config.scanner),
+        scanner: normalizeScannerConfig(config.scanner),
         onChangeActionID
       };
     },
@@ -219,6 +222,20 @@ function normalizeInputType(value: string | undefined): InputType {
     return value as InputType;
   }
   return "text";
+}
+
+function normalizeScannerConfig(value: InputConfig["scanner"]): FormElement extends infer T
+  ? T extends { kind: "input"; scanner?: infer S }
+    ? S
+    : never
+  : never {
+  if (!value) {
+    return false;
+  }
+  if (typeof value === "object") {
+    return { confirm: Boolean(value.confirm) };
+  }
+  return true;
 }
 
 function formControlField(config: unknown): string {

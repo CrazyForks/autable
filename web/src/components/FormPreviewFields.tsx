@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   Button,
   Caption1,
@@ -12,8 +12,12 @@ import {
   Select,
   Text
 } from "@fluentui/react-components";
+import { ScanQrCode24Regular } from "@fluentui/react-icons";
 import type { Column } from "react-data-grid";
 import { useTranslation } from "react-i18next";
+import { useZxing } from "react-zxing";
+import type { DetectedBarcode } from "react-zxing";
+import zxingReaderWasmURL from "../../node_modules/zxing-wasm/dist/reader/zxing_reader.wasm?url";
 import { listRows, type RowRecord, type TableMetadata } from "../api";
 import type { FormElement } from "../formRuntime";
 import { rowRecordToValues, type TableGridRow } from "../tableGrid";
@@ -27,6 +31,15 @@ type FormPreviewFieldsProps = {
   onAction: (actionID: string, valueOverrides?: Record<string, string>) => void | Promise<void>;
   onFormValueChange: (name: string, value: string) => void;
   tables?: TableMetadata[];
+};
+
+type ScannerResult = {
+  value: string;
+  format: string;
+  overlay?: {
+    points: string;
+    viewBox: string;
+  };
 };
 
 export function FormPreviewFields({
@@ -49,21 +62,22 @@ export function FormPreviewFields({
     <>
       {elements.map((element) => {
         if (element.kind === "input") {
-          return (
-            <label key={element.field} className="field-stack">
-              <span>{element.label}</span>
-              <Input
-                type={element.inputType}
-                value={formValues[element.field] ?? ""}
-                onChange={(_, data) => {
-                  onFormValueChange(element.field, data.value);
-                  if (element.onChangeActionID) {
-                    void onAction(element.onChangeActionID, { [element.field]: data.value });
-                  }
-                }}
-              />
-              {element.scanner && <Caption1>{t("form.scannerInput")}</Caption1>}
-            </label>
+          return element.scanner ? (
+            <ScannerInput
+              key={element.field}
+              element={element}
+              onAction={onAction}
+              onFormValueChange={onFormValueChange}
+              value={formValues[element.field] ?? ""}
+            />
+          ) : (
+            <FormTextInput
+              key={element.field}
+              element={element}
+              onAction={onAction}
+              onFormValueChange={onFormValueChange}
+              value={formValues[element.field] ?? ""}
+            />
           );
         }
         if (element.kind === "select") {
@@ -125,6 +139,221 @@ export function FormPreviewFields({
       </Dialog>
     </>
   );
+}
+
+function FormTextInput({
+  element,
+  onAction,
+  onFormValueChange,
+  value
+}: {
+  element: Extract<FormElement, { kind: "input" }>;
+  onAction: (actionID: string, valueOverrides?: Record<string, string>) => void | Promise<void>;
+  onFormValueChange: (name: string, value: string) => void;
+  value: string;
+}) {
+  const handleTextChange = (nextValue: string) => {
+    onFormValueChange(element.field, nextValue);
+    if (element.onChangeActionID) {
+      void onAction(element.onChangeActionID, { [element.field]: nextValue });
+    }
+  };
+
+  return (
+    <label className="field-stack">
+      <span>{element.label}</span>
+      <Input type={element.inputType} value={value} onChange={(_, data) => handleTextChange(data.value)} />
+    </label>
+  );
+}
+
+function ScannerInput({
+  element,
+  onAction,
+  onFormValueChange,
+  value
+}: {
+  element: Extract<FormElement, { kind: "input" }>;
+  onAction: (actionID: string, valueOverrides?: Record<string, string>) => void | Promise<void>;
+  onFormValueChange: (name: string, value: string) => void;
+  value: string;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [pendingResult, setPendingResult] = useState<ScannerResult | null>(null);
+  const decodedRef = useRef(false);
+  const confirmBeforeWrite = scannerRequiresConfirmation(element.scanner);
+  const { ref } = useZxing({
+    paused: !open,
+    wasmUrl: zxingReaderWasmURL,
+    constraints: { video: { facingMode: { ideal: "environment" } }, audio: false },
+    timeBetweenDecodingAttempts: 250,
+    trySkew: true,
+    onDecodeResult: (result) => {
+      if (decodedRef.current) {
+        return;
+      }
+      const scannedValue = result.rawValue;
+      if (!scannedValue) {
+        setError(t("form.scannerEmptyResult"));
+        return;
+      }
+      decodedRef.current = true;
+      const nextResult = scannerResultFromDetectedBarcode(result, ref.current);
+      if (confirmBeforeWrite) {
+        setPendingResult(nextResult);
+        ref.current?.pause();
+        return;
+      }
+      commitScannedValue(nextResult.value);
+      setOpen(false);
+    },
+    onError: (nextError) => {
+      setError(t("form.scannerCameraFailed", { error: scannerErrorMessage(nextError) }));
+    }
+  });
+
+  useEffect(() => {
+    if (open) {
+      decodedRef.current = false;
+      setError("");
+      setPendingResult(null);
+      void ref.current?.play();
+    }
+  }, [open]);
+
+  const handleTextChange = (nextValue: string) => {
+    onFormValueChange(element.field, nextValue);
+    if (element.onChangeActionID) {
+      void onAction(element.onChangeActionID, { [element.field]: nextValue });
+    }
+  };
+
+  const commitScannedValue = (nextValue: string) => {
+    onFormValueChange(element.field, nextValue);
+    if (element.onChangeActionID) {
+      void onAction(element.onChangeActionID, { [element.field]: nextValue });
+    }
+  };
+
+  const rescan = () => {
+    decodedRef.current = false;
+    setPendingResult(null);
+    setError("");
+    void ref.current?.play();
+  };
+
+  return (
+    <div className="field-stack">
+      <span>{element.label}</span>
+      <div className={element.scanner ? "scanner-input" : undefined}>
+        <Input
+          aria-label={element.label}
+          type={element.inputType}
+          value={value}
+          onChange={(_, data) => handleTextChange(data.value)}
+        />
+        {element.scanner && (
+          <Button
+            type="button"
+            icon={<ScanQrCode24Regular />}
+            aria-label={t("form.scanField", { label: element.label })}
+            onClick={() => setOpen(true)}
+          >
+            {t("form.scan")}
+          </Button>
+        )}
+      </div>
+      {element.scanner && <Caption1>{t("form.scannerInput")}</Caption1>}
+      {element.scanner && (
+        <Dialog open={open} onOpenChange={(_, data) => setOpen(data.open)}>
+          <DialogSurface className="scanner-dialog">
+            <DialogBody>
+              <DialogTitle>{t("form.scannerDialogTitle", { label: element.label })}</DialogTitle>
+              <DialogContent className="scanner-content">
+                <Text size={200}>{t("form.scannerDialogHint")}</Text>
+                {error && <Text className="form-error">{error}</Text>}
+                <div className="scanner-video-frame">
+                  <video ref={ref as RefObject<HTMLVideoElement>} className="scanner-video" muted playsInline autoPlay />
+                  {pendingResult?.overlay && (
+                    <svg
+                      className="scanner-overlay"
+                      viewBox={pendingResult.overlay.viewBox}
+                      preserveAspectRatio="xMidYMid meet"
+                      aria-hidden="true"
+                    >
+                      <polygon points={pendingResult.overlay.points} />
+                    </svg>
+                  )}
+                  {!pendingResult && <div className="scanner-reticle" aria-hidden="true" />}
+                </div>
+                {pendingResult && (
+                  <div className="scanner-detected-value">
+                    <Text size={200} weight="semibold">{t("form.scannerDetectedValue")}</Text>
+                    <code>{pendingResult.value}</code>
+                  </div>
+                )}
+              </DialogContent>
+              <DialogActions>
+                {pendingResult && (
+                  <>
+                    <Button type="button" onClick={rescan}>{t("form.scannerRescan")}</Button>
+                    <Button
+                      type="button"
+                      appearance="primary"
+                      onClick={() => {
+                        commitScannedValue(pendingResult.value);
+                        setOpen(false);
+                      }}
+                    >
+                      {t("form.scannerConfirm")}
+                    </Button>
+                  </>
+                )}
+                <Button type="button" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+function scannerErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function scannerRequiresConfirmation(scanner: Extract<FormElement, { kind: "input" }>["scanner"]): boolean {
+  return typeof scanner === "object" && Boolean(scanner.confirm);
+}
+
+function scannerResultFromDetectedBarcode(result: DetectedBarcode, video: HTMLVideoElement | null): ScannerResult {
+  return {
+    value: result.rawValue,
+    format: String(result.format),
+    overlay: scannerOverlayFromDetectedBarcode(result, video)
+  };
+}
+
+function scannerOverlayFromDetectedBarcode(
+  result: DetectedBarcode,
+  video: HTMLVideoElement | null
+): ScannerResult["overlay"] | undefined {
+  const points = result.cornerPoints;
+  if (!points || points.length !== 4) {
+    return undefined;
+  }
+  const width = video?.videoWidth || Math.ceil(result.boundingBox?.x + result.boundingBox?.width) || 1;
+  const height = video?.videoHeight || Math.ceil(result.boundingBox?.y + result.boundingBox?.height) || 1;
+  return {
+    viewBox: `0 0 ${width} ${height}`,
+    points: points.map((point) => `${point.x},${point.y}`).join(" ")
+  };
 }
 
 function FormResultView({ result, tables }: { result?: unknown; tables: TableMetadata[] }) {

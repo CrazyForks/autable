@@ -39,9 +39,10 @@ export function formEditorExtraLibs(): EditorExtraLib[] {
 
 declare global {
   type CodeTableFormInputType = "text" | "email" | "search" | "tel" | "url" | "password";
+  type CodeTableFormScannerConfig = { confirm?: boolean };
 
   type CodeTableFormElement =
-    | { kind: "input"; field: string; label: string; inputType: CodeTableFormInputType; scanner?: boolean; onChangeActionID?: string }
+    | { kind: "input"; field: string; label: string; inputType: CodeTableFormInputType; scanner?: boolean | CodeTableFormScannerConfig; onChangeActionID?: string }
     | { kind: "select"; field: string; label: string; options: string[] }
     | { kind: "relation"; field: string; label: string; table: string; view?: string }
     | { kind: "button"; id: string; label: string; actionID: string }
@@ -80,7 +81,7 @@ declare global {
   type CodeTableFormAction = (api: CodeTableFormActionAPI) => unknown | Promise<unknown>;
 
   interface CodeTableFormAPI {
-    input(config: { field: string; label?: string; type?: CodeTableFormInputType; scanner?: boolean; onChange?: CodeTableFormAction }): CodeTableFormElement;
+    input(config: { field: string; label?: string; type?: CodeTableFormInputType; scanner?: boolean | CodeTableFormScannerConfig; onChange?: CodeTableFormAction }): CodeTableFormElement;
     relation(config: { field: string; label?: string; table: string; view?: string }): CodeTableFormElement;
     select(config: { field: string; label?: string; options: string[] }): CodeTableFormElement;
     button(label: string, action: CodeTableFormAction): CodeTableFormElement;
