@@ -22,11 +22,14 @@ type Database struct {
 }
 
 type Table struct {
-	Name            string  `yaml:"name" json:"name"`
-	DisplayName     string  `yaml:"display_name" json:"display_name"`
-	Fields          []Field `yaml:"fields" json:"fields"`
-	Views           []View  `yaml:"views" json:"views"`
-	PermissionLevel int     `yaml:"-" json:"permission_level,omitempty"`
+	Name                    string  `yaml:"name" json:"name"`
+	DisplayName             string  `yaml:"display_name" json:"display_name"`
+	Fields                  []Field `yaml:"fields" json:"fields"`
+	Views                   []View  `yaml:"views" json:"views"`
+	PermissionLevel         int     `yaml:"-" json:"permission_level,omitempty"`
+	DatabasePermissionLevel int     `yaml:"-" json:"database_permission_level,omitempty"`
+	FieldPermissionLevel    int     `yaml:"-" json:"field_permission_level,omitempty"`
+	ViewPermissionLevel     int     `yaml:"-" json:"view_permission_level,omitempty"`
 }
 
 type Field struct {

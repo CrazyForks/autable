@@ -1943,6 +1943,9 @@ func visibleTableMetadata(perms permission.Set, actorID, dbName string, tableMet
 	viewSetLevel := perms.ResourceLevel(actorID, permission.ScopeViewSet, resource)
 	annotated := tableMeta
 	annotated.PermissionLevel = int(maxPermissionLevel(dbLevel, maxPermissionLevel(fieldSetLevel, viewSetLevel)))
+	annotated.DatabasePermissionLevel = int(dbLevel)
+	annotated.FieldPermissionLevel = int(maxPermissionLevel(dbLevel, fieldSetLevel))
+	annotated.ViewPermissionLevel = int(maxPermissionLevel(dbLevel, viewSetLevel))
 	if dbLevel >= permission.Write {
 		annotated.Fields = annotateFieldPermissionLevels(perms, actorID, resource, dbLevel, annotated.Fields)
 		annotated.Views = annotateViewPermissionLevels(perms, actorID, resource, dbLevel, annotated.Views)
@@ -1959,7 +1962,7 @@ func visibleTableMetadata(perms permission.Set, actorID, dbName string, tableMet
 	}
 	visible.Views = make([]metadata.View, 0, len(tableMeta.Views))
 	for _, view := range tableMeta.Views {
-		viewLevel := perms.ViewLevel(actorID, resource, view.Name)
+		viewLevel := maxPermissionLevel(viewSetLevel, perms.ViewLevel(actorID, resource, view.Name))
 		if viewLevel < permission.Read {
 			continue
 		}

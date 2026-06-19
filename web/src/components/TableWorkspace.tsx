@@ -131,7 +131,9 @@ export function TableWorkspace({
   const { t } = useTranslation();
   const activeFields = table.fields.filter((field) => !field.deleted);
   const hasTable = Boolean(table.name);
-  const canWriteTable = hasTable && (table.permission_level ?? 2) >= 2;
+  const canWriteDatabase = hasTable && (table.database_permission_level ?? 2) >= 2;
+  const canWriteFields = hasTable && (table.field_permission_level ?? table.permission_level ?? 2) >= 2;
+  const canWriteViews = hasTable && (table.view_permission_level ?? table.permission_level ?? 2) >= 2;
   const canCreateRow = activeFields.some((field) => canWriteField(field));
   const hasWritableFields = activeFields.some(canWriteField);
   const [recordPanelOpen, setRecordPanelOpen] = useState(false);
@@ -144,6 +146,7 @@ export function TableWorkspace({
     () => (table.views ?? []).find((viewDef) => viewDef.name === selectedTableView),
     [selectedTableView, table.views]
   );
+  const canWriteSelectedView = canWriteViews || (selectedView?.permission_level ?? 0) >= 2;
   const recordMenuTarget = useMemo(
     () =>
       recordMenu
@@ -180,10 +183,11 @@ export function TableWorkspace({
         }
         return {
           ...column,
-          draggable: canWriteTable,
+          draggable: canWriteFields,
           renderHeaderCell: () => (
             <FieldHeader
-              canWriteTable={canWriteTable}
+              canDeleteField={canWriteDatabase}
+              canWriteFields={canWriteFields}
               field={field}
               onDeleteField={onDeleteField}
               onEditFormula={(targetField, point) =>
@@ -211,7 +215,7 @@ export function TableWorkspace({
             type="button"
             className="add-field-header-button"
             aria-label={t("table.addField")}
-            disabled={!canWriteTable}
+            disabled={!canWriteFields}
             onClick={(event) => {
               event.stopPropagation();
               const rect = event.currentTarget.getBoundingClientRect();
@@ -232,7 +236,8 @@ export function TableWorkspace({
     },
     [
       activeFields,
-      canWriteTable,
+      canWriteDatabase,
+      canWriteFields,
       columns,
       onDeleteField,
       onNewFieldFormulaChange,
@@ -278,14 +283,14 @@ export function TableWorkspace({
         <Toolbar aria-label={t("table.tableActions")} className="table-actions">
           <Popover open={filterOpen} onOpenChange={(_, data) => setFilterOpen(data.open)} positioning="below-start" withArrow>
             <PopoverTrigger disableButtonEnhancement>
-              <ToolbarButton icon={<FilterRegular />} disabled={!canWriteTable}>
+              <ToolbarButton icon={<FilterRegular />} disabled={!canWriteSelectedView}>
                 {t("table.filter")}
               </ToolbarButton>
             </PopoverTrigger>
             <PopoverSurface className="view-filter-popover" aria-label={t("table.viewFilters")}>
               <ViewQueryPopover
                 activeFields={activeFields}
-                canWriteTable={canWriteTable}
+                canWriteView={canWriteSelectedView}
                 newViewBase={newViewBase}
                 newViewQuery={newViewQuery}
                 newViewSortDirection={newViewSortDirection}
@@ -380,7 +385,7 @@ export function TableWorkspace({
               <MenuDivider />
               <MenuItem
                 icon={<DeleteRegular />}
-                disabled={!canWriteTable}
+                disabled={!canWriteDatabase}
                 onClick={() => {
                   if (recordMenu) {
                     onDeleteSelectedRow(recordMenu.recordID);
@@ -597,12 +602,14 @@ function RelationDrawer({
 }
 
 function FieldHeader({
-  canWriteTable,
+  canDeleteField,
+  canWriteFields,
   field,
   onDeleteField,
   onEditFormula
 }: {
-  canWriteTable: boolean;
+  canDeleteField: boolean;
+  canWriteFields: boolean;
   field: Field;
   onDeleteField: (fieldName: string) => void;
   onEditFormula: (field: Field, point: { x: number; y: number }) => void;
@@ -617,7 +624,7 @@ function FieldHeader({
             type="button"
             className="field-header-menu-button"
             aria-label={t("table.fieldActions", { name: field.name })}
-            disabled={!canWriteTable}
+            disabled={!canWriteFields && !canDeleteField}
             onClick={(event) => event.stopPropagation()}
           >
             <MoreHorizontalRegular />
@@ -628,6 +635,7 @@ function FieldHeader({
             {field.type === "formula" && (
               <MenuItem
                 icon={<EditRegular />}
+                disabled={!canWriteFields}
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect();
                   onEditFormula(field, { x: rect.left, y: rect.bottom });
@@ -636,7 +644,7 @@ function FieldHeader({
                 {t("table.editFormula")}
               </MenuItem>
             )}
-            <MenuItem icon={<DeleteRegular />} onClick={() => onDeleteField(field.name)}>
+            <MenuItem icon={<DeleteRegular />} disabled={!canDeleteField} onClick={() => onDeleteField(field.name)}>
               {t("table.deleteField")}
             </MenuItem>
           </MenuList>
@@ -648,7 +656,7 @@ function FieldHeader({
 
 function ViewQueryPopover({
   activeFields,
-  canWriteTable,
+  canWriteView,
   newViewBase,
   newViewQuery,
   newViewSortDirection,
@@ -662,7 +670,7 @@ function ViewQueryPopover({
   views
 }: {
   activeFields: Field[];
-  canWriteTable: boolean;
+  canWriteView: boolean;
   newViewBase: string;
   newViewQuery: TableViewQuery;
   newViewSortDirection: TableViewSort["direction"];
@@ -676,7 +684,7 @@ function ViewQueryPopover({
   views: NonNullable<TableMetadata["views"]>;
 }) {
   const { t } = useTranslation();
-  const canEditView = canWriteTable && Boolean(selectedView);
+  const canEditView = canWriteView && Boolean(selectedView);
   const queryFields = useMemo<QueryBuilderField[]>(
     () => [
       { name: "ct_record_id", label: "ct_record_id", inputType: "number" },

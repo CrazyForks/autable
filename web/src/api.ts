@@ -43,6 +43,9 @@ export type TableMetadata = {
   fields: Field[];
   views: TableView[];
   permission_level?: 0 | 1 | 2;
+  database_permission_level?: 0 | 1 | 2;
+  field_permission_level?: 0 | 1 | 2;
+  view_permission_level?: 0 | 1 | 2;
 };
 
 export type DatabaseMetadata = {
