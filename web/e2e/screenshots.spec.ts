@@ -195,12 +195,13 @@ test("capture workspace screenshots", async ({ page }) => {
   await page.keyboard.press("Escape");
 
   // Workflow run + history.
-  await page.getByRole("button", { name: "Run" }).click();
-  await page.getByText(/Workflow run saved/).waitFor();
-  await page.getByRole("tab", { name: "History" }).click();
-  await page.getByLabel("Workflow run flow").waitFor();
-  await page.waitForTimeout(600);
-  await shot(page, "08-workflow-history");
+  await capture(page, "08-workflow-history", async () => {
+    await page.getByRole("button", { name: "Run" }).click(bestEffort);
+    await page.getByText(/Workflow run saved/).waitFor(bestEffort);
+    await page.getByRole("tab", { name: "History" }).click(bestEffort);
+    await page.locator(".workflow-run-node-list").waitFor(bestEffort);
+    await page.waitForTimeout(800);
+  });
 
   // Form view.
   await page.getByRole("button", { name: "Form", exact: true }).click();
