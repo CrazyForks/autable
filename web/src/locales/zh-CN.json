@@ -105,7 +105,8 @@
   },
   "permission": {
     "addRoleMember": "添加角色成员",
-    "addWorkflowMember": "添加工作流成员",
+    "addWorkflowMember": "添加工作流",
+    "allItems": "全部",
     "empty": "创建角色后即可配置表、字段、工作流和表单权限。",
     "fieldSet": "{{table}} 字段",
     "fields": "字段",
@@ -121,6 +122,7 @@
     "noMembers": "暂无成员",
     "noPartialItems": "没有可配置项",
     "noRoleSelected": "未选择角色",
+    "noWorkflowMembers": "暂无工作流",
     "partial": "部分",
     "records": "记录",
     "recordModes": {
@@ -132,6 +134,7 @@
     "removeMember": "移除 {{email}}",
     "roleAccessMatrix": "{{database}} 角色权限矩阵",
     "roleMemberEmail": "角色成员邮箱",
+    "scope": "范围",
     "searchEmail": "搜索邮箱",
     "tables": "表",
     "view": "{{view}} 视图",

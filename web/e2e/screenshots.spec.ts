@@ -224,11 +224,35 @@ test("capture workspace screenshots", async ({ page }) => {
   });
   await page.keyboard.press("Escape");
 
-  // Members popover (count badge + add/list).
+  // Members popover (users): count badge + add/list.
   await capture(page, "12-members-popover", async () => {
     await page.getByRole("button", { name: /Members/ }).click(bestEffort);
     await page.getByRole("combobox", { name: "Role member email" }).waitFor(bestEffort);
     await page.waitForTimeout(200);
+  });
+  await page.keyboard.press("Escape");
+
+  // Workflow members popover (separate from users).
+  await capture(page, "14-workflow-members", async () => {
+    await page.getByRole("button", { name: /Workflows/ }).click(bestEffort);
+    await page.waitForTimeout(250);
+  });
+  await page.keyboard.press("Escape");
+
+  // Switch to Chinese to verify translations + disabled Save.
+  await capture(page, "15-permission-zh", async () => {
+    await page.getByRole("button", { name: "Switch language" }).click(bestEffort);
+    await page.waitForTimeout(300);
+  });
+  const permissionView = page.locator(".permission-view");
+  await capture(page, "16-workflow-members-zh", async () => {
+    await permissionView.getByRole("button", { name: /工作流|Workflows/ }).first().click(bestEffort);
+    await page.waitForTimeout(250);
+  });
+  await page.keyboard.press("Escape");
+  await capture(page, "17-permission-zh-partial", async () => {
+    await permissionView.getByRole("button", { name: /部分|Partial/ }).first().click(bestEffort);
+    await page.waitForTimeout(250);
   });
   await page.keyboard.press("Escape");
 

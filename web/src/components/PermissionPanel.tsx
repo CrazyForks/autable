@@ -2,6 +2,7 @@ import {
   Button,
   Combobox,
   CounterBadge,
+  Dropdown,
   List,
   ListItem,
   Menu,
@@ -17,7 +18,14 @@ import {
   Select,
   Text
 } from "@fluentui/react-components";
-import { AddRegular, ChevronDownRegular, DismissRegular, PeopleRegular, SaveRegular } from "@fluentui/react-icons";
+import {
+  ChevronDownRegular,
+  DismissRegular,
+  DocumentFlowchartRegular,
+  PeopleRegular,
+  SaveRegular
+} from "@fluentui/react-icons";
+import { type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type DatabaseMetadata,
@@ -28,7 +36,9 @@ import {
   type AuthUser,
   type WorkflowDefinition
 } from "../api";
-export { compactRoleGrants } from "../permissionState";
+import { compactRoleGrants } from "../permissionState";
+
+export { compactRoleGrants };
 
 const permissionLevels = [0, 1, 2] as const;
 
@@ -75,6 +85,10 @@ export function PermissionPanel({
   workflows
 }: PermissionPanelProps) {
   const { t } = useTranslation();
+  const dirty =
+    Boolean(role) &&
+    (normalizeGrants(grants) !== normalizeGrants(role?.grants ?? []) ||
+      normalizeMembers(members) !== normalizeMembers(role?.members ?? []));
   return (
     <div className="permission-view">
       <div className="section-header">
@@ -96,7 +110,7 @@ export function PermissionPanel({
               onNewMemberEmailChange={onNewMemberEmailChange}
               workflows={workflows}
             />
-            <Button icon={<SaveRegular />} appearance="primary" onClick={onSave}>
+            <Button icon={<SaveRegular />} appearance="primary" onClick={onSave} disabled={!dirty}>
               {t("common.save")}
             </Button>
           </div>
@@ -147,82 +161,133 @@ function MembersControl({
   const { t } = useTranslation();
   const memberByID = new Map(memberUsers.map((member) => [member.id, member]));
   const workflowByID = new Map(memberWorkflows.map((workflow) => [String(workflow.id), workflow]));
-  const memberItems = members.map((memberID) => ({
-    member: memberID,
-    key: `${memberID.type}:${memberID.id}`,
-    label:
-      memberID.type === "workflow"
-        ? workflowByID.get(memberID.id)?.name ?? `workflow:${memberID.id}`
-        : memberByID.get(memberID.id)?.email ?? memberID.id
-  }));
-  const selectableWorkflows = workflows.filter((workflow) => workflow.id && !members.some((member) => member.type === "workflow" && member.id === String(workflow.id)));
+  const userItems = members
+    .filter((member) => member.type === "user")
+    .map((member) => ({
+      member,
+      key: `user:${member.id}`,
+      label: memberByID.get(member.id)?.email ?? member.id
+    }));
+  const workflowItems = members
+    .filter((member) => member.type === "workflow")
+    .map((member) => ({
+      member,
+      key: `workflow:${member.id}`,
+      label: workflowByID.get(member.id)?.name ?? `#${member.id}`
+    }));
+  const selectableWorkflows = workflows.filter(
+    (workflow) => workflow.id && !members.some((member) => member.type === "workflow" && member.id === String(workflow.id))
+  );
+
   return (
-    <Popover positioning="below-end" trapFocus>
-      <PopoverTrigger disableButtonEnhancement>
-        <Button icon={<PeopleRegular />}>
-          {t("permission.members")}
-          <CounterBadge
-            className="members-count"
-            appearance="filled"
-            color="brand"
-            count={members.length}
-            showZero
-          />
-        </Button>
-      </PopoverTrigger>
-      <PopoverSurface className="members-popover" aria-label={t("permission.members")}>
-        <div className="create-rowline">
-          <Combobox
-            aria-label={t("permission.roleMemberEmail")}
-            placeholder={t("permission.searchEmail")}
-            open={newMemberEmail.trim().length >= 2 && memberOptions.length > 0}
-            value={newMemberEmail}
-            onChange={(event) => onNewMemberEmailChange(event.currentTarget.value)}
-            onOptionSelect={(_, data) => {
-              const selected = memberOptions.find((member) => member.id === data.optionValue);
-              if (selected) {
-                onAddMember(selected);
-              }
-            }}
-          >
-            {memberOptions.map((member) => (
-              <Option key={member.id} value={member.id} text={member.email}>
-                {member.email}
-              </Option>
-            ))}
-          </Combobox>
-          <Button icon={<AddRegular />} aria-label={t("permission.addRoleMember")} onClick={() => onAddMember()} />
-        </div>
-        <Select
-          aria-label={t("permission.workflowMember")}
+    <>
+      <MemberPopover
+        icon={<PeopleRegular />}
+        label={t("permission.members")}
+        ariaLabel={t("permission.members")}
+        count={userItems.length}
+        items={userItems}
+        emptyText={t("permission.noMembers")}
+        onRemove={onMemberRemove}
+      >
+        <Combobox
+          className="member-add-control"
+          aria-label={t("permission.roleMemberEmail")}
+          placeholder={t("permission.searchEmail")}
+          open={newMemberEmail.trim().length >= 2 && memberOptions.length > 0}
+          value={newMemberEmail}
+          onChange={(event) => onNewMemberEmailChange(event.currentTarget.value)}
+          onOptionSelect={(_, data) => {
+            const selected = memberOptions.find((member) => member.id === data.optionValue);
+            if (selected) {
+              onAddMember(selected);
+            }
+          }}
+        >
+          {memberOptions.map((member) => (
+            <Option key={member.id} value={member.id} text={member.email}>
+              {member.email}
+            </Option>
+          ))}
+        </Combobox>
+      </MemberPopover>
+      <MemberPopover
+        icon={<DocumentFlowchartRegular />}
+        label={t("permission.workflows")}
+        ariaLabel={t("permission.workflows")}
+        count={workflowItems.length}
+        items={workflowItems}
+        emptyText={t("permission.noWorkflowMembers")}
+        onRemove={onMemberRemove}
+      >
+        <Dropdown
+          className="member-add-control"
+          aria-label={t("permission.addWorkflowMember")}
+          placeholder={t("permission.addWorkflowMember")}
+          selectedOptions={[]}
           value=""
-          onChange={(event) => {
-            const selected = workflows.find((workflow) => String(workflow.id) === event.currentTarget.value);
+          disabled={selectableWorkflows.length === 0}
+          onOptionSelect={(_, data) => {
+            const selected = selectableWorkflows.find((workflow) => String(workflow.id) === data.optionValue);
             if (selected) {
               onAddWorkflowMember(selected);
             }
           }}
         >
-          <option value="">{t("permission.addWorkflowMember")}</option>
           {selectableWorkflows.map((workflow) => (
-            <option key={workflow.id} value={workflow.id}>
+            <Option key={workflow.id} value={String(workflow.id)}>
               {workflow.name}
-            </option>
+            </Option>
           ))}
-        </Select>
-        {members.length === 0 ? (
-          <Text size={200}>{t("permission.noMembers")}</Text>
+        </Dropdown>
+      </MemberPopover>
+    </>
+  );
+}
+
+function MemberPopover({
+  icon,
+  label,
+  ariaLabel,
+  count,
+  items,
+  emptyText,
+  onRemove,
+  children
+}: {
+  icon: ReactElement;
+  label: string;
+  ariaLabel: string;
+  count: number;
+  items: Array<{ key: string; label: string; member: RoleMember }>;
+  emptyText: string;
+  onRemove: (member: RoleMember) => void;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Popover positioning="below-end" trapFocus>
+      <PopoverTrigger disableButtonEnhancement>
+        <Button icon={icon}>
+          {label}
+          <CounterBadge className="members-count" appearance="filled" color="brand" count={count} showZero />
+        </Button>
+      </PopoverTrigger>
+      <PopoverSurface className="members-popover" aria-label={ariaLabel}>
+        {children}
+        {items.length === 0 ? (
+          <Text size={200}>{emptyText}</Text>
         ) : (
-          <List navigationMode="items" aria-label={t("permission.members")}>
-            {memberItems.map((member) => (
-              <ListItem key={member.key}>
+          <List navigationMode="items" aria-label={ariaLabel}>
+            {items.map((item) => (
+              <ListItem key={item.key}>
                 <div className="member-list-item">
-                  <Text truncate>{member.label}</Text>
+                  <Text truncate>{item.label}</Text>
                   <Button
                     appearance="subtle"
                     icon={<DismissRegular />}
-                    aria-label={t("permission.removeMember", { email: member.label })}
-                    onClick={() => onMemberRemove(member.member)}
+                    aria-label={t("permission.removeMember", { email: item.label })}
+                    onClick={() => onRemove(item.member)}
                   />
                 </div>
               </ListItem>
@@ -488,6 +553,19 @@ function grantLevel(
   field: string
 ): PermissionGrant["level"] {
   return grants.find((grant) => grant.scope === scope && grant.resource === resource && grant.field === field)?.level ?? 0;
+}
+
+// Stable signatures so the Save button can tell whether the draft differs
+// from the persisted role.
+function normalizeGrants(grants: PermissionGrant[]): string {
+  return compactRoleGrants(grants)
+    .map((grant) => `${grant.scope}|${grant.resource}|${grant.field}|${grant.level}`)
+    .sort()
+    .join("\n");
+}
+
+function normalizeMembers(members: RoleMember[]): string {
+  return members.map((member) => `${member.type}:${member.id}`).sort().join(",");
 }
 
 function PermissionLevelSelect(props: {

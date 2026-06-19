@@ -105,7 +105,8 @@
   },
   "permission": {
     "addRoleMember": "Add role member",
-    "addWorkflowMember": "Add workflow member",
+    "addWorkflowMember": "Add workflow",
+    "allItems": "All",
     "empty": "Create a role to configure table, field, workflow, and form permissions.",
     "fieldSet": "{{table}} fields",
     "fields": "Fields",
@@ -121,6 +122,7 @@
     "noMembers": "No members",
     "noPartialItems": "No partial items",
     "noRoleSelected": "No role selected",
+    "noWorkflowMembers": "No workflows",
     "partial": "Partial",
     "records": "Records",
     "recordModes": {
@@ -132,6 +134,7 @@
     "removeMember": "Remove {{email}}",
     "roleAccessMatrix": "{{database}} role access matrix",
     "roleMemberEmail": "Role member email",
+    "scope": "scope",
     "searchEmail": "Search email",
     "tables": "Tables",
     "view": "{{view}} view",
