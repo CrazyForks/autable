@@ -17,20 +17,23 @@ databases:
         views:
           - name: active
             display_name: Active
-            filters:
-              - field: status
-                op: eq
-                value: Active
+            query:
+              combinator: and
+              rules:
+                - field: status
+                  operator: "="
+                  value: Active
             sorts:
               - field: name
                 direction: asc
           - name: active-email
             display_name: Active with email
             base_view: active
-            filters:
-              - field: email
-                op: not_empty
-                value: null
+            query:
+              combinator: and
+              rules:
+                - field: email
+                  operator: notNull
             sorts:
               - field: ct_record_id
                 direction: desc

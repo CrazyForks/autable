@@ -40,17 +40,26 @@ type Field struct {
 }
 
 type View struct {
-	Name        string       `yaml:"name" json:"name"`
-	DisplayName string       `yaml:"display_name" json:"display_name"`
-	BaseView    string       `yaml:"base_view" json:"base_view,omitempty"`
-	Filters     []ViewFilter `yaml:"filters" json:"filters"`
-	Sorts       []ViewSort   `yaml:"sorts" json:"sorts"`
+	Name        string     `yaml:"name" json:"name"`
+	DisplayName string     `yaml:"display_name" json:"display_name"`
+	BaseView    string     `yaml:"base_view" json:"base_view,omitempty"`
+	Query       *ViewQuery `yaml:"query,omitempty" json:"query,omitempty"`
+	Sorts       []ViewSort `yaml:"sorts" json:"sorts"`
 }
 
-type ViewFilter struct {
-	Field string `yaml:"field" json:"field"`
-	Op    string `yaml:"op" json:"op"`
-	Value any    `yaml:"value" json:"value,omitempty"`
+type ViewQuery struct {
+	Combinator string          `yaml:"combinator" json:"combinator"`
+	Rules      []ViewQueryRule `yaml:"rules" json:"rules"`
+	Not        bool            `yaml:"not,omitempty" json:"not,omitempty"`
+}
+
+type ViewQueryRule struct {
+	Field      string          `yaml:"field,omitempty" json:"field,omitempty"`
+	Operator   string          `yaml:"operator,omitempty" json:"operator,omitempty"`
+	Value      any             `yaml:"value,omitempty" json:"value,omitempty"`
+	Combinator string          `yaml:"combinator,omitempty" json:"combinator,omitempty"`
+	Rules      []ViewQueryRule `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Not        bool            `yaml:"not,omitempty" json:"not,omitempty"`
 }
 
 type ViewSort struct {
@@ -59,9 +68,9 @@ type ViewSort struct {
 }
 
 type ResolvedView struct {
-	Name    string       `json:"name"`
-	Filters []ViewFilter `json:"filters"`
-	Sorts   []ViewSort   `json:"sorts"`
+	Name  string     `json:"name"`
+	Query *ViewQuery `json:"query,omitempty"`
+	Sorts []ViewSort `json:"sorts"`
 }
 
 func Load(path string) (Catalog, error) {
@@ -357,20 +366,16 @@ func (table Table) validateViews(dbName string) error {
 			return fmt.Errorf("database %q table %q view %q is duplicated", dbName, table.Name, view.Name)
 		}
 		views[view.Name] = view
-		for _, filter := range view.Filters {
-			if _, ok := table.Field(filter.Field); !ok {
-				return fmt.Errorf("database %q table %q view %q filter field %q is unknown", dbName, table.Name, view.Name, filter.Field)
-			}
-			if filter.Op == "" {
-				return fmt.Errorf("database %q table %q view %q filter op is required", dbName, table.Name, view.Name)
-			}
-			if !slices.Contains([]string{"eq", "contains", "not_empty"}, filter.Op) {
-				return fmt.Errorf("database %q table %q view %q filter op %q is unsupported", dbName, table.Name, view.Name, filter.Op)
-			}
+		if err := table.validateViewQuery(dbName, view.Name, view.Query); err != nil {
+			return err
 		}
 		for _, sort := range view.Sorts {
-			if _, ok := table.Field(sort.Field); !ok {
+			field, ok := table.Field(sort.Field)
+			if !ok {
 				return fmt.Errorf("database %q table %q view %q sort field %q is unknown", dbName, table.Name, view.Name, sort.Field)
+			}
+			if field.Deleted {
+				return fmt.Errorf("database %q table %q view %q sort field %q is deleted", dbName, table.Name, view.Name, sort.Field)
 			}
 			if sort.Direction != "asc" && sort.Direction != "desc" {
 				return fmt.Errorf("database %q table %q view %q sort direction must be asc or desc", dbName, table.Name, view.Name)
@@ -383,6 +388,65 @@ func (table Table) validateViews(dbName string) error {
 		}
 	}
 	return nil
+}
+
+func (table Table) validateViewQuery(dbName, viewName string, query *ViewQuery) error {
+	if query == nil {
+		return nil
+	}
+	if strings.TrimSpace(query.Combinator) == "" && len(query.Rules) == 0 && !query.Not {
+		return nil
+	}
+	if !isViewQueryCombinator(query.Combinator) {
+		return fmt.Errorf("database %q table %q view %q query combinator %q is unsupported", dbName, table.Name, viewName, query.Combinator)
+	}
+	for _, rule := range query.Rules {
+		if err := table.validateViewQueryRule(dbName, viewName, rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (table Table) validateViewQueryRule(dbName, viewName string, rule ViewQueryRule) error {
+	if rule.Combinator != "" || len(rule.Rules) > 0 {
+		group := ViewQuery{Combinator: rule.Combinator, Rules: rule.Rules, Not: rule.Not}
+		return table.validateViewQuery(dbName, viewName, &group)
+	}
+	field, ok := table.Field(rule.Field)
+	if !ok {
+		return fmt.Errorf("database %q table %q view %q query field %q is unknown", dbName, table.Name, viewName, rule.Field)
+	}
+	if field.Deleted {
+		return fmt.Errorf("database %q table %q view %q query field %q is deleted", dbName, table.Name, viewName, rule.Field)
+	}
+	if !isViewQueryOperator(rule.Operator) {
+		return fmt.Errorf("database %q table %q view %q query operator %q is unsupported", dbName, table.Name, viewName, rule.Operator)
+	}
+	return nil
+}
+
+func isViewQueryCombinator(combinator string) bool {
+	return combinator == "and" || combinator == "or"
+}
+
+func isViewQueryOperator(operator string) bool {
+	return slices.Contains([]string{
+		"=",
+		"!=",
+		"<",
+		"<=",
+		">",
+		">=",
+		"contains",
+		"beginsWith",
+		"endsWith",
+		"doesNotContain",
+		"doesNotBeginWith",
+		"doesNotEndWith",
+		"null",
+		"notNull",
+	}, operator)
 }
 
 func (catalog Catalog) Table(dbName, tableName string) (Table, bool) {
@@ -461,12 +525,66 @@ func (table Table) resolveView(name string, visiting map[string]bool) (ResolvedV
 		if err != nil {
 			return ResolvedView{}, err
 		}
-		resolved.Filters = append(resolved.Filters, base.Filters...)
+		resolved.Query = cloneViewQuery(base.Query)
 		resolved.Sorts = append(resolved.Sorts, base.Sorts...)
 	}
-	resolved.Filters = append(resolved.Filters, view.Filters...)
+	resolved.Query = combineViewQueries(resolved.Query, view.Query)
 	resolved.Sorts = append(resolved.Sorts, view.Sorts...)
 	return resolved, nil
+}
+
+func combineViewQueries(base, child *ViewQuery) *ViewQuery {
+	base = cloneViewQuery(base)
+	child = cloneViewQuery(child)
+	if isEmptyViewQuery(base) {
+		return child
+	}
+	if isEmptyViewQuery(child) {
+		return base
+	}
+	return &ViewQuery{
+		Combinator: "and",
+		Rules: []ViewQueryRule{
+			viewQueryToRule(*base),
+			viewQueryToRule(*child),
+		},
+	}
+}
+
+func cloneViewQuery(query *ViewQuery) *ViewQuery {
+	if query == nil {
+		return nil
+	}
+	cloned := &ViewQuery{
+		Combinator: query.Combinator,
+		Rules:      cloneViewQueryRules(query.Rules),
+		Not:        query.Not,
+	}
+	return cloned
+}
+
+func cloneViewQueryRules(rules []ViewQueryRule) []ViewQueryRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	cloned := make([]ViewQueryRule, len(rules))
+	for index, rule := range rules {
+		cloned[index] = rule
+		cloned[index].Rules = cloneViewQueryRules(rule.Rules)
+	}
+	return cloned
+}
+
+func isEmptyViewQuery(query *ViewQuery) bool {
+	return query == nil || (strings.TrimSpace(query.Combinator) == "" && len(query.Rules) == 0 && !query.Not)
+}
+
+func viewQueryToRule(query ViewQuery) ViewQueryRule {
+	return ViewQueryRule{
+		Combinator: query.Combinator,
+		Rules:      cloneViewQueryRules(query.Rules),
+		Not:        query.Not,
+	}
 }
 
 var (

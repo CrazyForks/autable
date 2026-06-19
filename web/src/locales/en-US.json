@@ -237,6 +237,8 @@
     "fieldName": "Field name",
     "fieldType": "Field type",
     "filter": "Filter",
+    "addFilterGroup": "Add group",
+    "addFilterRule": "Add rule",
     "filterField": "Filter field",
     "filterOperator": "Filter operator",
     "filterValue": "Filter value",
@@ -247,8 +249,12 @@
     "noRowHistoryLoaded": "No row history loaded",
     "noSort": "No sort",
     "operators": {
+      "beginsWith": "begins with",
       "contains": "contains",
+      "doesNotContain": "does not contain",
       "eq": "equals",
+      "empty": "empty",
+      "endsWith": "ends with",
       "notEmpty": "not empty"
     },
     "operations": {

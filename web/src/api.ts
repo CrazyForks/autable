@@ -8,10 +8,19 @@ export type Field = {
   permission_level?: 0 | 1 | 2;
 };
 
-export type TableViewFilter = {
-  field: string;
-  op: "eq" | "contains" | "not_empty";
+export type TableViewQuery = {
+  combinator: "and" | "or";
+  rules: TableViewQueryRule[];
+  not?: boolean;
+};
+
+export type TableViewQueryRule = {
+  field?: string;
+  operator?: string;
   value?: unknown;
+  combinator?: "and" | "or";
+  rules?: TableViewQueryRule[];
+  not?: boolean;
 };
 
 export type TableViewSort = {
@@ -23,7 +32,7 @@ export type TableView = {
   name: string;
   display_name: string;
   base_view?: string;
-  filters: TableViewFilter[];
+  query?: TableViewQuery;
   sorts: TableViewSort[];
 };
 

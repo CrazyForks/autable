@@ -1,20 +1,22 @@
-package table
+package table_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"codetable/internal/history"
 	"codetable/internal/metadata"
 	"codetable/internal/permission"
+	"codetable/internal/recorddb"
+	"codetable/internal/table"
 )
 
 func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -26,6 +28,7 @@ func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -66,7 +69,6 @@ func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 func TestCreateRowNotifiesHistoryBackedRowChange(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -75,6 +77,7 @@ func TestCreateRowNotifiesHistoryBackedRowChange(t *testing.T) {
 			Fields: []metadata.Field{{Name: "name", Type: "string"}},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -109,7 +112,6 @@ func TestCreateRowNotifiesHistoryBackedRowChange(t *testing.T) {
 
 func TestCreateRowRejectsDeletedField(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -121,6 +123,7 @@ func TestCreateRowRejectsDeletedField(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -129,14 +132,13 @@ func TestCreateRowRejectsDeletedField(t *testing.T) {
 	})
 
 	_, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"legacy": "x"})
-	if !errors.Is(err, ErrDeletedField) {
+	if !errors.Is(err, table.ErrDeletedField) {
 		t.Fatalf("expected deleted field error, got %v", err)
 	}
 }
 
 func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -145,6 +147,7 @@ func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 			Fields: []metadata.Field{{Name: "name", Type: "string"}},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -153,14 +156,13 @@ func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 	})
 
 	_, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"name": "Ada"})
-	if !errors.Is(err, ErrPermissionDenied) {
+	if !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected permission error, got %v", err)
 	}
 }
 
 func TestCreateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -172,6 +174,7 @@ func TestCreateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(
 		permission.Grant{
 			SubjectID: "u1",
@@ -195,7 +198,7 @@ func TestCreateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 		"name":  "Grace",
 		"email": "grace@example.com",
 	})
-	if !errors.Is(err, ErrPermissionDenied) {
+	if !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected field override permission error, got %v", err)
 	}
 }
@@ -203,7 +206,6 @@ func TestCreateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 func TestUpdateRowMergesValuesAndWritesHistory(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -215,6 +217,7 @@ func TestUpdateRowMergesValuesAndWritesHistory(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -262,7 +265,6 @@ func TestUpdateRowMergesValuesAndWritesHistory(t *testing.T) {
 
 func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -271,6 +273,7 @@ func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
 			Fields: []metadata.Field{{Name: "name", Type: "string"}},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	writePerms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -289,18 +292,17 @@ func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
 	}
 
 	_, err = service.UpdateRow(ctx, catalog, writePerms, "u1", "db", "contacts", row.RecordID, map[string]any{"ct_record_id": 99})
-	if !errors.Is(err, ErrPermissionDenied) {
+	if !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected ct_record_id permission error, got %v", err)
 	}
 	_, err = service.UpdateRow(ctx, catalog, readPerms, "u1", "db", "contacts", row.RecordID, map[string]any{"name": "Grace"})
-	if !errors.Is(err, ErrPermissionDenied) {
+	if !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected read-only permission error, got %v", err)
 	}
 }
 
 func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -312,6 +314,7 @@ func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	writePerms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -345,7 +348,7 @@ func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = service.UpdateRow(ctx, catalog, fieldReadPerms, "u1", "db", "contacts", row.RecordID, map[string]any{"email": "blocked@example.com"})
-	if !errors.Is(err, ErrPermissionDenied) {
+	if !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected field override permission error, got %v", err)
 	}
 }
@@ -353,7 +356,6 @@ func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -362,6 +364,7 @@ func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 			Fields: []metadata.Field{{Name: "name", Type: "string"}},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	writePerms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -379,7 +382,7 @@ func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.DeleteRow(ctx, catalog, readPerms, "u1", "db", "contacts", row.RecordID); !errors.Is(err, ErrPermissionDenied) {
+	if _, err := service.DeleteRow(ctx, catalog, readPerms, "u1", "db", "contacts", row.RecordID); !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected read-only delete permission error, got %v", err)
 	}
 	deleted, err := service.DeleteRow(ctx, catalog, writePerms, "u1", "db", "contacts", row.RecordID)
@@ -418,8 +421,6 @@ func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 func TestCreateRowUsesInjectedRepository(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	repository := NewMemoryRowRepository()
-	service := NewServiceWithRepository(store, repository)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -428,6 +429,7 @@ func TestCreateRowUsesInjectedRepository(t *testing.T) {
 			Fields: []metadata.Field{{Name: "name", Type: "string"}},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -450,9 +452,8 @@ func TestCreateRowUsesInjectedRepository(t *testing.T) {
 
 func TestCreateRowRollsBackWhenHistoryWriteFails(t *testing.T) {
 	ctx := context.Background()
-	repository := NewMemoryRowRepository()
-	service := NewServiceWithRepository(failingHistoryStore{}, repository)
 	catalog := testTableCatalog()
+	service, catalog, repository := newSQLiteService(t, failingHistoryStore{}, catalog)
 	perms := testWritePerms()
 
 	if _, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{"name": "Ada"}); err == nil {
@@ -470,10 +471,10 @@ func TestCreateRowRollsBackWhenHistoryWriteFails(t *testing.T) {
 
 func TestUpdateRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 	ctx := context.Background()
-	repository := NewMemoryRowRepository()
 	catalog := testTableCatalog()
+	createService, catalog, repository := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := testWritePerms()
-	row, err := NewServiceWithRepository(history.NewMemoryStore(), repository).CreateRow(
+	row, err := createService.CreateRow(
 		ctx,
 		catalog,
 		perms,
@@ -485,7 +486,7 @@ func TestUpdateRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewServiceWithRepository(failingHistoryStore{}, repository)
+	service := table.NewServiceWithRepository(failingHistoryStore{}, repository)
 	if _, err := service.UpdateRow(ctx, catalog, perms, "u1", "db", "contacts", row.RecordID, map[string]any{"name": "Grace"}); err == nil {
 		t.Fatal("expected history failure")
 	}
@@ -501,10 +502,10 @@ func TestUpdateRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 
 func TestDeleteRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 	ctx := context.Background()
-	repository := NewMemoryRowRepository()
 	catalog := testTableCatalog()
+	createService, catalog, repository := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := testWritePerms()
-	row, err := NewServiceWithRepository(history.NewMemoryStore(), repository).CreateRow(
+	row, err := createService.CreateRow(
 		ctx,
 		catalog,
 		perms,
@@ -516,7 +517,7 @@ func TestDeleteRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewServiceWithRepository(failingHistoryStore{}, repository)
+	service := table.NewServiceWithRepository(failingHistoryStore{}, repository)
 	if _, err := service.DeleteRow(ctx, catalog, perms, "u1", "db", "contacts", row.RecordID); err == nil {
 		t.Fatal("expected history failure")
 	}
@@ -530,9 +531,8 @@ func TestDeleteRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 	}
 }
 
-func TestRowsAppliesComposedViewFiltersAndSorts(t *testing.T) {
+func TestRowsAppliesComposedViewQueryAndSorts(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -544,18 +544,25 @@ func TestRowsAppliesComposedViewFiltersAndSorts(t *testing.T) {
 			},
 			Views: []metadata.View{
 				{
-					Name:    "active",
-					Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
+					Name: "active",
+					Query: &metadata.ViewQuery{
+						Combinator: "and",
+						Rules:      []metadata.ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+					},
 				},
 				{
 					Name:     "active-a",
 					BaseView: "active",
-					Filters:  []metadata.ViewFilter{{Field: "name", Op: "contains", Value: "a"}},
-					Sorts:    []metadata.ViewSort{{Field: "name", Direction: "desc"}},
+					Query: &metadata.ViewQuery{
+						Combinator: "and",
+						Rules:      []metadata.ViewQueryRule{{Field: "name", Operator: "contains", Value: "a"}},
+					},
+					Sorts: []metadata.ViewSort{{Field: "name", Direction: "desc"}},
 				},
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(
 		permission.Grant{SubjectID: "u1", Scope: permission.ScopeTable, Resource: "db.contacts", Level: permission.Write},
 	)
@@ -584,7 +591,6 @@ func TestRowsAppliesComposedViewFiltersAndSorts(t *testing.T) {
 func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -599,12 +605,16 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 				{Name: "stable_json", Type: "formula", ValueType: "string", Formula: "stableStringify({ b: field_score, a: field_name })"},
 			},
 			Views: []metadata.View{{
-				Name:    "high",
-				Filters: []metadata.ViewFilter{{Field: "score_band", Op: "eq", Value: "high"}},
-				Sorts:   []metadata.ViewSort{{Field: "score_plus_one", Direction: "desc"}},
+				Name: "high",
+				Query: &metadata.ViewQuery{
+					Combinator: "and",
+					Rules:      []metadata.ViewQueryRule{{Field: "score_band", Operator: "=", Value: "high"}},
+				},
+				Sorts: []metadata.ViewSort{{Field: "score_plus_one", Direction: "desc"}},
 			}},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -626,7 +636,7 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 		"name":           "Blocked",
 		"score":          9,
 		"score_plus_one": 10,
-	}); !errors.Is(err, ErrPermissionDenied) {
+	}); !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected formula create write to be denied, got %v", err)
 	}
 	high, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{
@@ -638,7 +648,7 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 	}
 	if _, err := service.UpdateRow(ctx, catalog, perms, "u1", "db", "contacts", high.RecordID, map[string]any{
 		"score_plus_one": 99,
-	}); !errors.Is(err, ErrPermissionDenied) {
+	}); !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected formula update write to be denied, got %v", err)
 	}
 
@@ -665,7 +675,6 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 func TestSyncTableRecomputesFormulaFieldsWithoutHistory(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -677,6 +686,7 @@ func TestSyncTableRecomputesFormulaFieldsWithoutHistory(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -693,7 +703,7 @@ func TestSyncTableRecomputesFormulaFieldsWithoutHistory(t *testing.T) {
 	}
 	updatedCatalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
-		SQLitePath: "./db.sqlite",
+		SQLitePath: catalog.Databases[0].SQLitePath,
 		Tables: []metadata.Table{{
 			Name: "contacts",
 			Fields: []metadata.Field{
@@ -724,7 +734,6 @@ func TestSyncTableRecomputesFormulaFieldsWithoutHistory(t *testing.T) {
 func TestFormulaErrorsClearValueInsteadOfFailingWrite(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -736,6 +745,7 @@ func TestFormulaErrorsClearValueInsteadOfFailingWrite(t *testing.T) {
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -761,7 +771,7 @@ func TestFormulaErrorsClearValueInsteadOfFailingWrite(t *testing.T) {
 
 	updatedCatalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
-		SQLitePath: "./db.sqlite",
+		SQLitePath: catalog.Databases[0].SQLitePath,
 		Tables: []metadata.Table{{
 			Name: "contacts",
 			Fields: []metadata.Field{
@@ -785,7 +795,6 @@ func TestFormulaErrorsClearValueInsteadOfFailingWrite(t *testing.T) {
 func TestInvalidTypedFieldInputClearsValueInsteadOfKeepingOldValue(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
-	service := NewService(store)
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -796,6 +805,7 @@ func TestInvalidTypedFieldInputClearsValueInsteadOfKeepingOldValue(t *testing.T)
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
 		Scope:     permission.ScopeTable,
@@ -861,9 +871,32 @@ func testWritePerms() permission.Set {
 	})
 }
 
+func newSQLiteService(t *testing.T, store history.Store, catalog metadata.Catalog) (*table.Service, metadata.Catalog, *recorddb.Repository) {
+	t.Helper()
+	catalog = withTempSQLitePaths(t, catalog)
+	repository, err := recorddb.OpenCatalog(context.Background(), catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return table.NewServiceWithRepository(store, repository), catalog, repository
+}
+
+func withTempSQLitePaths(t *testing.T, catalog metadata.Catalog) metadata.Catalog {
+	t.Helper()
+	dir := t.TempDir()
+	for index := range catalog.Databases {
+		catalog.Databases[index].SQLitePath = filepath.Join(dir, catalog.Databases[index].Name+".sqlite")
+	}
+	return catalog
+}
+
 func TestRowsRejectsViewsUsingUnreadableFields(t *testing.T) {
 	ctx := context.Background()
-	service := NewService(history.NewMemoryStore())
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
 		SQLitePath: "./db.sqlite",
@@ -875,11 +908,18 @@ func TestRowsRejectsViewsUsingUnreadableFields(t *testing.T) {
 				{Name: "status", Type: "string"},
 			},
 			Views: []metadata.View{
-				{Name: "active", Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}}},
+				{
+					Name: "active",
+					Query: &metadata.ViewQuery{
+						Combinator: "and",
+						Rules:      []metadata.ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+					},
+				},
 				{Name: "email-sort", Sorts: []metadata.ViewSort{{Field: "email", Direction: "asc"}}},
 			},
 		}},
 	}}}
+	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	writerPerms := permission.New(permission.Grant{
 		SubjectID: "writer",
 		Scope:     permission.ScopeTable,
@@ -901,7 +941,7 @@ func TestRowsRejectsViewsUsingUnreadableFields(t *testing.T) {
 		Level:     permission.Read,
 	})
 
-	if _, err := service.Rows(ctx, catalog, readerPerms, "reader", "db", "contacts", "active"); !errors.Is(err, ErrPermissionDenied) {
+	if _, err := service.Rows(ctx, catalog, readerPerms, "reader", "db", "contacts", "active"); !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected unreadable filter permission error, got %v", err)
 	}
 	rows, err := service.Rows(ctx, catalog, readerPerms, "reader", "db", "contacts", "email-sort")

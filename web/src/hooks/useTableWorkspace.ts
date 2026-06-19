@@ -15,12 +15,12 @@ import {
   type RowChange,
   type TableMetadata,
   type TableView,
-  type TableViewFilter,
+  type TableViewQuery,
+  type TableViewQueryRule,
   type TableViewSort
 } from "../api";
 import { rowDraftFromRecord } from "../appState";
 import { buildTableColumns, rowRecordToValues, type TableGridRow } from "../tableGrid";
-import { applyTableView } from "../tableViews";
 
 type UseTableWorkspaceOptions = {
   currentUserID?: string;
@@ -53,9 +53,7 @@ export function useTableWorkspace({
   const [newFieldFormula, setNewFieldFormula] = useState("");
   const [newRelationTable, setNewRelationTable] = useState("");
   const [newViewBase, setNewViewBase] = useState("all");
-  const [newViewFilterField, setNewViewFilterField] = useState("");
-  const [newViewFilterOp, setNewViewFilterOp] = useState<TableViewFilter["op"]>("eq");
-  const [newViewFilterValue, setNewViewFilterValue] = useState("");
+  const [newViewQuery, setNewViewQuery] = useState<TableViewQuery>(() => emptyViewQuery());
   const [newViewSortField, setNewViewSortField] = useState("");
   const [newViewSortDirection, setNewViewSortDirection] = useState<TableViewSort["direction"]>("asc");
   const [relationRows, setRelationRows] = useState<Record<string, TableGridRow[]>>({});
@@ -67,10 +65,7 @@ export function useTableWorkspace({
 
   const activeFields = table.fields.filter((field) => !field.deleted);
   const activeFieldNames = useMemo(() => activeFields.map((field) => field.name), [table.fields]);
-  const displayedRows = useMemo<TableGridRow[]>(
-    () => (rowsViewName === selectedTableView ? rows : applyTableView(rows, table.views ?? [], selectedTableView)),
-    [rows, rowsViewName, table.views, selectedTableView]
-  );
+  const displayedRows = useMemo<TableGridRow[]>(() => rows, [rows, rowsViewName, selectedTableView]);
   const displayedRecordIDs = useMemo(
     () => displayedRows.map((row) => Number(row.ct_record_id)).filter((recordID) => Number.isFinite(recordID)),
     [displayedRows]
@@ -113,9 +108,7 @@ export function useTableWorkspace({
   useEffect(() => {
     const viewDef = table.views.find((item) => item.name === selectedTableView);
     setNewViewBase(viewDef?.base_view ?? "all");
-    setNewViewFilterField(viewDef?.filters[0]?.field ?? "");
-    setNewViewFilterOp(viewDef?.filters[0]?.op ?? "eq");
-    setNewViewFilterValue(String(viewDef?.filters[0]?.value ?? ""));
+    setNewViewQuery(normalizeViewQuery(viewDef?.query));
     setNewViewSortField(viewDef?.sorts[0]?.field ?? "");
     setNewViewSortDirection(viewDef?.sorts[0]?.direction ?? "asc");
   }, [selectedTableView, table.views]);
@@ -359,18 +352,6 @@ export function useTableWorkspace({
     await persistTableMetadata(nextTable, t("status.updatedFormula", { name: fieldName }));
   }
 
-  function viewFiltersFromDraft(): TableViewFilter[] {
-    return newViewFilterField
-      ? [
-          {
-            field: newViewFilterField,
-            op: newViewFilterOp,
-            value: newViewFilterOp === "not_empty" ? undefined : newViewFilterValue
-          }
-        ]
-      : [];
-  }
-
   function viewSortsFromDraft(): TableViewSort[] {
     return newViewSortField ? [{ field: newViewSortField, direction: newViewSortDirection }] : [];
   }
@@ -390,15 +371,12 @@ export function useTableWorkspace({
     const nextView: TableView = {
       name,
       display_name: displayName,
-      filters: [],
       sorts: []
     };
     const nextTable = { ...table, views: [...(table.views ?? []), nextView] };
     await persistTableMetadata(nextTable, t("status.createdView", { name: displayName }), name);
     setNewViewBase("all");
-    setNewViewFilterField("");
-    setNewViewFilterOp("eq");
-    setNewViewFilterValue("");
+    setNewViewQuery(emptyViewQuery());
     setNewViewSortField("");
     setNewViewSortDirection("asc");
   }
@@ -412,7 +390,7 @@ export function useTableWorkspace({
     const nextView: TableView = {
       ...selectedView,
       base_view: newViewBase === "all" ? undefined : newViewBase,
-      filters: viewFiltersFromDraft(),
+      query: viewQueryFromDraft(newViewQuery),
       sorts: viewSortsFromDraft()
     };
     const nextTable = {
@@ -517,9 +495,7 @@ export function useTableWorkspace({
     newRelationTable,
     newFormulaValueType,
     newViewBase,
-    newViewFilterField,
-    newViewFilterOp,
-    newViewFilterValue,
+    newViewQuery,
     newViewSortDirection,
     newViewSortField,
     rowHistory,
@@ -544,9 +520,7 @@ export function useTableWorkspace({
     setNewFormulaValueType,
     setRelationDetail,
     setNewViewBase,
-    setNewViewFilterField,
-    setNewViewFilterOp,
-    setNewViewFilterValue,
+    setNewViewQuery,
     setNewViewSortDirection,
     setNewViewSortField,
     setSelectedRecordID,
@@ -555,5 +529,52 @@ export function useTableWorkspace({
     updateFieldFormulaFromCanvas,
     updateSelectedRowDraft,
     updateSelectedRowFromEditor
+  };
+}
+
+function emptyViewQuery(): TableViewQuery {
+  return { combinator: "and", rules: [] };
+}
+
+function normalizeViewQuery(query?: TableViewQuery): TableViewQuery {
+  return query ? (viewQueryFromDraft(query) ?? emptyViewQuery()) : emptyViewQuery();
+}
+
+function viewQueryFromDraft(query: TableViewQuery): TableViewQuery | undefined {
+  const rules = (query.rules ?? [])
+    .map((rule) => sanitizeViewQueryRule(rule))
+    .filter((rule): rule is TableViewQueryRule => Boolean(rule));
+  if (rules.length === 0 && !query.not) {
+    return undefined;
+  }
+  return {
+    combinator: query.combinator === "or" ? "or" : "and",
+    rules,
+    ...(query.not ? { not: true } : {})
+  };
+}
+
+function sanitizeViewQueryRule(rule: TableViewQueryRule): TableViewQueryRule | undefined {
+  if (rule.combinator || rule.rules) {
+    const rules = (rule.rules ?? [])
+      .map((child) => sanitizeViewQueryRule(child))
+      .filter((child): child is TableViewQueryRule => Boolean(child));
+    if (rules.length === 0 && !rule.not) {
+      return undefined;
+    }
+    return {
+      combinator: rule.combinator === "or" ? "or" : "and",
+      rules,
+      ...(rule.not ? { not: true } : {})
+    };
+  }
+  if (!rule.field) {
+    return undefined;
+  }
+  const operator = rule.operator || "=";
+  return {
+    field: rule.field,
+    operator,
+    ...(operator === "null" || operator === "notNull" ? {} : { value: rule.value ?? "" })
   };
 }

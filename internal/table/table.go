@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +38,7 @@ type RowRepository interface {
 	DeleteRow(ctx context.Context, dbName string, tableMeta metadata.Table, recordID int64) (Row, error)
 	Row(ctx context.Context, dbName string, tableMeta metadata.Table, recordID int64) (Row, error)
 	RestoreRow(ctx context.Context, dbName string, tableMeta metadata.Table, row Row) error
-	Rows(ctx context.Context, dbName string, tableMeta metadata.Table) ([]Row, error)
+	Rows(ctx context.Context, dbName string, tableMeta metadata.Table, views ...metadata.ResolvedView) ([]Row, error)
 }
 
 type Service struct {
@@ -47,10 +46,6 @@ type Service struct {
 	rows        RowRepository
 	history     history.Store
 	rowChangeFn RowChangeHandler
-}
-
-func NewService(historyStore history.Store) *Service {
-	return NewServiceWithRepository(historyStore, NewMemoryRowRepository())
 }
 
 func NewServiceWithRepository(historyStore history.Store, rows RowRepository) *Service {
@@ -201,21 +196,21 @@ func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perm
 		return nil, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 
-	rows, err := service.rows.Rows(ctx, dbName, tableMeta)
-	if err != nil {
-		return nil, err
-	}
+	var resolved metadata.ResolvedView
 	if viewName != "" {
-		resolved, err := tableMeta.ResolveView(viewName)
+		var err error
+		resolved, err = tableMeta.ResolveView(viewName)
 		if err != nil {
 			return nil, err
 		}
 		resource := dbName + "." + tableName
-		if !viewFieldsReadable(perms, actorID, resource, resolved.Filters, resolved.Sorts) {
+		if !viewFieldsReadable(perms, actorID, resource, resolved.Query, resolved.Sorts) {
 			return nil, fmt.Errorf("%w: view %s", ErrPermissionDenied, viewName)
 		}
-		rows = applyFilters(rows, resolved.Filters)
-		applySorts(rows, resolved.Sorts)
+	}
+	rows, err := service.rows.Rows(ctx, dbName, tableMeta, resolved)
+	if err != nil {
+		return nil, err
 	}
 
 	resource := dbName + "." + tableName
@@ -264,9 +259,9 @@ func (service *Service) EnsureTable(ctx context.Context, catalog metadata.Catalo
 	return service.rows.EnsureTable(ctx, dbName, tableMeta)
 }
 
-func viewFieldsReadable(perms permission.Set, actorID, resource string, filters []metadata.ViewFilter, sorts []metadata.ViewSort) bool {
-	for _, filter := range filters {
-		if !perms.CanReadField(actorID, resource, filter.Field) {
+func viewFieldsReadable(perms permission.Set, actorID, resource string, query *metadata.ViewQuery, sorts []metadata.ViewSort) bool {
+	for _, field := range viewQueryFields(query) {
+		if !perms.CanReadField(actorID, resource, field) {
 			return false
 		}
 	}
@@ -276,6 +271,28 @@ func viewFieldsReadable(perms permission.Set, actorID, resource string, filters 
 		}
 	}
 	return true
+}
+
+func viewQueryFields(query *metadata.ViewQuery) []string {
+	if query == nil {
+		return nil
+	}
+	fields := []string{}
+	for _, rule := range query.Rules {
+		fields = append(fields, viewQueryRuleFields(rule)...)
+	}
+	return fields
+}
+
+func viewQueryRuleFields(rule metadata.ViewQueryRule) []string {
+	if rule.Combinator != "" || len(rule.Rules) > 0 {
+		fields := []string{}
+		for _, child := range rule.Rules {
+			fields = append(fields, viewQueryRuleFields(child)...)
+		}
+		return fields
+	}
+	return []string{rule.Field}
 }
 
 func validateWritableFields(tableMeta metadata.Table, perms permission.Set, actorID, resource string, values map[string]any) error {
@@ -298,168 +315,6 @@ func validateWritableFields(tableMeta metadata.Table, perms permission.Set, acto
 		}
 	}
 	return nil
-}
-
-type MemoryRowRepository struct {
-	mu     sync.Mutex
-	nextID map[string]int64
-	rows   map[string]map[int64]Row
-}
-
-func NewMemoryRowRepository() *MemoryRowRepository {
-	return &MemoryRowRepository{
-		nextID: map[string]int64{},
-		rows:   map[string]map[int64]Row{},
-	}
-}
-
-func (repository *MemoryRowRepository) EnsureTable(_ context.Context, _ string, _ metadata.Table) error {
-	return nil
-}
-
-func (repository *MemoryRowRepository) CreateRow(_ context.Context, dbName string, tableMeta metadata.Table, values map[string]any) (Row, error) {
-	repository.mu.Lock()
-	defer repository.mu.Unlock()
-
-	resource := dbName + "." + tableMeta.Name
-	repository.nextID[resource]++
-	recordID := repository.nextID[resource]
-	row := Row{RecordID: recordID, Values: cloneValues(values)}
-	if repository.rows[resource] == nil {
-		repository.rows[resource] = map[int64]Row{}
-	}
-	repository.rows[resource][recordID] = row
-	return row, nil
-}
-
-func (repository *MemoryRowRepository) UpdateRow(_ context.Context, dbName string, tableMeta metadata.Table, recordID int64, values map[string]any) (Row, error) {
-	repository.mu.Lock()
-	defer repository.mu.Unlock()
-
-	resource := dbName + "." + tableMeta.Name
-	row, ok := repository.rows[resource][recordID]
-	if !ok {
-		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
-	}
-	nextValues := cloneValues(row.Values)
-	for key, value := range values {
-		nextValues[key] = value
-	}
-	row.Values = nextValues
-	repository.rows[resource][recordID] = row
-	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
-}
-
-func (repository *MemoryRowRepository) DeleteRow(_ context.Context, dbName string, tableMeta metadata.Table, recordID int64) (Row, error) {
-	repository.mu.Lock()
-	defer repository.mu.Unlock()
-
-	resource := dbName + "." + tableMeta.Name
-	row, ok := repository.rows[resource][recordID]
-	if !ok {
-		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
-	}
-	delete(repository.rows[resource], recordID)
-	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
-}
-
-func (repository *MemoryRowRepository) Row(_ context.Context, dbName string, tableMeta metadata.Table, recordID int64) (Row, error) {
-	repository.mu.Lock()
-	defer repository.mu.Unlock()
-
-	resource := dbName + "." + tableMeta.Name
-	row, ok := repository.rows[resource][recordID]
-	if !ok {
-		return Row{}, fmt.Errorf("row %s.%d not found", resource, recordID)
-	}
-	return Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}, nil
-}
-
-func (repository *MemoryRowRepository) RestoreRow(_ context.Context, dbName string, tableMeta metadata.Table, row Row) error {
-	repository.mu.Lock()
-	defer repository.mu.Unlock()
-
-	resource := dbName + "." + tableMeta.Name
-	if repository.rows[resource] == nil {
-		repository.rows[resource] = map[int64]Row{}
-	}
-	repository.rows[resource][row.RecordID] = Row{RecordID: row.RecordID, Values: cloneValues(row.Values)}
-	if repository.nextID[resource] < row.RecordID {
-		repository.nextID[resource] = row.RecordID
-	}
-	return nil
-}
-
-func (repository *MemoryRowRepository) Rows(_ context.Context, dbName string, tableMeta metadata.Table) ([]Row, error) {
-	repository.mu.Lock()
-	defer repository.mu.Unlock()
-
-	resource := dbName + "." + tableMeta.Name
-	rows := make([]Row, 0, len(repository.rows[resource]))
-	for _, row := range repository.rows[resource] {
-		rows = append(rows, Row{RecordID: row.RecordID, Values: cloneValues(row.Values)})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].RecordID < rows[j].RecordID
-	})
-	return rows, nil
-}
-
-func applyFilters(rows []Row, filters []metadata.ViewFilter) []Row {
-	filtered := rows[:0]
-	for _, row := range rows {
-		if rowMatchesFilters(row, filters) {
-			filtered = append(filtered, row)
-		}
-	}
-	return filtered
-}
-
-func rowMatchesFilters(row Row, filters []metadata.ViewFilter) bool {
-	for _, filter := range filters {
-		value := rowValue(row, filter.Field)
-		switch filter.Op {
-		case "eq":
-			if fmt.Sprint(value) != fmt.Sprint(filter.Value) {
-				return false
-			}
-		case "contains":
-			if !strings.Contains(strings.ToLower(fmt.Sprint(value)), strings.ToLower(fmt.Sprint(filter.Value))) {
-				return false
-			}
-		case "not_empty":
-			if strings.TrimSpace(fmt.Sprint(value)) == "" || value == nil {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func applySorts(rows []Row, sorts []metadata.ViewSort) {
-	sort.SliceStable(rows, func(i, j int) bool {
-		for _, sortDef := range sorts {
-			left := fmt.Sprint(rowValue(rows[i], sortDef.Field))
-			right := fmt.Sprint(rowValue(rows[j], sortDef.Field))
-			if left == right {
-				continue
-			}
-			if sortDef.Direction == "desc" {
-				return left > right
-			}
-			return left < right
-		}
-		return rows[i].RecordID < rows[j].RecordID
-	})
-}
-
-func rowValue(row Row, field string) any {
-	if field == "ct_record_id" {
-		return row.RecordID
-	}
-	return row.Values[field]
 }
 
 func calculateFormulaValues(tableMeta metadata.Table, recordID int64, values map[string]any) (map[string]any, error) {
@@ -664,10 +519,26 @@ func rowDiff(oldValues map[string]any, newValues map[string]any) history.RowDiff
 	for key := range keys {
 		oldValue, oldOK := oldValues[key]
 		newValue, newOK := newValues[key]
+		if isNilValue(oldValue) && isNilValue(newValue) {
+			continue
+		}
 		if oldOK && newOK && reflect.DeepEqual(oldValue, newValue) {
 			continue
 		}
 		diff[key] = history.FieldDiff{Old: oldValue, New: newValue}
 	}
 	return diff
+}
+
+func isNilValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
 }

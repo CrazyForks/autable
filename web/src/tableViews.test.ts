@@ -1,55 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { applyTableView, resolveTableView } from "./tableViews";
+import { resolveTableView } from "./tableViews";
 import type { TableView } from "./api";
 
 const views: TableView[] = [
   {
     name: "active",
     display_name: "Active",
-    filters: [{ field: "status", op: "eq", value: "Active" }],
+    query: { combinator: "and", rules: [{ field: "status", operator: "=", value: "Active" }] },
     sorts: []
   },
   {
     name: "active-desc",
     display_name: "Active desc",
     base_view: "active",
-    filters: [{ field: "name", op: "contains", value: "a" }],
+    query: { combinator: "and", rules: [{ field: "name", operator: "contains", value: "a" }] },
     sorts: [{ field: "name", direction: "desc" }]
   }
 ];
 
 describe("tableViews", () => {
-  it("applies base view filters and child sorts", () => {
-    const rows = [
-      { ct_record_id: 1, name: "Ada", status: "Active" },
-      { ct_record_id: 2, name: "Grace", status: "Active" },
-      { ct_record_id: 3, name: "Linus", status: "Archived" }
-    ];
-
-    expect(applyTableView(rows, views, "active-desc").map((row) => row.name)).toEqual(["Grace", "Ada"]);
-  });
-
-  it("resolves inherited filters and sorts", () => {
+  it("resolves inherited query and sorts", () => {
     expect(resolveTableView(views, "active-desc", new Set())).toEqual(
       expect.objectContaining({
         name: "active-desc",
-        filters: [
-          { field: "status", op: "eq", value: "Active" },
-          { field: "name", op: "contains", value: "a" }
-        ],
+        query: {
+          combinator: "and",
+          rules: [
+            { combinator: "and", rules: [{ field: "status", operator: "=", value: "Active" }] },
+            { combinator: "and", rules: [{ field: "name", operator: "contains", value: "a" }] }
+          ]
+        },
         sorts: [{ field: "name", direction: "desc" }]
       })
     );
   });
 
   it("handles missing and cyclic views without recursing forever", () => {
-    const rows = [{ ct_record_id: 1, name: "Ada" }];
     const cyclic: TableView[] = [
-      { name: "a", display_name: "a", base_view: "b", filters: [{ field: "name", op: "eq", value: "Grace" }], sorts: [] },
-      { name: "b", display_name: "b", base_view: "a", filters: [], sorts: [] }
+      { name: "a", display_name: "a", base_view: "b", query: { combinator: "and", rules: [] }, sorts: [] },
+      { name: "b", display_name: "b", base_view: "a", sorts: [] }
     ];
 
-    expect(applyTableView(rows, views, "missing")).toBe(rows);
-    expect(applyTableView(rows, cyclic, "a")).toEqual([]);
+    expect(resolveTableView(views, "missing", new Set())).toBeUndefined();
+    expect(resolveTableView(cyclic, "a", new Set())).toBeUndefined();
   });
 });

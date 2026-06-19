@@ -1910,7 +1910,7 @@ func visibleTableMetadata(perms permission.Set, actorID, dbName string, tableMet
 		if err != nil {
 			continue
 		}
-		if viewFieldsReadable(perms, actorID, resource, resolved.Filters, resolved.Sorts) {
+		if viewFieldsReadable(perms, actorID, resource, resolved.Query, resolved.Sorts) {
 			visible.Views = append(visible.Views, view)
 		}
 	}
@@ -1933,9 +1933,9 @@ func maxPermissionLevel(left, right permission.Level) permission.Level {
 	return right
 }
 
-func viewFieldsReadable(perms permission.Set, actorID, resource string, filters []metadata.ViewFilter, sorts []metadata.ViewSort) bool {
-	for _, filter := range filters {
-		if !perms.CanReadField(actorID, resource, filter.Field) {
+func viewFieldsReadable(perms permission.Set, actorID, resource string, query *metadata.ViewQuery, sorts []metadata.ViewSort) bool {
+	for _, field := range viewQueryFields(query) {
+		if !perms.CanReadField(actorID, resource, field) {
 			return false
 		}
 	}
@@ -1945,6 +1945,28 @@ func viewFieldsReadable(perms permission.Set, actorID, resource string, filters 
 		}
 	}
 	return true
+}
+
+func viewQueryFields(query *metadata.ViewQuery) []string {
+	if query == nil {
+		return nil
+	}
+	fields := []string{}
+	for _, rule := range query.Rules {
+		fields = append(fields, viewQueryRuleFields(rule)...)
+	}
+	return fields
+}
+
+func viewQueryRuleFields(rule metadata.ViewQueryRule) []string {
+	if rule.Combinator != "" || len(rule.Rules) > 0 {
+		fields := []string{}
+		for _, child := range rule.Rules {
+			fields = append(fields, viewQueryRuleFields(child)...)
+		}
+		return fields
+	}
+	return []string{rule.Field}
 }
 
 func canSeeTableMetadata(perms permission.Set, actorID, dbName string, tableMeta metadata.Table) bool {

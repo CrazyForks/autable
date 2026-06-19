@@ -31,8 +31,9 @@ import {
 } from "@fluentui/react-icons";
 import { type CellSelectArgs, type Column, type RowsChangeData } from "react-data-grid";
 import { useEffect, useMemo, useState } from "react";
+import { QueryBuilder, type Field as QueryBuilderField } from "react-querybuilder";
 import { useTranslation } from "react-i18next";
-import type { Field, RowChange, TableMetadata, TableViewFilter, TableViewSort } from "../api";
+import type { Field, RowChange, TableMetadata, TableViewQuery, TableViewSort } from "../api";
 import type { TableGridRow } from "../tableGrid";
 import { RecordDataGrid } from "./RecordDataGrid";
 
@@ -52,9 +53,7 @@ type TableWorkspaceProps = {
   onNewFormulaValueTypeChange: (value: string) => void;
   onNewRelationTableChange: (value: string) => void;
   onNewViewBaseChange: (value: string) => void;
-  onNewViewFilterFieldChange: (value: string) => void;
-  onNewViewFilterOpChange: (value: TableViewFilter["op"]) => void;
-  onNewViewFilterValueChange: (value: string) => void;
+  onNewViewQueryChange: (value: TableViewQuery) => void;
   onNewViewSortDirectionChange: (value: TableViewSort["direction"]) => void;
   onNewViewSortFieldChange: (value: string) => void;
   onMoveFieldPosition: (sourceFieldName: string, targetFieldName: string) => void | Promise<void>;
@@ -70,9 +69,7 @@ type TableWorkspaceProps = {
   newFormulaValueType: string;
   newRelationTable: string;
   newViewBase: string;
-  newViewFilterField: string;
-  newViewFilterOp: TableViewFilter["op"];
-  newViewFilterValue: string;
+  newViewQuery: TableViewQuery;
   newViewSortDirection: TableViewSort["direction"];
   newViewSortField: string;
   rowHistory: RowChange[];
@@ -102,9 +99,7 @@ export function TableWorkspace({
   onNewFormulaValueTypeChange,
   onNewRelationTableChange,
   onNewViewBaseChange,
-  onNewViewFilterFieldChange,
-  onNewViewFilterOpChange,
-  onNewViewFilterValueChange,
+  onNewViewQueryChange,
   onNewViewSortDirectionChange,
   onNewViewSortFieldChange,
   onMoveFieldPosition,
@@ -120,9 +115,7 @@ export function TableWorkspace({
   newFormulaValueType,
   newRelationTable,
   newViewBase,
-  newViewFilterField,
-  newViewFilterOp,
-  newViewFilterValue,
+  newViewQuery,
   newViewSortDirection,
   newViewSortField,
   rowHistory,
@@ -290,22 +283,21 @@ export function TableWorkspace({
               </ToolbarButton>
             </PopoverTrigger>
             <PopoverSurface className="view-filter-popover" aria-label={t("table.viewFilters")}>
-              <ViewFilterPopover
+              <ViewQueryPopover
                 activeFields={activeFields}
                 canWriteTable={canWriteTable}
                 newViewBase={newViewBase}
-                newViewFilterField={newViewFilterField}
-                newViewFilterOp={newViewFilterOp}
-                newViewFilterValue={newViewFilterValue}
+                newViewQuery={newViewQuery}
                 newViewSortDirection={newViewSortDirection}
                 newViewSortField={newViewSortField}
                 onNewViewBaseChange={onNewViewBaseChange}
-                onNewViewFilterFieldChange={onNewViewFilterFieldChange}
-                onNewViewFilterOpChange={onNewViewFilterOpChange}
-                onNewViewFilterValueChange={onNewViewFilterValueChange}
+                onNewViewQueryChange={onNewViewQueryChange}
                 onNewViewSortDirectionChange={onNewViewSortDirectionChange}
                 onNewViewSortFieldChange={onNewViewSortFieldChange}
-                onSaveView={onUpdateSelectedView}
+                onSaveView={() => {
+                  void onUpdateSelectedView();
+                  setFilterOpen(false);
+                }}
                 selectedView={selectedView}
                 views={table.views ?? []}
               />
@@ -654,19 +646,15 @@ function FieldHeader({
   );
 }
 
-function ViewFilterPopover({
+function ViewQueryPopover({
   activeFields,
   canWriteTable,
   newViewBase,
-  newViewFilterField,
-  newViewFilterOp,
-  newViewFilterValue,
+  newViewQuery,
   newViewSortDirection,
   newViewSortField,
   onNewViewBaseChange,
-  onNewViewFilterFieldChange,
-  onNewViewFilterOpChange,
-  onNewViewFilterValueChange,
+  onNewViewQueryChange,
   onNewViewSortDirectionChange,
   onNewViewSortFieldChange,
   onSaveView,
@@ -676,15 +664,11 @@ function ViewFilterPopover({
   activeFields: Field[];
   canWriteTable: boolean;
   newViewBase: string;
-  newViewFilterField: string;
-  newViewFilterOp: TableViewFilter["op"];
-  newViewFilterValue: string;
+  newViewQuery: TableViewQuery;
   newViewSortDirection: TableViewSort["direction"];
   newViewSortField: string;
   onNewViewBaseChange: (value: string) => void;
-  onNewViewFilterFieldChange: (value: string) => void;
-  onNewViewFilterOpChange: (value: TableViewFilter["op"]) => void;
-  onNewViewFilterValueChange: (value: string) => void;
+  onNewViewQueryChange: (value: TableViewQuery) => void;
   onNewViewSortDirectionChange: (value: TableViewSort["direction"]) => void;
   onNewViewSortFieldChange: (value: string) => void;
   onSaveView: () => void;
@@ -693,6 +677,17 @@ function ViewFilterPopover({
 }) {
   const { t } = useTranslation();
   const canEditView = canWriteTable && Boolean(selectedView);
+  const queryFields = useMemo<QueryBuilderField[]>(
+    () => [
+      { name: "ct_record_id", label: "ct_record_id", inputType: "number" },
+      ...activeFields.map((field) => ({
+        name: field.name,
+        label: field.name,
+        inputType: field.type === "int" || field.type === "float" || field.value_type === "int" || field.value_type === "float" ? "number" : "text"
+      }))
+    ],
+    [activeFields]
+  );
   return (
     <div className="view-filter-editor">
       <div className="view-filter-header">
@@ -720,42 +715,37 @@ function ViewFilterPopover({
           ))}
         </Select>
       </FluentField>
-      <div className="view-filter-grid">
-        <FluentField label={t("table.filterField")}>
-          <Select
-            aria-label={t("table.viewFilterField")}
-            value={newViewFilterField}
-            onChange={(_, data) => onNewViewFilterFieldChange(data.value)}
+      <FluentField label={t("table.viewFilters")}>
+        <div className="view-query-builder" aria-disabled={!canEditView}>
+          <QueryBuilder
+            fields={queryFields}
+            query={newViewQuery as never}
+            onQueryChange={(query: unknown) => onNewViewQueryChange(query as TableViewQuery)}
             disabled={!canEditView}
-          >
-            <option value="">{t("table.noFilter")}</option>
-            {activeFields.map((field) => (
-              <option key={field.name} value={field.name}>
-                {field.name}
-              </option>
-            ))}
-          </Select>
-        </FluentField>
-        <FluentField label={t("table.filterOperator")}>
-          <Select
-            aria-label={t("table.viewFilterOperator")}
-            value={newViewFilterOp}
-            onChange={(_, data) => onNewViewFilterOpChange(data.value as TableViewFilter["op"])}
-            disabled={!canEditView || !newViewFilterField}
-          >
-            <option value="eq">{t("table.operators.eq")}</option>
-            <option value="contains">{t("table.operators.contains")}</option>
-            <option value="not_empty">{t("table.operators.notEmpty")}</option>
-          </Select>
-        </FluentField>
-      </div>
-      <FluentField label={t("table.filterValue")}>
-        <Input
-          aria-label={t("table.viewFilterValue")}
-          value={newViewFilterValue}
-          onChange={(_, data) => onNewViewFilterValueChange(data.value)}
-          disabled={!canEditView || !newViewFilterField || newViewFilterOp === "not_empty"}
-        />
+            showNotToggle
+            resetOnFieldChange={false}
+            operators={[
+              { name: "=", label: "=" },
+              { name: "!=", label: "!=" },
+              { name: "<", label: "<" },
+              { name: "<=", label: "<=" },
+              { name: ">", label: ">" },
+              { name: ">=", label: ">=" },
+              { name: "contains", label: t("table.operators.contains") },
+              { name: "beginsWith", label: t("table.operators.beginsWith") },
+              { name: "endsWith", label: t("table.operators.endsWith") },
+              { name: "doesNotContain", label: t("table.operators.doesNotContain") },
+              { name: "null", label: t("table.operators.empty") },
+              { name: "notNull", label: t("table.operators.notEmpty") }
+            ]}
+            translations={{
+              addRule: { label: t("table.addFilterRule"), title: t("table.addFilterRule") },
+              addGroup: { label: t("table.addFilterGroup"), title: t("table.addFilterGroup") },
+              removeRule: { label: t("common.delete"), title: t("common.delete") },
+              removeGroup: { label: t("common.delete"), title: t("common.delete") }
+            }}
+          />
+        </div>
       </FluentField>
       <div className="view-filter-grid">
         <FluentField label={t("table.sortField")}>

@@ -436,9 +436,7 @@ function WorkspaceApp() {
               newFormulaValueType={tableWorkspace.newFormulaValueType}
               newRelationTable={tableWorkspace.newRelationTable}
               newViewBase={tableWorkspace.newViewBase}
-              newViewFilterField={tableWorkspace.newViewFilterField}
-              newViewFilterOp={tableWorkspace.newViewFilterOp}
-              newViewFilterValue={tableWorkspace.newViewFilterValue}
+              newViewQuery={tableWorkspace.newViewQuery}
               newViewSortDirection={tableWorkspace.newViewSortDirection}
               newViewSortField={tableWorkspace.newViewSortField}
               onAddRow={tableWorkspace.addDraftRow}
@@ -452,9 +450,7 @@ function WorkspaceApp() {
               onNewFormulaValueTypeChange={tableWorkspace.setNewFormulaValueType}
               onNewRelationTableChange={tableWorkspace.setNewRelationTable}
               onNewViewBaseChange={tableWorkspace.setNewViewBase}
-              onNewViewFilterFieldChange={tableWorkspace.setNewViewFilterField}
-              onNewViewFilterOpChange={tableWorkspace.setNewViewFilterOp}
-              onNewViewFilterValueChange={tableWorkspace.setNewViewFilterValue}
+              onNewViewQueryChange={tableWorkspace.setNewViewQuery}
               onNewViewSortDirectionChange={tableWorkspace.setNewViewSortDirection}
               onNewViewSortFieldChange={tableWorkspace.setNewViewSortField}
               onMoveFieldPosition={tableWorkspace.moveFieldPosition}

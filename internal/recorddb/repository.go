@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -195,7 +196,7 @@ func (repository *Repository) RestoreRow(ctx context.Context, dbName string, tab
 	})
 }
 
-func (repository *Repository) Rows(ctx context.Context, dbName string, tableMeta metadata.Table) ([]table.Row, error) {
+func (repository *Repository) Rows(ctx context.Context, dbName string, tableMeta metadata.Table, views ...metadata.ResolvedView) ([]table.Row, error) {
 	db, err := repository.database(dbName)
 	if err != nil {
 		return nil, err
@@ -203,9 +204,33 @@ func (repository *Repository) Rows(ctx context.Context, dbName string, tableMeta
 	if err := repository.EnsureTable(ctx, dbName, tableMeta); err != nil {
 		return nil, err
 	}
+	query := db.WithContext(ctx).Table(physicalTableName(tableMeta.Name))
+	if len(views) > 0 {
+		if views[0].Query != nil {
+			whereSQL, args, err := compileViewQuery(tableMeta, *views[0].Query)
+			if err != nil {
+				return nil, err
+			}
+			if whereSQL != "" {
+				query = query.Where(whereSQL, args...)
+			}
+		}
+		for _, sortDef := range views[0].Sorts {
+			field, ok := tableMeta.Field(sortDef.Field)
+			if !ok || field.Deleted {
+				return nil, fmt.Errorf("unknown view sort field %q", sortDef.Field)
+			}
+			if sortDef.Direction != "asc" && sortDef.Direction != "desc" {
+				return nil, fmt.Errorf("unsupported view sort direction %q", sortDef.Direction)
+			}
+			query = query.Order(clause.OrderByColumn{
+				Column: clause.Column{Name: viewQueryColumnName(sortDef.Field)},
+				Desc:   sortDef.Direction == "desc",
+			})
+		}
+	}
 	var records []map[string]any
-	err = db.WithContext(ctx).
-		Table(physicalTableName(tableMeta.Name)).
+	err = query.
 		Order(clause.OrderByColumn{Column: clause.Column{Name: recordIDColumn}}).
 		Find(&records).
 		Error
@@ -218,6 +243,145 @@ func (repository *Repository) Rows(ctx context.Context, dbName string, tableMeta
 		rows = append(rows, mapToRow(tableMeta, record))
 	}
 	return rows, nil
+}
+
+func compileViewQuery(tableMeta metadata.Table, query metadata.ViewQuery) (string, []any, error) {
+	if len(query.Rules) == 0 {
+		return "", nil, nil
+	}
+	combinator := strings.ToUpper(query.Combinator)
+	if combinator != "AND" && combinator != "OR" {
+		return "", nil, fmt.Errorf("unsupported view query combinator %q", query.Combinator)
+	}
+	parts := make([]string, 0, len(query.Rules))
+	args := []any{}
+	for _, rule := range query.Rules {
+		ruleSQL, ruleArgs, err := compileViewQueryRule(tableMeta, rule)
+		if err != nil {
+			return "", nil, err
+		}
+		if ruleSQL == "" {
+			continue
+		}
+		parts = append(parts, ruleSQL)
+		args = append(args, ruleArgs...)
+	}
+	if len(parts) == 0 {
+		return "", nil, nil
+	}
+	sql := "(" + strings.Join(parts, " "+combinator+" ") + ")"
+	if query.Not {
+		sql = "NOT " + sql
+	}
+	return sql, args, nil
+}
+
+func compileViewQueryRule(tableMeta metadata.Table, rule metadata.ViewQueryRule) (string, []any, error) {
+	if rule.Combinator != "" || len(rule.Rules) > 0 {
+		return compileViewQuery(tableMeta, metadata.ViewQuery{Combinator: rule.Combinator, Rules: rule.Rules, Not: rule.Not})
+	}
+	field, ok := tableMeta.Field(rule.Field)
+	if !ok || field.Deleted {
+		return "", nil, fmt.Errorf("unknown view query field %q", rule.Field)
+	}
+	column := quoteSQLiteIdentifier(viewQueryColumnName(rule.Field))
+	switch rule.Operator {
+	case "=":
+		value, err := normalizeViewQueryValue(field, rule.Value)
+		if err != nil {
+			return "", nil, err
+		}
+		return column + " = ?", []any{value}, nil
+	case "!=":
+		value, err := normalizeViewQueryValue(field, rule.Value)
+		if err != nil {
+			return "", nil, err
+		}
+		return column + " <> ?", []any{value}, nil
+	case "<", "<=", ">", ">=":
+		value, err := normalizeViewQueryValue(field, rule.Value)
+		if err != nil {
+			return "", nil, err
+		}
+		return column + " " + rule.Operator + " ?", []any{value}, nil
+	case "contains":
+		return "LOWER(CAST(" + column + " AS TEXT)) LIKE ? ESCAPE '\\'", []any{"%" + escapeSQLiteLike(strings.ToLower(fmt.Sprint(rule.Value))) + "%"}, nil
+	case "beginsWith":
+		return "LOWER(CAST(" + column + " AS TEXT)) LIKE ? ESCAPE '\\'", []any{escapeSQLiteLike(strings.ToLower(fmt.Sprint(rule.Value))) + "%"}, nil
+	case "endsWith":
+		return "LOWER(CAST(" + column + " AS TEXT)) LIKE ? ESCAPE '\\'", []any{"%" + escapeSQLiteLike(strings.ToLower(fmt.Sprint(rule.Value)))}, nil
+	case "doesNotContain":
+		return "(" + column + " IS NULL OR LOWER(CAST(" + column + " AS TEXT)) NOT LIKE ? ESCAPE '\\')", []any{"%" + escapeSQLiteLike(strings.ToLower(fmt.Sprint(rule.Value))) + "%"}, nil
+	case "doesNotBeginWith":
+		return "(" + column + " IS NULL OR LOWER(CAST(" + column + " AS TEXT)) NOT LIKE ? ESCAPE '\\')", []any{escapeSQLiteLike(strings.ToLower(fmt.Sprint(rule.Value))) + "%"}, nil
+	case "doesNotEndWith":
+		return "(" + column + " IS NULL OR LOWER(CAST(" + column + " AS TEXT)) NOT LIKE ? ESCAPE '\\')", []any{"%" + escapeSQLiteLike(strings.ToLower(fmt.Sprint(rule.Value)))}, nil
+	case "null":
+		return "(" + column + " IS NULL OR TRIM(CAST(" + column + " AS TEXT)) = '')", nil, nil
+	case "notNull":
+		return "(" + column + " IS NOT NULL AND TRIM(CAST(" + column + " AS TEXT)) <> '')", nil, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported view query operator %q", rule.Operator)
+	}
+}
+
+func normalizeViewQueryValue(field metadata.Field, value any) (any, error) {
+	switch field.StorageType() {
+	case "int":
+		switch typed := value.(type) {
+		case int:
+			return int64(typed), nil
+		case int64:
+			return typed, nil
+		case float64:
+			return int64(typed), nil
+		case string:
+			parsed, err := strconv.ParseInt(typed, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid int query value for field %q: %w", field.Name, err)
+			}
+			return parsed, nil
+		default:
+			return nil, fmt.Errorf("invalid int query value for field %q", field.Name)
+		}
+	case "float":
+		switch typed := value.(type) {
+		case int:
+			return float64(typed), nil
+		case int64:
+			return float64(typed), nil
+		case float64:
+			return typed, nil
+		case string:
+			parsed, err := strconv.ParseFloat(typed, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float query value for field %q: %w", field.Name, err)
+			}
+			return parsed, nil
+		default:
+			return nil, fmt.Errorf("invalid float query value for field %q", field.Name)
+		}
+	default:
+		return fmt.Sprint(value), nil
+	}
+}
+
+func viewQueryColumnName(fieldName string) string {
+	if fieldName == "ct_record_id" {
+		return recordIDColumn
+	}
+	return fieldName
+}
+
+func quoteSQLiteIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func escapeSQLiteLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	value = strings.ReplaceAll(value, `_`, `\_`)
+	return value
 }
 
 func (repository *Repository) Close() error {

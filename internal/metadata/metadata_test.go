@@ -72,15 +72,21 @@ func TestResolveViewComposesBaseView(t *testing.T) {
 		},
 		Views: []View{
 			{
-				Name:    "active",
-				Filters: []ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
-				Sorts:   []ViewSort{{Field: "name", Direction: "asc"}},
+				Name: "active",
+				Query: &ViewQuery{
+					Combinator: "and",
+					Rules:      []ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+				},
+				Sorts: []ViewSort{{Field: "name", Direction: "asc"}},
 			},
 			{
 				Name:     "active-review",
 				BaseView: "active",
-				Filters:  []ViewFilter{{Field: "name", Op: "contains", Value: "Ada"}},
-				Sorts:    []ViewSort{{Field: "ct_record_id", Direction: "desc"}},
+				Query: &ViewQuery{
+					Combinator: "and",
+					Rules:      []ViewQueryRule{{Field: "name", Operator: "contains", Value: "Ada"}},
+				},
+				Sorts: []ViewSort{{Field: "ct_record_id", Direction: "desc"}},
 			},
 		},
 	}
@@ -92,8 +98,8 @@ func TestResolveViewComposesBaseView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resolved.Filters) != 2 {
-		t.Fatalf("expected composed filters, got %#v", resolved.Filters)
+	if resolved.Query == nil || resolved.Query.Combinator != "and" || len(resolved.Query.Rules) != 2 {
+		t.Fatalf("expected composed query, got %#v", resolved.Query)
 	}
 	if len(resolved.Sorts) != 2 {
 		t.Fatalf("expected composed sorts, got %#v", resolved.Sorts)
@@ -159,8 +165,11 @@ func TestUpdateTableCanSoftDeleteFieldAndAddBasedView(t *testing.T) {
 				{Name: "legacy", Type: "string"},
 			},
 			Views: []View{{
-				Name:    "active",
-				Filters: []ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
+				Name: "active",
+				Query: &ViewQuery{
+					Combinator: "and",
+					Rules:      []ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+				},
 			}},
 		}},
 	}}}
@@ -174,7 +183,13 @@ func TestUpdateTableCanSoftDeleteFieldAndAddBasedView(t *testing.T) {
 			{Name: "email", Type: "string"},
 		},
 		Views: []View{
-			{Name: "active", Filters: []ViewFilter{{Field: "status", Op: "eq", Value: "active"}}},
+			{
+				Name: "active",
+				Query: &ViewQuery{
+					Combinator: "and",
+					Rules:      []ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+				},
+			},
 			{Name: "active-by-name", BaseView: "active", Sorts: []ViewSort{{Field: "name", Direction: "asc"}}},
 		},
 	})
@@ -196,7 +211,7 @@ func TestUpdateTableCanSoftDeleteFieldAndAddBasedView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resolved.Filters) != 1 || len(resolved.Sorts) != 1 {
+	if resolved.Query == nil || len(resolved.Query.Rules) != 1 || len(resolved.Sorts) != 1 {
 		t.Fatalf("expected based view composition, got %#v", resolved)
 	}
 }

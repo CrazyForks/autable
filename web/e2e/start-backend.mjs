@@ -19,7 +19,7 @@ writeFileSync(
   configPath,
   [
     "server:",
-    '  address: "127.0.0.1:18080"',
+    '  address: "127.0.0.1:18081"',
     "system_db:",
     `  path: "${join(runtimeDir, "data", "system.sqlite")}"`,
     "history:",

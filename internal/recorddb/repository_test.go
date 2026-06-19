@@ -2,6 +2,7 @@ package recorddb
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -48,6 +49,110 @@ func TestRepositoryCreatesOneSQLiteFilePerMetadataDatabase(t *testing.T) {
 	}
 	if len(opsRows) != 1 || opsRows[0].Values["name"] != "Grace" {
 		t.Fatalf("unexpected ops rows: %#v", opsRows)
+	}
+}
+
+func TestRepositoryRowsAppliesViewQueryInSQLite(t *testing.T) {
+	ctx := context.Background()
+	tableMeta := metadata.Table{
+		Name: "contacts",
+		Fields: []metadata.Field{
+			{Name: "name", Type: "string"},
+			{Name: "status", Type: "string"},
+			{Name: "priority", Type: "int"},
+		},
+	}
+	repository := openTestRepository(t, ctx, tableMeta)
+	for _, values := range []map[string]any{
+		{"name": "Ada", "status": "active", "priority": int64(1)},
+		{"name": "Grace", "status": "active", "priority": int64(3)},
+		{"name": "Linus", "status": "archived", "priority": int64(4)},
+	} {
+		if _, err := repository.CreateRow(ctx, "workspace", tableMeta, values); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := repository.Rows(ctx, "workspace", tableMeta, metadata.ResolvedView{
+		Query: &metadata.ViewQuery{
+			Combinator: "and",
+			Rules: []metadata.ViewQueryRule{
+				{Field: "status", Operator: "=", Value: "active"},
+				{
+					Combinator: "or",
+					Rules: []metadata.ViewQueryRule{
+						{Field: "name", Operator: "contains", Value: "a"},
+						{Field: "priority", Operator: ">=", Value: 2},
+					},
+				},
+			},
+		},
+		Sorts: []metadata.ViewSort{{Field: "priority", Direction: "desc"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].Values["name"] != "Grace" || rows[1].Values["name"] != "Ada" {
+		t.Fatalf("unexpected SQL-filtered rows: %#v", rows)
+	}
+}
+
+func TestRepositoryRowsEscapesViewQueryValues(t *testing.T) {
+	ctx := context.Background()
+	tableMeta := metadata.Table{
+		Name:   "contacts",
+		Fields: []metadata.Field{{Name: "name", Type: "string"}},
+	}
+	repository := openTestRepository(t, ctx, tableMeta)
+	for _, values := range []map[string]any{
+		{"name": "Ada"},
+		{"name": "A%"},
+		{"name": "A_"},
+	} {
+		if _, err := repository.CreateRow(ctx, "workspace", tableMeta, values); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := repository.Rows(ctx, "workspace", tableMeta, metadata.ResolvedView{
+		Query: &metadata.ViewQuery{
+			Combinator: "and",
+			Rules:      []metadata.ViewQueryRule{{Field: "name", Operator: "contains", Value: "%"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Values["name"] != "A%" {
+		t.Fatalf("LIKE wildcard value should be literal, got %#v", rows)
+	}
+}
+
+func TestRepositoryRowsRejectsUnsafeViewFields(t *testing.T) {
+	ctx := context.Background()
+	tableMeta := metadata.Table{
+		Name:   "contacts",
+		Fields: []metadata.Field{{Name: "name", Type: "string"}},
+	}
+	repository := openTestRepository(t, ctx, tableMeta)
+	if _, err := repository.CreateRow(ctx, "workspace", tableMeta, map[string]any{"name": "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := repository.Rows(ctx, "workspace", tableMeta, metadata.ResolvedView{
+		Query: &metadata.ViewQuery{
+			Combinator: "and",
+			Rules:      []metadata.ViewQueryRule{{Field: "name OR 1=1", Operator: "=", Value: "Ada"}},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected unknown query field to be rejected")
+	}
+	_, err = repository.Rows(ctx, "workspace", tableMeta, metadata.ResolvedView{
+		Sorts: []metadata.ViewSort{{Field: "name desc; drop table contacts", Direction: "asc"}},
+	})
+	if err == nil {
+		t.Fatal("expected unknown sort field to be rejected")
 	}
 }
 
@@ -456,6 +561,25 @@ func TestRepositoryDeleteRowRemovesPersistedRecord(t *testing.T) {
 	if len(rows) != 0 {
 		t.Fatalf("expected deleted row to stay deleted after reopen, got %#v", rows)
 	}
+}
+
+func openTestRepository(t *testing.T, ctx context.Context, tableMeta metadata.Table) *Repository {
+	t.Helper()
+	catalog := metadata.Catalog{Databases: []metadata.Database{{
+		Name:       "workspace",
+		SQLitePath: filepath.Join(t.TempDir(), "workspace.sqlite"),
+		Tables:     []metadata.Table{tableMeta},
+	}}}
+	repository, err := OpenCatalog(ctx, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil && !errors.Is(err, ErrUnknownDatabase) {
+			t.Fatal(err)
+		}
+	})
+	return repository
 }
 
 func contactsTable() metadata.Table {

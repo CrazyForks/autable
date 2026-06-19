@@ -491,7 +491,9 @@ select {
 }
 
 .view-filter-popover {
-  width: min(420px, calc(100vw - 48px));
+  width: min(860px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 96px));
+  overflow: auto;
 }
 
 .view-filter-editor {
@@ -523,6 +525,53 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.view-query-builder {
+  overflow: auto;
+  padding-bottom: 2px;
+}
+
+.view-query-builder .queryBuilder {
+  min-width: 720px;
+  --rqb-spacing: 6px;
+  --rqb-border-radius: 4px;
+  --rqb-background-color: #f8fafc;
+  --rqb-border-color: #d1d5db;
+}
+
+.view-query-builder .ruleGroup {
+  border-width: 1px;
+}
+
+.view-query-builder .rule,
+.view-query-builder .ruleGroup-header {
+  min-height: 32px;
+}
+
+.view-query-builder select,
+.view-query-builder input,
+.view-query-builder button {
+  min-height: 30px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+}
+
+.view-query-builder select,
+.view-query-builder input {
+  padding: 3px 8px;
+}
+
+.view-query-builder button {
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.view-query-builder[aria-disabled="true"] {
+  opacity: 0.7;
 }
 
 .record-drawer {

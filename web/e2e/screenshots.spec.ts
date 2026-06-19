@@ -101,7 +101,7 @@ test("capture workspace screenshots", async ({ page }) => {
       {
         name: "active",
         display_name: "Active",
-        filters: [{ field: "status", op: "eq", value: "Active" }],
+        query: { combinator: "and", rules: [{ field: "status", operator: "=", value: "Active" }] },
         sorts: []
       }
     ]
@@ -166,7 +166,7 @@ test("capture workspace screenshots", async ({ page }) => {
   await capture(page, "04-table-add-field", async () => {
     await page.getByRole("button", { name: "Add field" }).click(bestEffort);
     await page.getByRole("group", { name: "Add field" }).waitFor(bestEffort);
-    await page.getByLabel("New field type").selectOption("relation", bestEffort);
+    await page.getByLabel("Field type").selectOption("relation", bestEffort);
     await page.waitForTimeout(200);
   });
   await page.keyboard.press("Escape");
@@ -178,7 +178,7 @@ test("capture workspace screenshots", async ({ page }) => {
     await page.getByRole("complementary", { name: "Record panel" }).waitFor(bestEffort);
     await page.waitForTimeout(200);
   });
-  await page.getByRole("button", { name: "Close record panel" }).click({ ...bestEffort }).catch(() => undefined);
+  await page.getByRole("button", { name: "Close" }).click({ ...bestEffort }).catch(() => undefined);
 
   // Workflow view.
   await page.getByRole("button", { name: "Workflow", exact: true }).click();

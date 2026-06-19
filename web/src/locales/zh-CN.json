@@ -237,6 +237,8 @@
     "fieldName": "字段名称",
     "fieldType": "字段类型",
     "filter": "筛选",
+    "addFilterGroup": "添加分组",
+    "addFilterRule": "添加规则",
     "filterField": "筛选字段",
     "filterOperator": "筛选操作符",
     "filterValue": "筛选值",
@@ -247,8 +249,12 @@
     "noRowHistoryLoaded": "未加载记录历史",
     "noSort": "无排序",
     "operators": {
+      "beginsWith": "开头是",
       "contains": "包含",
+      "doesNotContain": "不包含",
       "eq": "等于",
+      "empty": "为空",
+      "endsWith": "结尾是",
       "notEmpty": "非空"
     },
     "operations": {

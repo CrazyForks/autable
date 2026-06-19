@@ -621,8 +621,20 @@ func TestMetadataAPIOnlyReturnsVisibleDatabasesAndTables(t *testing.T) {
 						{Name: "status", Type: "string"},
 					},
 					Views: []metadata.View{
-						{Name: "by-email", Filters: []metadata.ViewFilter{{Field: "email", Op: "not_empty"}}},
-						{Name: "active", Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}}},
+						{
+							Name: "by-email",
+							Query: &metadata.ViewQuery{
+								Combinator: "and",
+								Rules:      []metadata.ViewQueryRule{{Field: "email", Operator: "notNull"}},
+							},
+						},
+						{
+							Name: "active",
+							Query: &metadata.ViewQuery{
+								Combinator: "and",
+								Rules:      []metadata.ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+							},
+						},
 					},
 				},
 				{Name: "private_notes", Fields: []metadata.Field{{Name: "body", Type: "string"}}},
@@ -814,8 +826,11 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 				{Name: "status", Type: "string"},
 			},
 			Views: []metadata.View{{
-				Name:    "active",
-				Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
+				Name: "active",
+				Query: &metadata.ViewQuery{
+					Combinator: "and",
+					Rules:      []metadata.ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+				},
 			}},
 		}},
 	}}}
@@ -835,11 +850,11 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 			{"name":"name","type":"string"},
 			{"name":"status","type":"string","deleted":true},
 			{"name":"email","type":"string"}
-		],
-		"views":[
-			{"name":"active","filters":[{"field":"status","op":"eq","value":"active"}]},
-			{"name":"active-by-name","base_view":"active","sorts":[{"field":"name","direction":"asc"}]}
-		]
+			],
+			"views":[
+				{"name":"active","query":{"combinator":"and","rules":[{"field":"name","operator":"contains","value":"a"}]}},
+				{"name":"active-by-name","base_view":"active","sorts":[{"field":"name","direction":"asc"}]}
+			]
 	}`))
 	request.AddCookie(testSessionCookie(t, system, "owner"))
 	recorder := httptest.NewRecorder()
@@ -867,7 +882,7 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resolved.Filters) != 1 || len(resolved.Sorts) != 1 {
+	if resolved.Query == nil || len(resolved.Query.Rules) != 1 || len(resolved.Sorts) != 1 {
 		t.Fatalf("expected composed based view, got %#v", resolved)
 	}
 }
@@ -2996,8 +3011,17 @@ func newTestServerWithOIDC(t *testing.T, providers []config.OIDCProvider) (*Serv
 		}
 	})
 	historyStore := history.NewMemoryStore()
-	catalog := testCatalog("./db.sqlite")
-	return NewServerWithOIDCProviders(catalog, system, table.NewService(historyStore), historyStore, providers), system
+	catalog := testCatalog(filepath.Join(t.TempDir(), "db.sqlite"))
+	repository, err := recorddb.OpenCatalog(context.Background(), catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return NewServerWithOIDCProviders(catalog, system, table.NewServiceWithRepository(historyStore, repository), historyStore, providers), system
 }
 
 func assertWorkflowRunCount(t *testing.T, server *Server, system *systemdb.DB, workflowID int64, actorID string, expected int) []workflowRunResponse {
@@ -3056,7 +3080,16 @@ func newTestServerWithMetadataFile(t *testing.T, catalog metadata.Catalog) (*Ser
 		t.Fatal(err)
 	}
 	historyStore := history.NewMemoryStore()
-	server := NewServer(catalog, system, table.NewService(historyStore), historyStore)
+	repository, err := recorddb.OpenCatalog(context.Background(), catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	server := NewServer(catalog, system, table.NewServiceWithRepository(historyStore, repository), historyStore)
 	server.EnableMetadataWrites(metadataPath)
 	return server, system, metadataPath
 }
@@ -3074,14 +3107,20 @@ func testCatalog(sqlitePath string) metadata.Catalog {
 			},
 			Views: []metadata.View{
 				{
-					Name:    "active",
-					Filters: []metadata.ViewFilter{{Field: "status", Op: "eq", Value: "active"}},
+					Name: "active",
+					Query: &metadata.ViewQuery{
+						Combinator: "and",
+						Rules:      []metadata.ViewQueryRule{{Field: "status", Operator: "=", Value: "active"}},
+					},
 				},
 				{
 					Name:     "active-a",
 					BaseView: "active",
-					Filters:  []metadata.ViewFilter{{Field: "name", Op: "contains", Value: "a"}},
-					Sorts:    []metadata.ViewSort{{Field: "name", Direction: "desc"}},
+					Query: &metadata.ViewQuery{
+						Combinator: "and",
+						Rules:      []metadata.ViewQueryRule{{Field: "name", Operator: "contains", Value: "a"}},
+					},
+					Sorts: []metadata.ViewSort{{Field: "name", Direction: "desc"}},
 				},
 			},
 		}},
