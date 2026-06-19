@@ -36,7 +36,7 @@ func run(ctx context.Context, configPath string) error {
 	}
 	repoLayout := repository.NewLayout(cfg.Repository.Path)
 	metadataPath := repoLayout.MetadataPath()
-	catalog, err := metadata.Load(metadataPath)
+	catalog, err := metadata.LoadOrCreate(metadataPath)
 	if err != nil {
 		return err
 	}

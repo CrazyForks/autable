@@ -153,6 +153,24 @@ func TestAddDatabaseAddTableAndSave(t *testing.T) {
 	}
 }
 
+func TestLoadOrCreateCreatesMissingCatalogFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata", "main.yml")
+	catalog, err := LoadOrCreate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Databases) != 0 {
+		t.Fatalf("expected empty catalog, got %#v", catalog)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Databases) != 0 {
+		t.Fatalf("expected saved empty catalog, got %#v", loaded)
+	}
+}
+
 func TestUpdateTableCanSoftDeleteFieldAndAddBasedView(t *testing.T) {
 	catalog := Catalog{Databases: []Database{{
 		Name:       "workspace",

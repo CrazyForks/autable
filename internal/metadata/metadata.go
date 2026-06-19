@@ -96,6 +96,21 @@ func Load(path string) (Catalog, error) {
 	return catalog, nil
 }
 
+func LoadOrCreate(path string) (Catalog, error) {
+	catalog, err := Load(path)
+	if err == nil {
+		return catalog, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return Catalog{}, err
+	}
+	catalog = Catalog{}
+	if err := Save(path, catalog); err != nil {
+		return Catalog{}, err
+	}
+	return catalog, nil
+}
+
 func Save(path string, catalog Catalog) error {
 	if err := catalog.Validate(); err != nil {
 		return err
