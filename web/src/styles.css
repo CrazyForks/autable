@@ -1225,18 +1225,53 @@ select {
   border-top: 1px solid var(--colorNeutralStroke2);
 }
 
-.permission-scope-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+.permission-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.permission-scope-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--colorNeutralForeground2);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Connected two-segment control: left "all" menu joined to right "partial".
+   Stretches to fill the card so it reads as a balanced segmented control. */
+.perm-split {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.perm-split .perm-split-all,
+.perm-split .perm-split-partial {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 0;
+}
+
+.perm-split .perm-split-all {
+  border-start-start-radius: var(--borderRadiusMedium);
+  border-end-start-radius: var(--borderRadiusMedium);
+}
+
+.perm-split .perm-split-partial {
+  border-start-end-radius: var(--borderRadiusMedium);
+  border-end-end-radius: var(--borderRadiusMedium);
+  margin-inline-start: -1px;
 }
 
 .permission-partial-popover {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(360px, calc(100vw - 32px));
+  width: min(320px, calc(100vw - 32px));
   max-height: min(420px, calc(100vh - 120px));
   overflow: auto;
 }

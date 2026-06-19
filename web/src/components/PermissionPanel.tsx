@@ -4,6 +4,12 @@ import {
   CounterBadge,
   List,
   ListItem,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   Option,
   Popover,
   PopoverSurface,
@@ -11,7 +17,7 @@ import {
   Select,
   Text
 } from "@fluentui/react-components";
-import { AddRegular, DismissRegular, PeopleRegular, SaveRegular } from "@fluentui/react-icons";
+import { AddRegular, ChevronDownRegular, DismissRegular, PeopleRegular, SaveRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import {
   type DatabaseMetadata,
@@ -90,6 +96,7 @@ export function PermissionPanel({
       </div>
       {role ? (
         <PermissionMatrix
+          key={role.name}
           database={database}
           forms={forms}
           grants={grants}
@@ -201,136 +208,183 @@ function PermissionMatrix({
             <Text size={200} weight="semibold">
               {table.display_name || table.name}
             </Text>
-            <PermissionScopeRow
-              ariaLabel={`${table.name} fields permission`}
+            <PermissionScopeGroup
+              label={t("permission.fields")}
+              setScope="field_set"
+              setResource={`${database.name}.${table.name}`}
+              itemScope="field"
               grants={grants}
               items={table.fields
                 .filter((field) => !field.deleted)
                 .map((field) => ({
                   key: field.name,
                   label: field.name,
-                  scope: "field" as const,
                   resource: `${database.name}.${table.name}`,
                   field: field.name
                 }))}
-              label={t("permission.fields")}
               onGrantChange={onGrantChange}
-              partialAriaLabel={`${table.name} fields partial permissions`}
-              value={grantLevel(grants, "field_set", `${database.name}.${table.name}`, "")}
-              onChange={(level) => onGrantChange("field_set", `${database.name}.${table.name}`, "", level)}
             />
-            <PermissionScopeRow
-              ariaLabel={`${table.name} views permission`}
+            <PermissionScopeGroup
+              label={t("permission.views")}
+              setScope="view_set"
+              setResource={`${database.name}.${table.name}`}
+              itemScope="view"
               grants={grants}
               items={table.views.map((view) => ({
                 key: view.name,
                 label: view.display_name || view.name,
-                scope: "view" as const,
                 resource: `${database.name}.${table.name}`,
                 field: view.name
               }))}
-              label={t("permission.views")}
               onGrantChange={onGrantChange}
-              partialAriaLabel={`${table.name} views partial permissions`}
-              value={grantLevel(grants, "view_set", `${database.name}.${table.name}`, "")}
-              onChange={(level) => onGrantChange("view_set", `${database.name}.${table.name}`, "", level)}
             />
           </div>
         ))}
       </div>
       <div className="permission-card">
         <Text weight="semibold">{t("permission.workflows")}</Text>
-        <PermissionScopeRow
-          ariaLabel={`${t("permission.workflowSet")} permission`}
+        <PermissionScopeGroup
+          setScope="workflow_set"
+          setResource={database.name}
+          itemScope="workflow"
           grants={grants}
           items={workflows.map((workflow) => ({
             key: String(workflow.id ?? workflow.name),
             label: workflow.name,
-            scope: "workflow" as const,
             resource: String(workflow.id ?? 0),
             field: ""
           }))}
-          label={t("permission.workflowSet")}
           onGrantChange={onGrantChange}
-          partialAriaLabel={t("permission.workflowPartialPermissions")}
-          value={grantLevel(grants, "workflow_set", database.name, "")}
-          onChange={(level) => onGrantChange("workflow_set", database.name, "", level)}
         />
       </div>
       <div className="permission-card">
         <Text weight="semibold">{t("permission.forms")}</Text>
-        <PermissionScopeRow
-          ariaLabel={`${t("permission.formSet")} permission`}
+        <PermissionScopeGroup
+          setScope="form_set"
+          setResource={database.name}
+          itemScope="form"
           grants={grants}
           items={forms.map((form) => ({
             key: String(form.id ?? form.name),
             label: form.name,
-            scope: "form" as const,
             resource: String(form.id ?? 0),
             field: ""
           }))}
-          label={t("permission.formSet")}
           onGrantChange={onGrantChange}
-          partialAriaLabel={t("permission.formPartialPermissions")}
-          value={grantLevel(grants, "form_set", database.name, "")}
-          onChange={(level) => onGrantChange("form_set", database.name, "", level)}
         />
       </div>
     </div>
   );
 }
 
-function PermissionScopeRow(props: {
-  ariaLabel: string;
+type ScopeItem = { key: string; label: string; resource: string; field: string };
+
+function PermissionScopeGroup(props: {
+  label?: string;
+  setScope: PermissionGrant["scope"];
+  setResource: string;
+  itemScope: PermissionGrant["scope"];
   grants: PermissionGrant[];
-  items: Array<{
-    key: string;
-    label: string;
-    scope: PermissionGrant["scope"];
-    resource: string;
-    field: string;
-  }>;
-  label: string;
-  onChange: (level: PermissionGrant["level"]) => void;
+  items: ScopeItem[];
   onGrantChange: (
     scope: PermissionGrant["scope"],
     resource: string,
     field: string,
     level: PermissionGrant["level"]
   ) => void;
-  partialAriaLabel: string;
-  value: PermissionGrant["level"];
 }) {
   const { t } = useTranslation();
+  const levelLabels = useLevelLabels();
+  const setLevel = grantLevel(props.grants, props.setScope, props.setResource, "");
+  const partialCount = props.items.filter(
+    (item) => grantLevel(props.grants, props.itemScope, item.resource, item.field) > 0
+  ).length;
+  const noItems = props.items.length === 0;
+  // The two halves are mutually exclusive; the active side is derived from the grants.
+  const mode: "all" | "partial" = setLevel === 0 && partialCount > 0 ? "partial" : "all";
+  const allLabel = t("permission.allItems", "All");
+  const partialLabel = t("permission.partial");
+
+  function chooseAll(level: PermissionGrant["level"]) {
+    props.items.forEach((item) => props.onGrantChange(props.itemScope, item.resource, item.field, 0));
+    props.onGrantChange(props.setScope, props.setResource, "", level);
+  }
+
+  function changeItem(item: ScopeItem, level: PermissionGrant["level"]) {
+    if (setLevel > 0) {
+      props.onGrantChange(props.setScope, props.setResource, "", 0);
+    }
+    props.onGrantChange(props.itemScope, item.resource, item.field, level);
+  }
+
   return (
-    <div className="permission-scope-row">
-      <PermissionLevelSelect ariaLabel={props.ariaLabel} label={props.label} value={props.value} onChange={props.onChange} />
-      <Popover positioning="below-end" trapFocus>
-        <PopoverTrigger disableButtonEnhancement>
-          <Button size="small" aria-label={props.partialAriaLabel} disabled={props.items.length === 0}>
-            {t("permission.partial")}
-          </Button>
-        </PopoverTrigger>
-        <PopoverSurface className="permission-partial-popover" aria-label={props.partialAriaLabel}>
-          <Text weight="semibold">{props.label}</Text>
-          {props.items.length === 0 ? (
-            <Text size={200}>{t("permission.noPartialItems")}</Text>
-          ) : (
-            <div className="permission-partial-list">
-              {props.items.map((item) => (
-                <PermissionLevelSelect
-                  key={item.key}
-                  label={item.label}
-                  value={grantLevel(props.grants, item.scope, item.resource, item.field)}
-                  onChange={(level) => props.onGrantChange(item.scope, item.resource, item.field, level)}
-                />
+    <div className="permission-scope">
+      {props.label && <span className="permission-scope-label">{props.label}</span>}
+      <div className="perm-split" role="group" aria-label={props.label ?? props.setScope}>
+        <Menu positioning="below-start">
+          <MenuTrigger disableButtonEnhancement>
+            <MenuButton
+              className={mode === "all" ? "perm-split-all active" : "perm-split-all"}
+              appearance={mode === "all" ? "primary" : "secondary"}
+              aria-label={`${props.label ?? props.setScope} ${allLabel}`}
+            >
+              {allLabel} · {levelLabels[setLevel]}
+            </MenuButton>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {permissionLevels.map((level) => (
+                <MenuItem key={level} onClick={() => chooseAll(level)}>
+                  {levelLabels[level]}
+                </MenuItem>
               ))}
-            </div>
-          )}
-        </PopoverSurface>
-      </Popover>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Popover positioning="below-end" trapFocus>
+          <PopoverTrigger disableButtonEnhancement>
+            <Button
+              className={mode === "partial" ? "perm-split-partial active" : "perm-split-partial"}
+              appearance={mode === "partial" ? "primary" : "secondary"}
+              icon={<ChevronDownRegular />}
+              iconPosition="after"
+              disabled={noItems}
+              aria-label={`${props.label ?? props.setScope} ${partialLabel}`}
+            >
+              {partialLabel}
+              {mode === "partial" ? ` · ${partialCount}` : ""}
+            </Button>
+          </PopoverTrigger>
+          <PopoverSurface className="permission-partial-popover" aria-label={`${props.label ?? props.setScope} ${partialLabel}`}>
+            <Text weight="semibold">{props.label ?? partialLabel}</Text>
+            {noItems ? (
+              <Text size={200}>{t("permission.noPartialItems")}</Text>
+            ) : (
+              <div className="permission-partial-list">
+                {props.items.map((item) => (
+                  <PermissionLevelSelect
+                    key={item.key}
+                    label={item.label}
+                    value={grantLevel(props.grants, props.itemScope, item.resource, item.field)}
+                    onChange={(level) => changeItem(item, level)}
+                  />
+                ))}
+              </div>
+            )}
+          </PopoverSurface>
+        </Popover>
+      </div>
     </div>
   );
+}
+
+function useLevelLabels(): Record<(typeof permissionLevels)[number], string> {
+  const { t } = useTranslation();
+  return {
+    0: t("permission.levels.none"),
+    1: t("permission.levels.read"),
+    2: t("permission.levels.write")
+  };
 }
 
 function grantLevel(

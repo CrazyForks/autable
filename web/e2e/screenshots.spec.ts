@@ -217,6 +217,13 @@ test("capture workspace screenshots", async ({ page }) => {
   await page.waitForTimeout(300);
   await shot(page, "10-permission-matrix");
 
+  // Partial popover (per-item levels) from the connected split control.
+  await capture(page, "13-permission-partial", async () => {
+    await page.getByRole("button", { name: /Partial/ }).first().click(bestEffort);
+    await page.waitForTimeout(250);
+  });
+  await page.keyboard.press("Escape");
+
   // Members popover (count badge + add/list).
   await capture(page, "12-members-popover", async () => {
     await page.getByRole("button", { name: /Members/ }).click(bestEffort);
