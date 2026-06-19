@@ -67,6 +67,9 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	resource := dbName + "." + tableName
+	if !isDatabaseOwner && !perms.CanCreateRecord(actorID, resource) {
+		return Row{}, fmt.Errorf("%w: %s", ErrPermissionDenied, resource)
+	}
 	if err := validateWritableFields(tableMeta, perms, actorID, isDatabaseOwner, resource, values); err != nil {
 		return Row{}, err
 	}
@@ -163,7 +166,7 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	resource := dbName + "." + tableName
-	if !isDatabaseOwner {
+	if !isDatabaseOwner && !perms.CanDeleteRecord(actorID, resource) {
 		return Row{}, fmt.Errorf("%w: %s", ErrPermissionDenied, resource)
 	}
 

@@ -547,6 +547,12 @@ func (server *Server) handleSaveGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if grant.Level != permission.None {
+		if err := server.validateGrantResource(r.Context(), dbName, grant); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	if !server.requireDatabaseOwner(w, r, actorID, dbName) {
 		return
 	}
@@ -2177,7 +2183,7 @@ func (server *Server) requireDatabaseOwner(w http.ResponseWriter, r *http.Reques
 
 func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Grant) (string, error) {
 	switch grant.Scope {
-	case permission.ScopeFieldSet, permission.ScopeField, permission.ScopeViewSet, permission.ScopeView:
+	case permission.ScopeFieldSet, permission.ScopeField, permission.ScopeRecord, permission.ScopeViewSet, permission.ScopeView:
 		dbName, _, ok := strings.Cut(grant.Resource, ".")
 		if !ok || dbName == "" {
 			return "", fmt.Errorf("grant resource %q must be db.table", grant.Resource)
@@ -2411,6 +2417,20 @@ func (server *Server) validateGrantResource(ctx context.Context, dbName string, 
 		if !ok || field.Deleted || strings.HasPrefix(field.Name, "ct_") {
 			return fmt.Errorf("field %s.%s.%s not found", dbName, tableName, grant.Field)
 		}
+	case permission.ScopeRecord:
+		if grant.Level != permission.Write {
+			return errors.New("record grant requires write level")
+		}
+		_, tableName, ok := strings.Cut(grant.Resource, ".")
+		if !ok || tableName == "" {
+			return fmt.Errorf("grant resource %q must be db.table", grant.Resource)
+		}
+		if _, ok := server.catalogSnapshot().Table(dbName, tableName); !ok {
+			return fmt.Errorf("table %s.%s not found", dbName, tableName)
+		}
+		if grant.Field != "create" && grant.Field != "delete" {
+			return errors.New("record grant field must be create or delete")
+		}
 	case permission.ScopeViewSet:
 		if grant.Field != "" {
 			return errors.New("view set grant cannot include field")
@@ -2638,38 +2658,14 @@ func (server *Server) formPermissionLevel(ctx context.Context, perms permission.
 	)
 }
 
-func canReadRowHistory(perms permission.Set, actorID string, isDatabaseOwner bool, resource string, tableMeta metadata.Table) bool {
-	if isDatabaseOwner {
-		return true
-	}
-	if perms.CanReadField(actorID, resource, "ct_record_id") {
-		return true
-	}
-	for _, field := range tableMeta.ActiveFields() {
-		if perms.CanReadField(actorID, resource, field.Name) {
-			return true
-		}
-	}
-	return false
+func canReadRowHistory(_ permission.Set, _ string, isDatabaseOwner bool, _ string, _ metadata.Table) bool {
+	return isDatabaseOwner
 }
 
-func readableHistoryValues(values map[string]any, perms permission.Set, actorID string, isDatabaseOwner bool, resource string, tableMeta metadata.Table) map[string]any {
-	if isDatabaseOwner {
-		readable := make(map[string]any, len(values))
-		for fieldName, value := range values {
-			readable[fieldName] = value
-		}
-		return readable
-	}
-	readable := map[string]any{}
+func readableHistoryValues(values map[string]any, _ permission.Set, _ string, _ bool, _ string, _ metadata.Table) map[string]any {
+	readable := make(map[string]any, len(values))
 	for fieldName, value := range values {
-		field, ok := tableMeta.Field(fieldName)
-		if !ok || field.Deleted {
-			continue
-		}
-		if perms.CanReadField(actorID, resource, fieldName) {
-			readable[fieldName] = value
-		}
+		readable[fieldName] = value
 	}
 	return readable
 }

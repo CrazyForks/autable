@@ -118,6 +118,13 @@
     "noPartialItems": "没有可配置项",
     "noRoleSelected": "未选择角色",
     "partial": "部分",
+    "records": "记录",
+    "recordModes": {
+      "none": "无",
+      "create": "可增",
+      "delete": "可删",
+      "createDelete": "可增删"
+    },
     "removeMember": "移除 {{email}}",
     "roleAccessMatrix": "{{database}} 角色权限矩阵",
     "roleMemberEmail": "角色成员邮箱",

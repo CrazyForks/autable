@@ -13,6 +13,7 @@ type Scope string
 const (
 	ScopeFieldSet    Scope = "field_set"
 	ScopeField       Scope = "field"
+	ScopeRecord      Scope = "record"
 	ScopeViewSet     Scope = "view_set"
 	ScopeView        Scope = "view"
 	ScopeWorkflowSet Scope = "workflow_set"
@@ -73,6 +74,17 @@ func (set Set) ViewLevel(subjectID, resource, view string) Level {
 	return level
 }
 
+func (set Set) RecordLevel(subjectID, resource, action string) Level {
+	level := None
+	for _, grant := range set.grants {
+		if grant.SubjectID != subjectID || grant.Scope != ScopeRecord || grant.Resource != resource || grant.Field != action {
+			continue
+		}
+		level = maxLevel(level, grant.Level)
+	}
+	return level
+}
+
 func (set Set) ResourceLevel(subjectID string, scope Scope, resource string) Level {
 	level := None
 	for _, grant := range set.grants {
@@ -100,6 +112,14 @@ func (set Set) CanReadView(subjectID, resource, view string) bool {
 
 func (set Set) CanWriteView(subjectID, resource, view string) bool {
 	return set.ViewLevel(subjectID, resource, view) >= Write
+}
+
+func (set Set) CanCreateRecord(subjectID, resource string) bool {
+	return set.RecordLevel(subjectID, resource, "create") >= Write
+}
+
+func (set Set) CanDeleteRecord(subjectID, resource string) bool {
+	return set.RecordLevel(subjectID, resource, "delete") >= Write
 }
 
 func (set Set) CanReadResource(subjectID string, scope Scope, resource string) bool {

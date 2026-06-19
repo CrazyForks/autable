@@ -56,6 +56,23 @@ func TestViewLevelPermission(t *testing.T) {
 	}
 }
 
+func TestRecordActionPermission(t *testing.T) {
+	perms := New(
+		Grant{SubjectID: "u1", Scope: ScopeRecord, Resource: "db.contacts", Field: "create", Level: Write},
+		Grant{SubjectID: "u1", Scope: ScopeRecord, Resource: "db.contacts", Field: "delete", Level: Read},
+	)
+
+	if !perms.CanCreateRecord("u1", "db.contacts") {
+		t.Fatal("expected record create permission")
+	}
+	if perms.CanDeleteRecord("u1", "db.contacts") {
+		t.Fatal("did not expect read-level record delete grant to allow delete")
+	}
+	if perms.CanCreateRecord("u2", "db.contacts") {
+		t.Fatal("did not expect another subject to inherit record permission")
+	}
+}
+
 func TestResourceLevelPermission(t *testing.T) {
 	perms := New(
 		Grant{SubjectID: "u1", Scope: ScopeWorkflowSet, Resource: "workspace", Level: Read},

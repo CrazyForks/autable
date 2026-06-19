@@ -118,6 +118,13 @@
     "noPartialItems": "No partial items",
     "noRoleSelected": "No role selected",
     "partial": "Partial",
+    "records": "Records",
+    "recordModes": {
+      "none": "None",
+      "create": "Create",
+      "delete": "Delete",
+      "createDelete": "Create and delete"
+    },
     "removeMember": "Remove {{email}}",
     "roleAccessMatrix": "{{database}} role access matrix",
     "roleMemberEmail": "Role member email",
