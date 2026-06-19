@@ -1912,8 +1912,11 @@ func (server *Server) visibleCatalog(ctx context.Context, actorID string, perms 
 	catalog := server.catalogSnapshot()
 	visible := metadata.Catalog{Databases: []metadata.Database{}}
 	for _, database := range catalog.Databases {
-		dbVisible := perms.ResourceLevel(actorID, permission.ScopeDatabase, database.Name) >= permission.Read
-		dbWritable := perms.ResourceLevel(actorID, permission.ScopeDatabase, database.Name) >= permission.Write
+		dbLevel := perms.ResourceLevel(actorID, permission.ScopeDatabase, database.Name)
+		workflowSetLevel := perms.ResourceLevel(actorID, permission.ScopeWorkflowSet, database.Name)
+		formSetLevel := perms.ResourceLevel(actorID, permission.ScopeFormSet, database.Name)
+		dbVisible := dbLevel >= permission.Read
+		dbWritable := dbLevel >= permission.Write
 		tables := make([]metadata.Table, 0, len(database.Tables))
 		for _, tableMeta := range database.Tables {
 			if dbWritable || canSeeTableMetadata(perms, actorID, database.Name, tableMeta) {
@@ -1929,6 +1932,9 @@ func (server *Server) visibleCatalog(ctx context.Context, actorID string, perms 
 			dbVisible = resourceVisible
 		}
 		if dbVisible {
+			database.PermissionLevel = int(dbLevel)
+			database.WorkflowPermissionLevel = int(maxPermissionLevel(dbLevel, workflowSetLevel))
+			database.FormPermissionLevel = int(maxPermissionLevel(dbLevel, formSetLevel))
 			database.Tables = tables
 			visible.Databases = append(visible.Databases, database)
 		}

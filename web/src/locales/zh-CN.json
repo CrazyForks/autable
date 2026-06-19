@@ -104,6 +104,8 @@
     "addRoleMember": "添加角色成员",
     "empty": "创建角色后即可配置表、字段、工作流和表单权限。",
     "fieldSet": "{{table}} 字段",
+    "fields": "字段",
+    "formPartialPermissions": "表单部分权限",
     "formSet": "全部表单",
     "forms": "表单",
     "levels": {
@@ -113,7 +115,9 @@
     },
     "members": "成员",
     "noMembers": "暂无成员",
+    "noPartialItems": "没有可配置项",
     "noRoleSelected": "未选择角色",
+    "partial": "部分",
     "removeMember": "移除 {{email}}",
     "roleAccessMatrix": "{{database}} 角色权限矩阵",
     "roleMemberEmail": "角色成员邮箱",
@@ -121,6 +125,8 @@
     "tables": "表",
     "view": "{{view}} 视图",
     "viewSet": "{{table}} 视图",
+    "views": "视图",
+    "workflowPartialPermissions": "工作流部分权限",
     "workflowSet": "全部工作流",
     "workflows": "工作流"
   },

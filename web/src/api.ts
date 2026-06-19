@@ -52,6 +52,9 @@ export type DatabaseMetadata = {
   name: string;
   sqlite_path: string;
   tables: TableMetadata[];
+  permission_level?: 0 | 1 | 2;
+  workflow_permission_level?: 0 | 1 | 2;
+  form_permission_level?: 0 | 1 | 2;
 };
 
 export type Catalog = {

@@ -271,6 +271,7 @@ export function WorkspaceNavigation({
           {view === "workflow" && (
             <ResourceNav
               ariaLabel={t("nav.workflowList")}
+              canCreate={(database.workflow_permission_level ?? 2) >= 2}
               createLabel={t("nav.createWorkflow")}
               databaseName={database.name}
               icon="workflow"
@@ -289,6 +290,7 @@ export function WorkspaceNavigation({
           {view === "form" && (
             <ResourceNav
               ariaLabel={t("nav.formList")}
+              canCreate={(database.form_permission_level ?? 2) >= 2}
               createLabel={t("nav.createForm")}
               databaseName={database.name}
               icon="form"
@@ -327,7 +329,12 @@ export function WorkspaceNavigation({
                   onChange={(_, data) => onNewRoleNameChange(data.value)}
                   disabled={!database.name}
                 />
-                <Button icon={<AddRegular />} aria-label={t("nav.createRole")} onClick={onCreateRole} disabled={!database.name} />
+                <Button
+                  icon={<AddRegular />}
+                  aria-label={t("nav.createRole")}
+                  onClick={onCreateRole}
+                  disabled={!database.name || (database.permission_level ?? 2) < 2}
+                />
               </div>
             </>
           )}
@@ -424,6 +431,7 @@ function PrimaryRail({
 
 function ResourceNav(props: {
   ariaLabel: string;
+  canCreate: boolean;
   createLabel: string;
   databaseName: string;
   icon: "workflow" | "form";
@@ -450,7 +458,7 @@ function ResourceNav(props: {
         <CreateNamePopover
           ariaLabel={props.createLabel}
           buttonLabel={props.createLabel}
-          disabled={!props.databaseName}
+          disabled={!props.databaseName || !props.canCreate}
           inputLabel={props.icon === "workflow" ? t("nav.newWorkflowName") : t("nav.newFormName")}
           name={props.newName}
           onNameChange={props.onNewNameChange}
@@ -551,7 +559,7 @@ function TableNav(props: {
         <CreateNamePopover
           ariaLabel={t("nav.createTable")}
           buttonLabel={t("nav.createTable")}
-          disabled={!props.database.name}
+          disabled={!props.database.name || (props.database.permission_level ?? 2) < 2}
           inputLabel={t("nav.newTableName")}
           name={props.newTableName}
           onNameChange={props.onNewTableNameChange}
@@ -597,7 +605,9 @@ function TableNav(props: {
                   {viewDef.display_name || viewDef.name}
                 </NavSubItem>
               ))}
-              <NavSubItem value={`${item.name}:add-view`}>{t("nav.view")}</NavSubItem>
+              {(item.view_permission_level ?? item.permission_level ?? 2) >= 2 && (
+                <NavSubItem value={`${item.name}:add-view`}>{t("nav.view")}</NavSubItem>
+              )}
             </NavSubItemGroup>
           </NavCategory>
         ))}

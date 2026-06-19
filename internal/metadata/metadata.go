@@ -16,9 +16,12 @@ type Catalog struct {
 }
 
 type Database struct {
-	Name       string  `yaml:"name" json:"name"`
-	SQLitePath string  `yaml:"sqlite_path" json:"sqlite_path"`
-	Tables     []Table `yaml:"tables" json:"tables"`
+	Name                    string  `yaml:"name" json:"name"`
+	SQLitePath              string  `yaml:"sqlite_path" json:"sqlite_path"`
+	Tables                  []Table `yaml:"tables" json:"tables"`
+	PermissionLevel         int     `yaml:"-" json:"permission_level,omitempty"`
+	WorkflowPermissionLevel int     `yaml:"-" json:"workflow_permission_level,omitempty"`
+	FormPermissionLevel     int     `yaml:"-" json:"form_permission_level,omitempty"`
 }
 
 type Table struct {

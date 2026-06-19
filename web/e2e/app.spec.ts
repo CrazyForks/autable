@@ -1057,9 +1057,15 @@ test("covers role members and resource permission grants through the real backen
   await page.keyboard.press("Escape");
   await permissionView.getByLabel("contacts fields permission").selectOption("1");
   await permissionView.getByLabel("contacts views permission").selectOption("1");
-  await permissionView.getByLabel("email permission").selectOption("2");
-  await permissionView.getByLabel(`${workflow.name} permission`).selectOption("1");
-  await permissionView.getByLabel(`${form.name} permission`).selectOption("2");
+  await permissionView.getByRole("button", { name: "contacts fields partial permissions" }).click();
+  await page.getByLabel("email permission").selectOption("2");
+  await page.keyboard.press("Escape");
+  await permissionView.getByRole("button", { name: "Workflow partial permissions" }).click();
+  await page.getByLabel(`${workflow.name} permission`).selectOption("1");
+  await page.keyboard.press("Escape");
+  await permissionView.getByRole("button", { name: "Form partial permissions" }).click();
+  await page.getByLabel(`${form.name} permission`).selectOption("2");
+  await page.keyboard.press("Escape");
   await permissionView.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved role editor")).toBeVisible();
 

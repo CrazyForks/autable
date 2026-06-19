@@ -198,71 +198,137 @@ function PermissionMatrix({
         <Text weight="semibold">{t("permission.tables")}</Text>
         {database.tables.map((table) => (
           <div key={table.name} className="permission-resource">
-            <PermissionLevelSelect
-              label={t("permission.fieldSet", { table: table.name })}
+            <Text size={200} weight="semibold">
+              {table.display_name || table.name}
+            </Text>
+            <PermissionScopeRow
+              ariaLabel={`${table.name} fields permission`}
+              grants={grants}
+              items={table.fields
+                .filter((field) => !field.deleted)
+                .map((field) => ({
+                  key: field.name,
+                  label: field.name,
+                  scope: "field" as const,
+                  resource: `${database.name}.${table.name}`,
+                  field: field.name
+                }))}
+              label={t("permission.fields")}
+              onGrantChange={onGrantChange}
+              partialAriaLabel={`${table.name} fields partial permissions`}
               value={grantLevel(grants, "field_set", `${database.name}.${table.name}`, "")}
               onChange={(level) => onGrantChange("field_set", `${database.name}.${table.name}`, "", level)}
             />
-            <PermissionLevelSelect
-              label={t("permission.viewSet", { table: table.name })}
+            <PermissionScopeRow
+              ariaLabel={`${table.name} views permission`}
+              grants={grants}
+              items={table.views.map((view) => ({
+                key: view.name,
+                label: view.display_name || view.name,
+                scope: "view" as const,
+                resource: `${database.name}.${table.name}`,
+                field: view.name
+              }))}
+              label={t("permission.views")}
+              onGrantChange={onGrantChange}
+              partialAriaLabel={`${table.name} views partial permissions`}
               value={grantLevel(grants, "view_set", `${database.name}.${table.name}`, "")}
               onChange={(level) => onGrantChange("view_set", `${database.name}.${table.name}`, "", level)}
             />
-            <div className="permission-fields">
-              {table.fields
-                .filter((field) => !field.deleted)
-                .map((field) => (
-                  <PermissionLevelSelect
-                    key={field.name}
-                    label={field.name}
-                    value={grantLevel(grants, "field", `${database.name}.${table.name}`, field.name)}
-                    onChange={(level) => onGrantChange("field", `${database.name}.${table.name}`, field.name, level)}
-                  />
-                ))}
-              {table.views.map((view) => (
-                <PermissionLevelSelect
-                  key={view.name}
-                  label={t("permission.view", { view: view.name })}
-                  value={grantLevel(grants, "view", `${database.name}.${table.name}`, view.name)}
-                  onChange={(level) => onGrantChange("view", `${database.name}.${table.name}`, view.name, level)}
-                />
-              ))}
-            </div>
           </div>
         ))}
       </div>
       <div className="permission-card">
         <Text weight="semibold">{t("permission.workflows")}</Text>
-        <PermissionLevelSelect
+        <PermissionScopeRow
+          ariaLabel={`${t("permission.workflowSet")} permission`}
+          grants={grants}
+          items={workflows.map((workflow) => ({
+            key: String(workflow.id ?? workflow.name),
+            label: workflow.name,
+            scope: "workflow" as const,
+            resource: String(workflow.id ?? 0),
+            field: ""
+          }))}
           label={t("permission.workflowSet")}
+          onGrantChange={onGrantChange}
+          partialAriaLabel={t("permission.workflowPartialPermissions")}
           value={grantLevel(grants, "workflow_set", database.name, "")}
           onChange={(level) => onGrantChange("workflow_set", database.name, "", level)}
         />
-        {workflows.map((workflow) => (
-          <PermissionLevelSelect
-            key={workflow.id ?? workflow.name}
-            label={workflow.name}
-            value={grantLevel(grants, "workflow", String(workflow.id ?? 0), "")}
-            onChange={(level) => onGrantChange("workflow", String(workflow.id ?? 0), "", level)}
-          />
-        ))}
       </div>
       <div className="permission-card">
         <Text weight="semibold">{t("permission.forms")}</Text>
-        <PermissionLevelSelect
+        <PermissionScopeRow
+          ariaLabel={`${t("permission.formSet")} permission`}
+          grants={grants}
+          items={forms.map((form) => ({
+            key: String(form.id ?? form.name),
+            label: form.name,
+            scope: "form" as const,
+            resource: String(form.id ?? 0),
+            field: ""
+          }))}
           label={t("permission.formSet")}
+          onGrantChange={onGrantChange}
+          partialAriaLabel={t("permission.formPartialPermissions")}
           value={grantLevel(grants, "form_set", database.name, "")}
           onChange={(level) => onGrantChange("form_set", database.name, "", level)}
         />
-        {forms.map((form) => (
-          <PermissionLevelSelect
-            key={form.id ?? form.name}
-            label={form.name}
-            value={grantLevel(grants, "form", String(form.id ?? 0), "")}
-            onChange={(level) => onGrantChange("form", String(form.id ?? 0), "", level)}
-          />
-        ))}
       </div>
+    </div>
+  );
+}
+
+function PermissionScopeRow(props: {
+  ariaLabel: string;
+  grants: PermissionGrant[];
+  items: Array<{
+    key: string;
+    label: string;
+    scope: PermissionGrant["scope"];
+    resource: string;
+    field: string;
+  }>;
+  label: string;
+  onChange: (level: PermissionGrant["level"]) => void;
+  onGrantChange: (
+    scope: PermissionGrant["scope"],
+    resource: string,
+    field: string,
+    level: PermissionGrant["level"]
+  ) => void;
+  partialAriaLabel: string;
+  value: PermissionGrant["level"];
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="permission-scope-row">
+      <PermissionLevelSelect ariaLabel={props.ariaLabel} label={props.label} value={props.value} onChange={props.onChange} />
+      <Popover positioning="below-end" trapFocus>
+        <PopoverTrigger disableButtonEnhancement>
+          <Button size="small" aria-label={props.partialAriaLabel} disabled={props.items.length === 0}>
+            {t("permission.partial")}
+          </Button>
+        </PopoverTrigger>
+        <PopoverSurface className="permission-partial-popover" aria-label={props.partialAriaLabel}>
+          <Text weight="semibold">{props.label}</Text>
+          {props.items.length === 0 ? (
+            <Text size={200}>{t("permission.noPartialItems")}</Text>
+          ) : (
+            <div className="permission-partial-list">
+              {props.items.map((item) => (
+                <PermissionLevelSelect
+                  key={item.key}
+                  label={item.label}
+                  value={grantLevel(props.grants, item.scope, item.resource, item.field)}
+                  onChange={(level) => props.onGrantChange(item.scope, item.resource, item.field, level)}
+                />
+              ))}
+            </div>
+          )}
+        </PopoverSurface>
+      </Popover>
     </div>
   );
 }
@@ -277,6 +343,7 @@ function grantLevel(
 }
 
 function PermissionLevelSelect(props: {
+  ariaLabel?: string;
   label: string;
   value: PermissionGrant["level"];
   onChange: (level: PermissionGrant["level"]) => void;
@@ -291,7 +358,7 @@ function PermissionLevelSelect(props: {
     <label className="permission-row">
       <span>{props.label}</span>
       <Select
-        aria-label={`${props.label} permission`}
+        aria-label={props.ariaLabel ?? `${props.label} permission`}
         value={String(props.value)}
         onChange={(_, data) => props.onChange(Number(data.value) as PermissionGrant["level"])}
       >

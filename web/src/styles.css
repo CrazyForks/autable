@@ -1220,16 +1220,31 @@ select {
 .permission-resource {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--colorNeutralStroke2);
 }
 
-.permission-fields {
+.permission-scope-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.permission-partial-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(420px, calc(100vh - 120px));
+  overflow: auto;
+}
+
+.permission-partial-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-left: 14px;
 }
 
 .permission-row {

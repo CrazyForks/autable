@@ -104,6 +104,8 @@
     "addRoleMember": "Add role member",
     "empty": "Create a role to configure table, field, workflow, and form permissions.",
     "fieldSet": "{{table}} fields",
+    "fields": "Fields",
+    "formPartialPermissions": "Form partial permissions",
     "formSet": "All forms",
     "forms": "Forms",
     "levels": {
@@ -113,7 +115,9 @@
     },
     "members": "Members",
     "noMembers": "No members",
+    "noPartialItems": "No partial items",
     "noRoleSelected": "No role selected",
+    "partial": "Partial",
     "removeMember": "Remove {{email}}",
     "roleAccessMatrix": "{{database}} role access matrix",
     "roleMemberEmail": "Role member email",
@@ -121,6 +125,8 @@
     "tables": "Tables",
     "view": "{{view}} view",
     "viewSet": "{{table}} views",
+    "views": "Views",
+    "workflowPartialPermissions": "Workflow partial permissions",
     "workflowSet": "All workflows",
     "workflows": "Workflows"
   },
