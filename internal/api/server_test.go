@@ -599,6 +599,47 @@ func TestPermissionGrantAPIRequiresDatabaseOwner(t *testing.T) {
 	if !perms.CanWriteField("u1", "db.contacts", "email") {
 		t.Fatal("expected API grant to persist field write permission")
 	}
+
+	grantSet := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
+		"subject_id":"u1",
+		"scope":"field_set",
+		"resource":"db.contacts",
+		"level":1
+	}`))
+	grantSet.AddCookie(testSessionCookie(t, system, "admin"))
+	grantSetRecorder := httptest.NewRecorder()
+	server.ServeHTTP(grantSetRecorder, grantSet)
+	if grantSetRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected field set grant save 201, got %d: %s", grantSetRecorder.Code, grantSetRecorder.Body.String())
+	}
+	grants, err := system.GrantListForSubject(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 1 || grants[0].Scope != permission.ScopeFieldSet {
+		t.Fatalf("expected field set grant to replace field grants, got %#v", grants)
+	}
+
+	grantField := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
+		"subject_id":"u1",
+		"scope":"field",
+		"resource":"db.contacts",
+		"field":"name",
+		"level":2
+	}`))
+	grantField.AddCookie(testSessionCookie(t, system, "admin"))
+	grantFieldRecorder := httptest.NewRecorder()
+	server.ServeHTTP(grantFieldRecorder, grantField)
+	if grantFieldRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected field grant save 201, got %d: %s", grantFieldRecorder.Code, grantFieldRecorder.Body.String())
+	}
+	grants, err = system.GrantListForSubject(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 1 || grants[0].Scope != permission.ScopeField || grants[0].Field != "name" {
+		t.Fatalf("expected field grant to replace field set grant, got %#v", grants)
+	}
 }
 
 func TestMetadataAPIOnlyReturnsVisibleDatabasesAndTables(t *testing.T) {
@@ -1477,7 +1518,7 @@ func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 	updateGrants := httptest.NewRequest(http.MethodPut, "/api/databases/workspace/roles/editor/grants", bytes.NewBufferString(`{
 		"grants":[
 			{"scope":"field_set","resource":"workspace.contacts","level":2},
-			{"scope":"field","resource":"workspace.contacts","field":"email","level":1},
+			{"scope":"workflow_set","resource":"workspace","level":1},
 			{"scope":"form","resource":"3","level":0}
 		]
 	}`))
@@ -1578,7 +1619,6 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 
 	valid := []permission.Grant{
 		{Scope: permission.ScopeFieldSet, Resource: "workspace.contacts", Level: permission.Read},
-		{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "name", Level: permission.Read},
 		{Scope: permission.ScopeWorkflow, Resource: resourceID(workspaceWorkflow.ID), Level: permission.Read},
 		{Scope: permission.ScopeForm, Resource: resourceID(workspaceForm.ID), Level: permission.Read},
 		{Scope: permission.ScopeFieldSet, Resource: "other.contacts", Level: permission.None},
@@ -1604,6 +1644,22 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+
+	mixedFieldGrants := []permission.Grant{
+		{Scope: permission.ScopeFieldSet, Resource: "workspace.contacts", Level: permission.Read},
+		{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "name", Level: permission.Read},
+	}
+	if err := server.validateRoleGrants(ctx, "workspace", mixedFieldGrants); err == nil {
+		t.Fatal("expected field set and field grants to be mutually exclusive")
+	}
+
+	mixedWorkflowGrants := []permission.Grant{
+		{Scope: permission.ScopeWorkflowSet, Resource: "workspace", Level: permission.Read},
+		{Scope: permission.ScopeWorkflow, Resource: resourceID(workspaceWorkflow.ID), Level: permission.Read},
+	}
+	if err := server.validateRoleGrants(ctx, "workspace", mixedWorkflowGrants); err == nil {
+		t.Fatal("expected workflow set and workflow grants to be mutually exclusive")
 	}
 }
 

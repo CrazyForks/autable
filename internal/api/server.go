@@ -550,6 +550,10 @@ func (server *Server) handleSaveGrant(w http.ResponseWriter, r *http.Request) {
 	if !server.requireDatabaseOwner(w, r, actorID, dbName) {
 		return
 	}
+	if err := server.deleteConflictingGrants(r.Context(), grant); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	if err := server.system.SaveGrant(r.Context(), grant); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -2210,6 +2214,9 @@ func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Gr
 }
 
 func (server *Server) validateRoleGrants(ctx context.Context, dbName string, grants []permission.Grant) error {
+	if err := server.validateExclusiveGrants(ctx, grants); err != nil {
+		return err
+	}
 	for _, grant := range grants {
 		if grant.Level == permission.None {
 			continue
@@ -2226,6 +2233,135 @@ func (server *Server) validateRoleGrants(ctx context.Context, dbName string, gra
 		}
 	}
 	return nil
+}
+
+func (server *Server) deleteConflictingGrants(ctx context.Context, grant permission.Grant) error {
+	if grant.Level == permission.None {
+		return nil
+	}
+	switch grant.Scope {
+	case permission.ScopeFieldSet:
+		return server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeField, grant.Resource)
+	case permission.ScopeField:
+		return server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeFieldSet, grant.Resource)
+	case permission.ScopeViewSet:
+		return server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeView, grant.Resource)
+	case permission.ScopeView:
+		return server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeViewSet, grant.Resource)
+	case permission.ScopeWorkflowSet:
+		workflows, err := server.system.Workflows(ctx, grant.Resource)
+		if err != nil {
+			return err
+		}
+		for _, workflow := range workflows {
+			if err := server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeWorkflow, resourceID(workflow.ID)); err != nil {
+				return err
+			}
+		}
+	case permission.ScopeWorkflow:
+		id, err := parseGrantResourceID(grant.Resource)
+		if err != nil {
+			return err
+		}
+		workflow, err := server.system.Workflow(ctx, id)
+		if err != nil {
+			return err
+		}
+		return server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeWorkflowSet, workflow.DatabaseName)
+	case permission.ScopeFormSet:
+		forms, err := server.system.Forms(ctx, grant.Resource)
+		if err != nil {
+			return err
+		}
+		for _, form := range forms {
+			if err := server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeForm, resourceID(form.ID)); err != nil {
+				return err
+			}
+		}
+	case permission.ScopeForm:
+		id, err := parseGrantResourceID(grant.Resource)
+		if err != nil {
+			return err
+		}
+		form, err := server.system.Form(ctx, id)
+		if err != nil {
+			return err
+		}
+		return server.system.DeleteGrant(ctx, grant.SubjectID, permission.ScopeFormSet, form.DatabaseName)
+	}
+	return nil
+}
+
+func (server *Server) validateExclusiveGrants(ctx context.Context, grants []permission.Grant) error {
+	fieldSets := map[string]struct{}{}
+	fields := map[string]struct{}{}
+	viewSets := map[string]struct{}{}
+	views := map[string]struct{}{}
+	workflowSets := map[string]struct{}{}
+	workflows := map[string]struct{}{}
+	formSets := map[string]struct{}{}
+	forms := map[string]struct{}{}
+	for _, grant := range grants {
+		if grant.Level == permission.None {
+			continue
+		}
+		switch grant.Scope {
+		case permission.ScopeFieldSet:
+			fieldSets[grant.Resource] = struct{}{}
+		case permission.ScopeField:
+			fields[grant.Resource] = struct{}{}
+		case permission.ScopeViewSet:
+			viewSets[grant.Resource] = struct{}{}
+		case permission.ScopeView:
+			views[grant.Resource] = struct{}{}
+		case permission.ScopeWorkflowSet:
+			workflowSets[grant.Resource] = struct{}{}
+		case permission.ScopeWorkflow:
+			id, err := parseGrantResourceID(grant.Resource)
+			if err != nil {
+				return err
+			}
+			workflow, err := server.system.Workflow(ctx, id)
+			if err != nil {
+				return err
+			}
+			workflows[workflow.DatabaseName] = struct{}{}
+		case permission.ScopeFormSet:
+			formSets[grant.Resource] = struct{}{}
+		case permission.ScopeForm:
+			id, err := parseGrantResourceID(grant.Resource)
+			if err != nil {
+				return err
+			}
+			form, err := server.system.Form(ctx, id)
+			if err != nil {
+				return err
+			}
+			forms[form.DatabaseName] = struct{}{}
+		}
+	}
+	if overlapKey(fieldSets, fields) != "" {
+		return errors.New("field set and field grants are mutually exclusive")
+	}
+	if overlapKey(viewSets, views) != "" {
+		return errors.New("view set and view grants are mutually exclusive")
+	}
+	if overlapKey(workflowSets, workflows) != "" {
+		return errors.New("workflow set and workflow grants are mutually exclusive")
+	}
+	if overlapKey(formSets, forms) != "" {
+		return errors.New("form set and form grants are mutually exclusive")
+	}
+	return nil
+}
+
+func overlapKey(left, right map[string]struct{}) string {
+	for key := range left {
+		if _, ok := right[key]; ok {
+			return key
+		}
+	}
+	return ""
 }
 
 func (server *Server) validateRoleMembers(ctx context.Context, members []string) error {
@@ -2731,6 +2867,14 @@ func (server *Server) grantResourceOwner(w http.ResponseWriter, r *http.Request,
 
 func resourceID(id int64) string {
 	return strconv.FormatInt(id, 10)
+}
+
+func parseGrantResourceID(resource string) (int64, error) {
+	id, err := strconv.ParseInt(resource, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("grant resource %q must be an id", resource)
+	}
+	return id, nil
 }
 
 func (server *Server) currentUserID(r *http.Request) (string, bool, error) {

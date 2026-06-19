@@ -301,6 +301,15 @@ func (db *DB) SaveGrant(ctx context.Context, grant permission.Grant) error {
 	}).Create(&model).Error
 }
 
+func (db *DB) DeleteGrant(ctx context.Context, subjectID string, scope permission.Scope, resource string, fields ...string) error {
+	query := db.orm.WithContext(ctx).
+		Where(&permissionGrantModel{SubjectID: subjectID, Scope: scope, Resource: resource})
+	if len(fields) > 0 {
+		query = query.Where("field IN ?", fields)
+	}
+	return query.Delete(&permissionGrantModel{}).Error
+}
+
 func (db *DB) SaveDatabaseOwner(ctx context.Context, dbName, ownerID string) error {
 	model := databaseOwnerModel{DatabaseName: dbName, OwnerID: ownerID}
 	return db.orm.WithContext(ctx).Clauses(clause.OnConflict{
