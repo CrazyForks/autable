@@ -67,7 +67,7 @@ func (service *Service) CreateRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	resource := dbName + "." + tableName
-	if err := validateWritableFields(tableMeta, perms, actorID, resource, values); err != nil {
+	if err := validateWritableFields(tableMeta, perms, actorID, dbName, resource, values); err != nil {
 		return Row{}, err
 	}
 	storedValues, err := normalizeInputValues(tableMeta, values)
@@ -114,7 +114,7 @@ func (service *Service) UpdateRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	resource := dbName + "." + tableName
-	if err := validateWritableFields(tableMeta, perms, actorID, resource, values); err != nil {
+	if err := validateWritableFields(tableMeta, perms, actorID, dbName, resource, values); err != nil {
 		return Row{}, err
 	}
 
@@ -163,7 +163,7 @@ func (service *Service) DeleteRow(ctx context.Context, catalog metadata.Catalog,
 		return Row{}, fmt.Errorf("table %s.%s not found", dbName, tableName)
 	}
 	resource := dbName + "." + tableName
-	if !perms.CanWriteResource(actorID, permission.ScopeTable, resource) {
+	if !perms.CanWriteResource(actorID, permission.ScopeDatabase, dbName) {
 		return Row{}, fmt.Errorf("%w: %s", ErrPermissionDenied, resource)
 	}
 
@@ -204,7 +204,11 @@ func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perm
 			return nil, err
 		}
 		resource := dbName + "." + tableName
-		if !viewFieldsReadable(perms, actorID, resource, resolved.Query, resolved.Sorts) {
+		dbWritable := perms.CanWriteResource(actorID, permission.ScopeDatabase, dbName)
+		if !perms.CanReadView(actorID, resource, viewName) && !dbWritable {
+			return nil, fmt.Errorf("%w: view %s", ErrPermissionDenied, viewName)
+		}
+		if !dbWritable && !viewFieldsReadable(perms, actorID, resource, resolved.Query, resolved.Sorts) {
 			return nil, fmt.Errorf("%w: view %s", ErrPermissionDenied, viewName)
 		}
 	}
@@ -214,11 +218,12 @@ func (service *Service) Rows(ctx context.Context, catalog metadata.Catalog, perm
 	}
 
 	resource := dbName + "." + tableName
+	dbWritable := perms.CanWriteResource(actorID, permission.ScopeDatabase, dbName)
 	filtered := make([]Row, 0, len(rows))
 	for _, row := range rows {
 		values := map[string]any{}
 		for fieldName, value := range row.Values {
-			if perms.CanReadField(actorID, resource, fieldName) {
+			if dbWritable || perms.CanReadField(actorID, resource, fieldName) {
 				values[fieldName] = value
 			}
 		}
@@ -295,7 +300,7 @@ func viewQueryRuleFields(rule metadata.ViewQueryRule) []string {
 	return []string{rule.Field}
 }
 
-func validateWritableFields(tableMeta metadata.Table, perms permission.Set, actorID, resource string, values map[string]any) error {
+func validateWritableFields(tableMeta metadata.Table, perms permission.Set, actorID, dbName, resource string, values map[string]any) error {
 	for fieldName := range values {
 		field, ok := tableMeta.Field(fieldName)
 		if !ok {
@@ -310,7 +315,7 @@ func validateWritableFields(tableMeta metadata.Table, perms permission.Set, acto
 		if field.Type == "formula" {
 			return fmt.Errorf("%w: %s", ErrPermissionDenied, fieldName)
 		}
-		if !perms.CanWriteField(actorID, resource, fieldName) {
+		if !perms.CanWriteResource(actorID, permission.ScopeDatabase, dbName) && !perms.CanWriteField(actorID, resource, fieldName) {
 			return fmt.Errorf("%w: %s", ErrPermissionDenied, fieldName)
 		}
 	}

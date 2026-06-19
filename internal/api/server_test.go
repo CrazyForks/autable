@@ -42,6 +42,15 @@ func metadataFieldNames(fields []metadata.Field) []string {
 	return names
 }
 
+func saveTestGrants(t *testing.T, system *systemdb.DB, grants ...permission.Grant) {
+	t.Helper()
+	for _, grant := range grants {
+		if err := system.SaveGrant(context.Background(), grant); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestPasswordAuthSessionLifecycle(t *testing.T) {
 	server, _ := newTestServer(t)
 
@@ -287,7 +296,7 @@ func TestCreateRowAPIUsesSessionUser(t *testing.T) {
 	}
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: user.ID,
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -308,7 +317,7 @@ func TestCreateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	server, system := newTestServer(t)
 	grant := permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}
@@ -364,8 +373,8 @@ func TestUpdateRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
@@ -421,8 +430,8 @@ func TestDeleteRowAPIEnforcesPermissionsAndWritesHistory(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
@@ -481,7 +490,7 @@ func TestRowHistoryAPIRequiresAuthAndFiltersReadableFields(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "writer",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -547,7 +556,7 @@ func TestPermissionGrantAPIRequiresAuthentication(t *testing.T) {
 	server, _ := newTestServer(t)
 	request := httptest.NewRequest(http.MethodPost, "/api/permissions/grants", bytes.NewBufferString(`{
 		"subject_id":"u1",
-		"scope":"table",
+		"scope":"field_set",
 		"resource":"db.contacts",
 		"level":2
 	}`))
@@ -652,6 +661,15 @@ func TestMetadataAPIOnlyReturnsVisibleDatabasesAndTables(t *testing.T) {
 		Scope:     permission.ScopeField,
 		Resource:  "workspace.contacts",
 		Field:     "email",
+		Level:     permission.Read,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "reader",
+		Scope:     permission.ScopeView,
+		Resource:  "workspace.contacts",
+		Field:     "by-email",
 		Level:     permission.Read,
 	}); err != nil {
 		t.Fatal(err)
@@ -771,8 +789,8 @@ func TestDatabaseOwnerCanCreateTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !perms.CanWriteField("owner", "workspace.contacts", "name") {
-		t.Fatal("expected table creator to receive table write permission")
+	if !perms.CanWriteResource("owner", permission.ScopeDatabase, "workspace") {
+		t.Fatal("expected database owner to keep database write permission")
 	}
 }
 
@@ -837,7 +855,15 @@ func TestTableOwnerCanUpdateFieldsAndViews(t *testing.T) {
 	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
+		Resource:  "workspace.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "owner",
+		Scope:     permission.ScopeViewSet,
 		Resource:  "workspace.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -905,7 +931,7 @@ func TestTableOwnerCanMoveFieldPosition(t *testing.T) {
 	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "workspace.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -949,7 +975,7 @@ func TestWorkflowFieldCreateNodeAddsMissingFields(t *testing.T) {
 	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "workspace.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1045,7 +1071,7 @@ func TestWorkflowFieldCreateNodeRejectsUnsafeFieldNames(t *testing.T) {
 		server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
 		if err := system.SaveGrant(ctx, permission.Grant{
 			SubjectID: "owner",
-			Scope:     permission.ScopeTable,
+			Scope:     permission.ScopeFieldSet,
 			Resource:  "workspace.contacts",
 			Level:     permission.Write,
 		}); err != nil {
@@ -1088,7 +1114,7 @@ func TestWorkflowFieldCreateNodeAllowsReadableBusinessFieldNames(t *testing.T) {
 	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "workspace.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1137,7 +1163,7 @@ func TestWorkflowFieldCreateNodeAddsExternalCreatedFieldsOnFirstRun(t *testing.T
 	server, system, metadataPath := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "workspace.b表",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1226,7 +1252,7 @@ func TestWorkflowRowUpsertUpdatesFirstMatchOrCreates(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1305,7 +1331,7 @@ func TestWorkflowRowUpsertRequiresMatchValue(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1357,7 +1383,7 @@ func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 
 	updateGrants := httptest.NewRequest(http.MethodPut, "/api/databases/workspace/roles/editor/grants", bytes.NewBufferString(`{
 		"grants":[
-			{"scope":"table","resource":"workspace.contacts","level":2},
+			{"scope":"field_set","resource":"workspace.contacts","level":2},
 			{"scope":"field","resource":"workspace.contacts","field":"email","level":1},
 			{"scope":"form","resource":"3","level":0}
 		]
@@ -1459,11 +1485,11 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 
 	valid := []permission.Grant{
 		{Scope: permission.ScopeDatabase, Resource: "workspace", Level: permission.Write},
-		{Scope: permission.ScopeTable, Resource: "workspace.contacts", Level: permission.Read},
+		{Scope: permission.ScopeFieldSet, Resource: "workspace.contacts", Level: permission.Read},
 		{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "name", Level: permission.Read},
 		{Scope: permission.ScopeWorkflow, Resource: resourceID(workspaceWorkflow.ID), Level: permission.Read},
 		{Scope: permission.ScopeForm, Resource: resourceID(workspaceForm.ID), Level: permission.Read},
-		{Scope: permission.ScopeTable, Resource: "other.contacts", Level: permission.None},
+		{Scope: permission.ScopeFieldSet, Resource: "other.contacts", Level: permission.None},
 	}
 	if err := server.validateRoleGrants(ctx, "workspace", valid); err != nil {
 		t.Fatalf("expected valid workspace grants, got %v", err)
@@ -1473,7 +1499,7 @@ func TestRoleGrantValidationKeepsResourcesInsideDatabase(t *testing.T) {
 		name  string
 		grant permission.Grant
 	}{
-		{name: "other table", grant: permission.Grant{Scope: permission.ScopeTable, Resource: "other.contacts", Level: permission.Read}},
+		{name: "other table", grant: permission.Grant{Scope: permission.ScopeFieldSet, Resource: "other.contacts", Level: permission.Read}},
 		{name: "other field", grant: permission.Grant{Scope: permission.ScopeField, Resource: "other.contacts", Field: "name", Level: permission.Read}},
 		{name: "deleted field", grant: permission.Grant{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "legacy", Level: permission.Read}},
 		{name: "record id field", grant: permission.Grant{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "ct_record_id", Level: permission.Read}},
@@ -1508,13 +1534,13 @@ func TestRoleGrantAPIRejectsCrossDatabaseResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := system.ReplaceRoleGrants(ctx, "workspace", "editor", []permission.Grant{
-		{Scope: permission.ScopeTable, Resource: "workspace.contacts", Level: permission.Read},
+		{Scope: permission.ScopeFieldSet, Resource: "workspace.contacts", Level: permission.Read},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	request := httptest.NewRequest(http.MethodPut, "/api/databases/workspace/roles/editor/grants", bytes.NewBufferString(`{
-		"grants":[{"scope":"table","resource":"other.contacts","level":2}]
+		"grants":[{"scope":"field_set","resource":"other.contacts","level":2}]
 	}`))
 	request.AddCookie(testSessionCookie(t, system, "owner"))
 	recorder := httptest.NewRecorder()
@@ -1539,7 +1565,7 @@ func TestRoleMembershipGrantsEffectiveTableAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := system.ReplaceRoleGrants(ctx, "db", "editor", []permission.Grant{
-		{Scope: permission.ScopeTable, Resource: "db.contacts", Level: permission.Write},
+		{Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1558,12 +1584,12 @@ func TestRoleMembershipGrantsEffectiveTableAccess(t *testing.T) {
 	}
 }
 
-func TestRoleFieldGrantOverridesTableWrite(t *testing.T) {
+func TestRoleFieldGrantAllowsOnlyGrantedFields(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1583,8 +1609,8 @@ func TestRoleFieldGrantOverridesTableWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := system.ReplaceRoleGrants(ctx, "db", "editor", []permission.Grant{
-		{Scope: permission.ScopeTable, Resource: "db.contacts", Level: permission.Write},
-		{Scope: permission.ScopeField, Resource: "db.contacts", Field: "email", Level: permission.None},
+		{Scope: permission.ScopeField, Resource: "db.contacts", Field: "name", Level: permission.Write},
+		{Scope: permission.ScopeField, Resource: "db.contacts", Field: "email", Level: permission.Read},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1609,7 +1635,7 @@ func TestRoleFieldGrantOverridesTableWrite(t *testing.T) {
 	deniedRecorder := httptest.NewRecorder()
 	server.ServeHTTP(deniedRecorder, deniedRequest)
 	if deniedRecorder.Code != http.StatusForbidden {
-		t.Fatalf("expected role member field override 403, got %d: %s", deniedRecorder.Code, deniedRecorder.Body.String())
+		t.Fatalf("expected role member ungranted field write 403, got %d: %s", deniedRecorder.Code, deniedRecorder.Body.String())
 	}
 }
 
@@ -1648,7 +1674,15 @@ func TestListRowsAPIAppliesView(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
+		Resource:  "db.contacts",
+		Level:     permission.Write,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := system.SaveGrant(ctx, permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeViewSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1744,7 +1778,7 @@ func TestCreateRowAPICanUsePersistentRepository(t *testing.T) {
 	server := NewServer(catalog, system, table.NewServiceWithRepository(historyStore, repository), historyStore)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1775,12 +1809,16 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	server.SetCodeFileStore(codefiles.NewStore(codeRoot))
 	if err := system.SaveGrant(context.Background(), permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system,
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFormSet, Resource: "db", Level: permission.Write},
+	)
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
@@ -1959,7 +1997,7 @@ func TestWorkflowAndFormAPI(t *testing.T) {
 	}
 }
 
-func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
+func TestWorkflowAndFormCreationRequiresSetOrDatabaseWrite(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
 
@@ -1976,7 +2014,7 @@ func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
 
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "table-owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
@@ -1989,17 +2027,34 @@ func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
 	tableOwnerWorkflow.AddCookie(testSessionCookie(t, system, "table-owner"))
 	tableOwnerWorkflowRecorder := httptest.NewRecorder()
 	server.ServeHTTP(tableOwnerWorkflowRecorder, tableOwnerWorkflow)
-	if tableOwnerWorkflowRecorder.Code != http.StatusCreated {
-		t.Fatalf("expected table owner workflow create 201, got %d: %s", tableOwnerWorkflowRecorder.Code, tableOwnerWorkflowRecorder.Body.String())
+	if tableOwnerWorkflowRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected field set writer workflow create 403, got %d: %s", tableOwnerWorkflowRecorder.Code, tableOwnerWorkflowRecorder.Body.String())
 	}
 
-	if err := system.SaveGrant(ctx, permission.Grant{
-		SubjectID: "db-owner",
-		Scope:     permission.ScopeDatabase,
-		Resource:  "db",
-		Level:     permission.Write,
-	}); err != nil {
-		t.Fatal(err)
+	saveTestGrants(t, system,
+		permission.Grant{SubjectID: "workflow-owner", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write},
+		permission.Grant{SubjectID: "form-owner", Scope: permission.ScopeFormSet, Resource: "db", Level: permission.Write},
+		permission.Grant{SubjectID: "db-owner", Scope: permission.ScopeDatabase, Resource: "db", Level: permission.Write},
+	)
+	workflowOwnerWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
+		"name":"allowed-by-workflow-set",
+		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return {}; }"
+	}`))
+	workflowOwnerWorkflow.AddCookie(testSessionCookie(t, system, "workflow-owner"))
+	workflowOwnerWorkflowRecorder := httptest.NewRecorder()
+	server.ServeHTTP(workflowOwnerWorkflowRecorder, workflowOwnerWorkflow)
+	if workflowOwnerWorkflowRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected workflow set writer workflow create 201, got %d: %s", workflowOwnerWorkflowRecorder.Code, workflowOwnerWorkflowRecorder.Body.String())
+	}
+	formOwnerForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
+		"name":"allowed-by-form-set",
+		"script":"function render(api, root) { root.append(api.input({ field: 'email' }), api.submit('Save')); return { table: 'contacts' }; }"
+	}`))
+	formOwnerForm.AddCookie(testSessionCookie(t, system, "form-owner"))
+	formOwnerFormRecorder := httptest.NewRecorder()
+	server.ServeHTTP(formOwnerFormRecorder, formOwnerForm)
+	if formOwnerFormRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected form set writer form create 201, got %d: %s", formOwnerFormRecorder.Code, formOwnerFormRecorder.Body.String())
 	}
 	dbOwnerForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"allowed-by-db",
@@ -2014,34 +2069,22 @@ func TestWorkflowAndFormCreationRequiresDatabaseOrTableWrite(t *testing.T) {
 }
 
 func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
-	ctx := context.Background()
 	server, system := newTestServer(t)
-	if err := system.SaveGrant(ctx, permission.Grant{
-		SubjectID: "table-owner",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := system.SaveGrant(ctx, permission.Grant{
-		SubjectID: "db-owner",
-		Scope:     permission.ScopeDatabase,
-		Resource:  "db",
-		Level:     permission.Write,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	saveTestGrants(t, system,
+		permission.Grant{SubjectID: "set-owner", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write},
+		permission.Grant{SubjectID: "set-owner", Scope: permission.ScopeFormSet, Resource: "db", Level: permission.Write},
+		permission.Grant{SubjectID: "db-owner", Scope: permission.ScopeDatabase, Resource: "db", Level: permission.Write},
+	)
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
-		"name":"owned-by-table",
+		"name":"owned-by-set",
 		"script":"function instances(info) { return { noop: \"echo\" }; } function run(info) { return { message: info.inputs.name }; }"
 	}`))
-	workflowRequest.AddCookie(testSessionCookie(t, system, "table-owner"))
+	workflowRequest.AddCookie(testSessionCookie(t, system, "set-owner"))
 	workflowRecorder := httptest.NewRecorder()
 	server.ServeHTTP(workflowRecorder, workflowRequest)
 	if workflowRecorder.Code != http.StatusCreated {
-		t.Fatalf("expected table owner workflow create 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
+		t.Fatalf("expected workflow set owner workflow create 201, got %d: %s", workflowRecorder.Code, workflowRecorder.Body.String())
 	}
 	var workflow workflowDefinitionResponse
 	if err := json.NewDecoder(workflowRecorder.Body).Decode(&workflow); err != nil {
@@ -2049,14 +2092,14 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 	}
 
 	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
-		"name":"owned-by-table",
+		"name":"owned-by-set",
 		"script":"function render(api, root) { root.append(api.input({ field: 'name' }), api.submit('Save')); return { table: 'contacts' }; }"
 	}`))
-	formRequest.AddCookie(testSessionCookie(t, system, "table-owner"))
+	formRequest.AddCookie(testSessionCookie(t, system, "set-owner"))
 	formRecorder := httptest.NewRecorder()
 	server.ServeHTTP(formRecorder, formRequest)
 	if formRecorder.Code != http.StatusCreated {
-		t.Fatalf("expected table owner form create 201, got %d: %s", formRecorder.Code, formRecorder.Body.String())
+		t.Fatalf("expected form set owner form create 201, got %d: %s", formRecorder.Code, formRecorder.Body.String())
 	}
 	var form systemdb.FormDefinition
 	if err := json.NewDecoder(formRecorder.Body).Decode(&form); err != nil {
@@ -2088,7 +2131,7 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 
 	updateWorkflow := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"id":1,
-		"name":"owned-by-table",
+		"name":"owned-by-set",
 		"script":"function instances(info) { return { noop: \"echo\" }; } function run() { return { updated: true }; }"
 	}`))
 	updateWorkflow.AddCookie(testSessionCookie(t, system, "db-owner"))
@@ -2123,7 +2166,7 @@ func TestDatabaseWriteCanManageDatabaseWorkflowsAndForms(t *testing.T) {
 
 	updateForm := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"id":1,
-		"name":"owned-by-table",
+		"name":"owned-by-set",
 		"script":"function render(api, root) { root.append(api.input({ field: 'name' }), api.submit('Save')); return { table: 'contacts' }; }"
 	}`))
 	updateForm.AddCookie(testSessionCookie(t, system, "db-owner"))
@@ -2143,12 +2186,16 @@ func TestWorkflowAndFormUpdatesCannotMoveAcrossDatabases(t *testing.T) {
 	server, system, _ := newTestServerWithMetadataFile(t, catalog)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system,
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFormSet, Resource: "db", Level: permission.Write},
+	)
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"notify",
@@ -2250,12 +2297,13 @@ func TestWorkflowRunAPI(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(context.Background(), permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"welcome",
@@ -2312,12 +2360,13 @@ func TestWorkflowTableCreateNodeUsesCreatorPermissions(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "creator",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "creator", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"create-contact",
@@ -2352,14 +2401,7 @@ func TestWorkflowTableCreateNodeUsesCreatorPermissions(t *testing.T) {
 func TestWorkflowTableCreateNodeIgnoresRunnerPermissions(t *testing.T) {
 	ctx := context.Background()
 	server, system := newTestServer(t)
-	if err := system.SaveGrant(ctx, permission.Grant{
-		SubjectID: "creator",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "creator", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"create-contact",
@@ -2376,15 +2418,6 @@ func TestWorkflowTableCreateNodeIgnoresRunnerPermissions(t *testing.T) {
 		Scope:     permission.ScopeWorkflow,
 		Resource:  "1",
 		Level:     permission.Write,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := system.SaveGrant(ctx, permission.Grant{
-		SubjectID: "creator",
-		Scope:     permission.ScopeField,
-		Resource:  "db.contacts",
-		Field:     "name",
-		Level:     permission.None,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2482,12 +2515,13 @@ func TestWorkflowRunAPIWithRecordChangedTrigger(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 	historyKey, err := history.SaveRowChange(ctx, server.history, history.RowChange{
 		Database: "db",
 		Table:    "contacts",
@@ -2534,12 +2568,13 @@ func TestRowCreateAutomaticallyRunsMatchingWorkflowTrigger(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"auto-contact",
@@ -2590,12 +2625,13 @@ func TestWorkflowWorkersConsumeRowChangeEvents(t *testing.T) {
 	server.StartWorkflowWorkers(workerCtx)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"worker-contact",
@@ -2630,12 +2666,13 @@ func TestRowCreateDoesNotRunWorkflowWhenTriggerFieldsDoNotMatch(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"status-only",
@@ -2677,12 +2714,13 @@ func TestScheduleTickRunsIntervalWorkflowUsingRunHistory(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"interval-workflow",
@@ -2712,12 +2750,13 @@ func TestScheduleTickRunsDailyWorkflowOncePerDay(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "u1", Scope: permission.ScopeWorkflowSet, Resource: "db", Level: permission.Write})
 
 	workflowRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/workflows", bytes.NewBufferString(`{
 		"name":"daily-workflow",
@@ -2897,12 +2936,13 @@ func TestPublishedFormRequiresExplicitFormPermission(t *testing.T) {
 	server, system := newTestServer(t)
 	if err := system.SaveGrant(ctx, permission.Grant{
 		SubjectID: "owner",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "owner", Scope: permission.ScopeFormSet, Resource: "db", Level: permission.Write})
 
 	formRequest := httptest.NewRequest(http.MethodPost, "/api/databases/db/forms", bytes.NewBufferString(`{
 		"name":"published-intake",
@@ -2961,6 +3001,7 @@ func TestPublishedFormRequiresExplicitFormPermission(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	saveTestGrants(t, system, permission.Grant{SubjectID: "reader", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write})
 	readerRead := httptest.NewRequest(http.MethodGet, "/api/published/forms/"+published.PublishedToken, nil)
 	readerRead.AddCookie(testSessionCookie(t, system, "reader"))
 	readerRecorder := httptest.NewRecorder()

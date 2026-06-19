@@ -762,7 +762,7 @@ func (server *Server) handleSaveWorkflow(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if workflow.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, workflow.DatabaseName) {
+	if workflow.ID == 0 && !server.requireDatabaseOrSetWrite(w, r, actorID, workflow.DatabaseName, permission.ScopeWorkflowSet) {
 		return
 	}
 	if workflow.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeWorkflow, workflow.ID) {
@@ -881,15 +881,6 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := server.system.SaveGrant(r.Context(), permission.Grant{
-			SubjectID: actorID,
-			Scope:     permission.ScopeTable,
-			Resource:  dbName + "." + tableMeta.Name,
-			Level:     permission.Write,
-		}); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
 		writeJSON(w, http.StatusCreated, tableMeta)
 	case "workflows":
 		var workflow systemdb.WorkflowDefinition
@@ -897,7 +888,7 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if workflow.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, dbName) {
+		if workflow.ID == 0 && !server.requireDatabaseOrSetWrite(w, r, actorID, dbName, permission.ScopeWorkflowSet) {
 			return
 		}
 		if workflow.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeWorkflow, workflow.ID) {
@@ -928,7 +919,7 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if form.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, dbName) {
+		if form.ID == 0 && !server.requireDatabaseOrSetWrite(w, r, actorID, dbName, permission.ScopeFormSet) {
 			return
 		}
 		if form.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, form.ID) {
@@ -938,6 +929,9 @@ func (server *Server) handlePostDatabaseResource(w http.ResponseWriter, r *http.
 			return
 		}
 		form.DatabaseName = dbName
+		if form.ID == 0 {
+			form.CreatorID = actorID
+		}
 		saved, err := server.saveFormDefinition(r.Context(), form)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -1044,7 +1038,11 @@ func (server *Server) handlePatchDatabaseResource(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	if !server.requireDatabaseOrSpecificTableWrite(w, r, actorID, dbName, tableName) {
+	if _, ok := server.requireAuthorized(w, r, actorID, accessRequest{
+		Action:   accessWriteFieldSet,
+		Database: dbName,
+		Table:    tableName,
+	}); !ok {
 		return
 	}
 	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
@@ -1070,13 +1068,35 @@ func (server *Server) handleUpdateTableMetadata(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	if !server.requireDatabaseOrSpecificTableWrite(w, r, actorID, dbName, tableName) {
-		return
-	}
 	var tableMeta metadata.Table
 	if err := readJSON(r, &tableMeta); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	resource := dbName + "." + tableName
+	if tableMeta.Fields != nil {
+		if _, ok := server.requireAuthorized(w, r, actorID, accessRequest{
+			Action:   accessWriteFieldSet,
+			Database: dbName,
+			Table:    tableName,
+		}); !ok {
+			return
+		}
+	}
+	if tableMeta.Views != nil {
+		if _, ok := server.requireAuthorized(w, r, actorID, accessRequest{
+			Action:   accessWriteViewSet,
+			Database: dbName,
+			Table:    tableName,
+		}); !ok {
+			return
+		}
+	}
+	if tableMeta.Fields == nil && tableMeta.Views == nil {
+		if _, ok := server.catalogSnapshot().Table(dbName, tableName); !ok {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("table %s not found", resource))
+			return
+		}
 	}
 	if tableMeta.Name == "" {
 		tableMeta.Name = tableName
@@ -1129,7 +1149,7 @@ func (server *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if !server.requireResourceWrite(w, r, actorID, permission.ScopeWorkflow, id) {
+	if _, ok := server.requireAuthorized(w, r, actorID, accessRequest{Action: accessWriteWorkflow, WorkflowID: id}); !ok {
 		return
 	}
 	var request workflowRunRequest
@@ -1450,7 +1470,7 @@ func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if form.ID == 0 && !server.requireDatabaseOrTableWrite(w, r, actorID, form.DatabaseName) {
+	if form.ID == 0 && !server.requireDatabaseOrSetWrite(w, r, actorID, form.DatabaseName, permission.ScopeFormSet) {
 		return
 	}
 	if form.ID != 0 && !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, form.ID) {
@@ -1458,6 +1478,9 @@ func (server *Server) handleSaveForm(w http.ResponseWriter, r *http.Request) {
 	}
 	if form.ID != 0 && !server.requireExistingFormDatabase(w, r, form.ID, form.DatabaseName) {
 		return
+	}
+	if form.ID == 0 {
+		form.CreatorID = actorID
 	}
 	saved, err := server.saveFormDefinition(r.Context(), form)
 	if err != nil {
@@ -1483,7 +1506,7 @@ func (server *Server) handlePostFormAction(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !server.requireResourceWrite(w, r, actorID, permission.ScopeForm, id) {
+	if _, ok := server.requireAuthorized(w, r, actorID, accessRequest{Action: accessDeleteForm, FormID: id}); !ok {
 		return
 	}
 	var form systemdb.FormDefinition
@@ -1663,13 +1686,12 @@ func (server *Server) handleSubmitPublishedForm(w http.ResponseWriter, r *http.R
 	for inputID, fieldName := range definition.Fields {
 		rowValues[fieldName] = request.Values[inputID]
 	}
-	formSubmitPerms := permission.New(permission.Grant{
-		SubjectID: actorID,
-		Scope:     permission.ScopeTable,
-		Resource:  form.DatabaseName + "." + definition.Table,
-		Level:     permission.Write,
-	})
-	row, err := server.tables.CreateRow(r.Context(), server.catalogSnapshot(), formSubmitPerms, actorID, form.DatabaseName, definition.Table, rowValues)
+	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	row, err := server.tables.CreateRow(r.Context(), server.catalogSnapshot(), perms, actorID, form.DatabaseName, definition.Table, rowValues)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, table.ErrPermissionDenied) {
@@ -1888,11 +1910,13 @@ func (server *Server) visibleCatalog(ctx context.Context, actorID string, perms 
 func visibleTableMetadata(perms permission.Set, actorID, dbName string, tableMeta metadata.Table) metadata.Table {
 	resource := dbName + "." + tableMeta.Name
 	dbLevel := perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName)
-	tableLevel := perms.ResourceLevel(actorID, permission.ScopeTable, resource)
+	fieldSetLevel := perms.ResourceLevel(actorID, permission.ScopeFieldSet, resource)
+	viewSetLevel := perms.ResourceLevel(actorID, permission.ScopeViewSet, resource)
 	annotated := tableMeta
-	annotated.PermissionLevel = int(maxPermissionLevel(dbLevel, tableLevel))
+	annotated.PermissionLevel = int(maxPermissionLevel(dbLevel, maxPermissionLevel(fieldSetLevel, viewSetLevel)))
 	if dbLevel >= permission.Write {
 		annotated.Fields = annotateFieldPermissionLevels(perms, actorID, resource, dbLevel, annotated.Fields)
+		annotated.Views = annotateViewPermissionLevels(perms, actorID, resource, dbLevel, annotated.Views)
 		return annotated
 	}
 	visible := annotated
@@ -1906,11 +1930,16 @@ func visibleTableMetadata(perms permission.Set, actorID, dbName string, tableMet
 	}
 	visible.Views = make([]metadata.View, 0, len(tableMeta.Views))
 	for _, view := range tableMeta.Views {
+		viewLevel := perms.ViewLevel(actorID, resource, view.Name)
+		if viewLevel < permission.Read {
+			continue
+		}
 		resolved, err := tableMeta.ResolveView(view.Name)
 		if err != nil {
 			continue
 		}
 		if viewFieldsReadable(perms, actorID, resource, resolved.Query, resolved.Sorts) {
+			view.PermissionLevel = int(viewLevel)
 			visible.Views = append(visible.Views, view)
 		}
 	}
@@ -1922,6 +1951,15 @@ func annotateFieldPermissionLevels(perms permission.Set, actorID, resource strin
 	for _, field := range fields {
 		field.PermissionLevel = int(maxPermissionLevel(dbLevel, perms.FieldLevel(actorID, resource, field.Name)))
 		annotated = append(annotated, field)
+	}
+	return annotated
+}
+
+func annotateViewPermissionLevels(perms permission.Set, actorID, resource string, dbLevel permission.Level, views []metadata.View) []metadata.View {
+	annotated := make([]metadata.View, 0, len(views))
+	for _, view := range views {
+		view.PermissionLevel = int(maxPermissionLevel(dbLevel, perms.ViewLevel(actorID, resource, view.Name)))
+		annotated = append(annotated, view)
 	}
 	return annotated
 }
@@ -1971,11 +2009,18 @@ func viewQueryRuleFields(rule metadata.ViewQueryRule) []string {
 
 func canSeeTableMetadata(perms permission.Set, actorID, dbName string, tableMeta metadata.Table) bool {
 	resource := dbName + "." + tableMeta.Name
-	if perms.ResourceLevel(actorID, permission.ScopeTable, resource) >= permission.Read {
+	if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) >= permission.Read ||
+		perms.ResourceLevel(actorID, permission.ScopeFieldSet, resource) >= permission.Read ||
+		perms.ResourceLevel(actorID, permission.ScopeViewSet, resource) >= permission.Read {
 		return true
 	}
 	for _, field := range tableMeta.ActiveFields() {
 		if perms.FieldLevel(actorID, resource, field.Name) >= permission.Read {
+			return true
+		}
+	}
+	for _, view := range tableMeta.Views {
+		if perms.ViewLevel(actorID, resource, view.Name) >= permission.Read {
 			return true
 		}
 	}
@@ -1988,7 +2033,8 @@ func (server *Server) hasVisibleDatabaseResource(ctx context.Context, actorID st
 		return false, err
 	}
 	for _, workflow := range workflows {
-		if perms.CanReadResource(actorID, permission.ScopeWorkflow, resourceID(workflow.ID)) {
+		if perms.CanReadResource(actorID, permission.ScopeWorkflowSet, dbName) ||
+			perms.CanReadResource(actorID, permission.ScopeWorkflow, resourceID(workflow.ID)) {
 			return true, nil
 		}
 	}
@@ -1997,7 +2043,8 @@ func (server *Server) hasVisibleDatabaseResource(ctx context.Context, actorID st
 		return false, err
 	}
 	for _, form := range forms {
-		if perms.CanReadResource(actorID, permission.ScopeForm, resourceID(form.ID)) {
+		if perms.CanReadResource(actorID, permission.ScopeFormSet, dbName) ||
+			perms.CanReadResource(actorID, permission.ScopeForm, resourceID(form.ID)) {
 			return true, nil
 		}
 	}
@@ -2132,29 +2179,28 @@ func (server *Server) requireResourceRead(w http.ResponseWriter, r *http.Request
 }
 
 func (server *Server) requireExplicitResourceRead(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {
+	switch scope {
+	case permission.ScopeWorkflow:
+	case permission.ScopeForm:
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Errorf("unsupported resource scope %q", scope))
+		return false
+	}
 	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return false
 	}
-	if perms.ResourceLevel(actorID, scope, resourceID(id)) < permission.Read {
-		writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
-		return false
+	if perms.CanReadResource(actorID, scope, resourceID(id)) {
+		return true
 	}
-	return true
+	writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
+	return false
 }
 
 func (server *Server) requireDatabaseWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {
-	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return false
-	}
-	if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) < permission.Write {
-		writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
-		return false
-	}
-	return true
+	_, ok := server.requireAuthorized(w, r, actorID, accessRequest{Action: accessManageDatabase, Database: dbName})
+	return ok
 }
 
 func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Grant) (string, error) {
@@ -2164,12 +2210,17 @@ func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Gr
 			return "", errors.New("grant database resource is required")
 		}
 		return grant.Resource, nil
-	case permission.ScopeTable, permission.ScopeField:
+	case permission.ScopeFieldSet, permission.ScopeField, permission.ScopeViewSet, permission.ScopeView:
 		dbName, _, ok := strings.Cut(grant.Resource, ".")
 		if !ok || dbName == "" {
 			return "", fmt.Errorf("grant resource %q must be db.table", grant.Resource)
 		}
 		return dbName, nil
+	case permission.ScopeWorkflowSet, permission.ScopeFormSet:
+		if grant.Resource == "" {
+			return "", fmt.Errorf("grant %s resource is required", grant.Scope)
+		}
+		return grant.Resource, nil
 	case permission.ScopeWorkflow:
 		id, err := strconv.ParseInt(grant.Resource, 10, 64)
 		if err != nil {
@@ -2197,7 +2248,7 @@ func (server *Server) grantDatabaseName(ctx context.Context, grant permission.Gr
 
 func (server *Server) validateRoleGrants(ctx context.Context, dbName string, grants []permission.Grant) error {
 	for _, grant := range grants {
-		if grant.Level == permission.None && grant.Scope != permission.ScopeField {
+		if grant.Level == permission.None {
 			continue
 		}
 		grantDBName, err := server.grantDatabaseName(ctx, grant)
@@ -2241,7 +2292,10 @@ func (server *Server) validateGrantResource(ctx context.Context, dbName string, 
 		if _, ok := server.catalogSnapshot().Database(dbName); !ok {
 			return fmt.Errorf("database %q not found", dbName)
 		}
-	case permission.ScopeTable:
+	case permission.ScopeFieldSet:
+		if grant.Field != "" {
+			return errors.New("field set grant cannot include field")
+		}
 		_, tableName, ok := strings.Cut(grant.Resource, ".")
 		if !ok || tableName == "" {
 			return fmt.Errorf("grant resource %q must be db.table", grant.Resource)
@@ -2264,6 +2318,53 @@ func (server *Server) validateGrantResource(ctx context.Context, dbName string, 
 		field, ok := tableMeta.Field(grant.Field)
 		if !ok || field.Deleted || strings.HasPrefix(field.Name, "ct_") {
 			return fmt.Errorf("field %s.%s.%s not found", dbName, tableName, grant.Field)
+		}
+	case permission.ScopeViewSet:
+		if grant.Field != "" {
+			return errors.New("view set grant cannot include field")
+		}
+		_, tableName, ok := strings.Cut(grant.Resource, ".")
+		if !ok || tableName == "" {
+			return fmt.Errorf("grant resource %q must be db.table", grant.Resource)
+		}
+		if _, ok := server.catalogSnapshot().Table(dbName, tableName); !ok {
+			return fmt.Errorf("table %s.%s not found", dbName, tableName)
+		}
+	case permission.ScopeView:
+		_, tableName, ok := strings.Cut(grant.Resource, ".")
+		if !ok || tableName == "" {
+			return fmt.Errorf("grant resource %q must be db.table", grant.Resource)
+		}
+		tableMeta, ok := server.catalogSnapshot().Table(dbName, tableName)
+		if !ok {
+			return fmt.Errorf("table %s.%s not found", dbName, tableName)
+		}
+		if grant.Field == "" {
+			return errors.New("view grant requires field")
+		}
+		found := false
+		for _, view := range tableMeta.Views {
+			if view.Name == grant.Field {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("view %s.%s.%s not found", dbName, tableName, grant.Field)
+		}
+	case permission.ScopeWorkflowSet:
+		if grant.Resource != dbName {
+			return fmt.Errorf("workflow set grant resource must be %q", dbName)
+		}
+		if grant.Field != "" {
+			return errors.New("workflow set grant cannot include field")
+		}
+	case permission.ScopeFormSet:
+		if grant.Resource != dbName {
+			return fmt.Errorf("form set grant resource must be %q", dbName)
+		}
+		if grant.Field != "" {
+			return errors.New("form set grant cannot include field")
 		}
 	case permission.ScopeWorkflow:
 		workflow, err := workflowByGrantResource(ctx, server.system, grant.Resource)
@@ -2301,57 +2402,6 @@ func formByGrantResource(ctx context.Context, system *systemdb.DB, resource stri
 		return systemdb.FormDefinition{}, fmt.Errorf("grant form resource %q must be an id", resource)
 	}
 	return system.Form(ctx, id)
-}
-
-func (server *Server) requireDatabaseOrTableWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string) bool {
-	if dbName == "" {
-		writeError(w, http.StatusBadRequest, errors.New("database_name is required"))
-		return false
-	}
-	dbMeta, ok := server.catalogSnapshot().Database(dbName)
-	if !ok {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("database %q not found", dbName))
-		return false
-	}
-	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return false
-	}
-	if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) >= permission.Write {
-		return true
-	}
-	for _, tableMeta := range dbMeta.Tables {
-		if perms.ResourceLevel(actorID, permission.ScopeTable, dbName+"."+tableMeta.Name) >= permission.Write {
-			return true
-		}
-	}
-	writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
-	return false
-}
-
-func (server *Server) requireDatabaseOrSpecificTableWrite(w http.ResponseWriter, r *http.Request, actorID string, dbName string, tableName string) bool {
-	if dbName == "" || tableName == "" {
-		writeError(w, http.StatusBadRequest, errors.New("database and table are required"))
-		return false
-	}
-	if _, ok := server.catalogSnapshot().Table(dbName, tableName); !ok {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("table %s.%s not found", dbName, tableName))
-		return false
-	}
-	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return false
-	}
-	if perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) >= permission.Write {
-		return true
-	}
-	if perms.ResourceLevel(actorID, permission.ScopeTable, dbName+"."+tableName) >= permission.Write {
-		return true
-	}
-	writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
-	return false
 }
 
 func (server *Server) requireResourceWrite(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64) bool {
@@ -2393,40 +2443,27 @@ func (server *Server) requireExistingFormDatabase(w http.ResponseWriter, r *http
 }
 
 func (server *Server) requireResourceLevel(w http.ResponseWriter, r *http.Request, actorID string, scope permission.Scope, id int64, level permission.Level) bool {
-	perms, err := server.system.EffectiveGrantsForSubject(r.Context(), actorID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return false
-	}
-	if server.canManageDatabaseResource(r.Context(), perms, actorID, scope, id) {
-		return true
-	}
-	if perms.ResourceLevel(actorID, scope, resourceID(id)) < level {
-		writeError(w, http.StatusForbidden, table.ErrPermissionDenied)
-		return false
-	}
-	return true
-}
-
-func (server *Server) canManageDatabaseResource(ctx context.Context, perms permission.Set, actorID string, scope permission.Scope, id int64) bool {
-	var dbName string
+	action := accessReadWorkflow
 	switch scope {
 	case permission.ScopeWorkflow:
-		workflow, err := server.system.Workflow(ctx, id)
-		if err != nil {
-			return false
+		if level >= permission.Write {
+			action = accessWriteWorkflow
 		}
-		dbName = workflow.DatabaseName
 	case permission.ScopeForm:
-		form, err := server.system.Form(ctx, id)
-		if err != nil {
-			return false
+		action = accessReadForm
+		if level >= permission.Write {
+			action = accessWriteForm
 		}
-		dbName = form.DatabaseName
 	default:
+		writeError(w, http.StatusBadRequest, fmt.Errorf("unsupported resource scope %q", scope))
 		return false
 	}
-	return perms.ResourceLevel(actorID, permission.ScopeDatabase, dbName) >= permission.Write
+	_, ok := server.requireAuthorized(w, r, actorID, accessRequest{
+		Action:     action,
+		WorkflowID: id,
+		FormID:     id,
+	})
+	return ok
 }
 
 func (server *Server) filterReadableWorkflows(ctx context.Context, actorID string, workflows []systemdb.WorkflowDefinition) ([]systemdb.WorkflowDefinition, error) {
@@ -2437,6 +2474,7 @@ func (server *Server) filterReadableWorkflows(ctx context.Context, actorID strin
 	filtered := make([]systemdb.WorkflowDefinition, 0, len(workflows))
 	for _, workflow := range workflows {
 		if perms.ResourceLevel(actorID, permission.ScopeDatabase, workflow.DatabaseName) >= permission.Write ||
+			perms.ResourceLevel(actorID, permission.ScopeWorkflowSet, workflow.DatabaseName) >= permission.Read ||
 			perms.CanReadResource(actorID, permission.ScopeWorkflow, resourceID(workflow.ID)) {
 			workflow.PermissionLevel = workflowPermissionLevel(perms, actorID, workflow)
 			filtered = append(filtered, workflow)
@@ -2453,6 +2491,7 @@ func (server *Server) filterReadableForms(ctx context.Context, actorID string, f
 	filtered := make([]systemdb.FormDefinition, 0, len(forms))
 	for _, form := range forms {
 		if perms.ResourceLevel(actorID, permission.ScopeDatabase, form.DatabaseName) >= permission.Write ||
+			perms.ResourceLevel(actorID, permission.ScopeFormSet, form.DatabaseName) >= permission.Read ||
 			perms.CanReadResource(actorID, permission.ScopeForm, resourceID(form.ID)) {
 			form.PermissionLevel = formPermissionLevel(perms, actorID, form)
 			filtered = append(filtered, form)
@@ -2483,17 +2522,27 @@ func workflowPermissionLevel(perms permission.Set, actorID string, workflow syst
 	if perms.ResourceLevel(actorID, permission.ScopeDatabase, workflow.DatabaseName) >= permission.Write {
 		return permission.Write
 	}
-	return perms.ResourceLevel(actorID, permission.ScopeWorkflow, resourceID(workflow.ID))
+	return maxPermissionLevel(
+		perms.ResourceLevel(actorID, permission.ScopeWorkflowSet, workflow.DatabaseName),
+		perms.ResourceLevel(actorID, permission.ScopeWorkflow, resourceID(workflow.ID)),
+	)
 }
 
 func formPermissionLevel(perms permission.Set, actorID string, form systemdb.FormDefinition) permission.Level {
 	if perms.ResourceLevel(actorID, permission.ScopeDatabase, form.DatabaseName) >= permission.Write {
 		return permission.Write
 	}
-	return perms.ResourceLevel(actorID, permission.ScopeForm, resourceID(form.ID))
+	return maxPermissionLevel(
+		perms.ResourceLevel(actorID, permission.ScopeFormSet, form.DatabaseName),
+		perms.ResourceLevel(actorID, permission.ScopeForm, resourceID(form.ID)),
+	)
 }
 
 func canReadRowHistory(perms permission.Set, actorID, resource string, tableMeta metadata.Table) bool {
+	dbName, _, _ := strings.Cut(resource, ".")
+	if perms.CanReadResource(actorID, permission.ScopeDatabase, dbName) {
+		return true
+	}
 	if perms.CanReadField(actorID, resource, "ct_record_id") {
 		return true
 	}
@@ -2506,6 +2555,14 @@ func canReadRowHistory(perms permission.Set, actorID, resource string, tableMeta
 }
 
 func readableHistoryValues(values map[string]any, perms permission.Set, actorID, resource string, tableMeta metadata.Table) map[string]any {
+	dbName, _, _ := strings.Cut(resource, ".")
+	if perms.CanReadResource(actorID, permission.ScopeDatabase, dbName) {
+		readable := make(map[string]any, len(values))
+		for fieldName, value := range values {
+			readable[fieldName] = value
+		}
+		return readable
+	}
 	readable := map[string]any{}
 	for fieldName, value := range values {
 		field, ok := tableMeta.Field(fieldName)

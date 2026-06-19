@@ -42,6 +42,7 @@ type FormDefinition struct {
 	Name            string           `json:"name"`
 	Script          string           `json:"script"`
 	PublishedToken  string           `json:"published_token,omitempty"`
+	CreatorID       string           `json:"creator_id,omitempty"`
 	PermissionLevel permission.Level `json:"permission_level,omitempty" gorm:"-"`
 	CreatedAt       int64            `json:"created_at"`
 	UpdatedAt       int64            `json:"updated_at"`
@@ -105,6 +106,7 @@ type formModel struct {
 	Name           string `gorm:"uniqueIndex:idx_form_database_name;not null"`
 	Script         string `gorm:"not null"`
 	PublishedToken string `gorm:"index"`
+	CreatorID      string `gorm:"index;not null;default:''"`
 	CreatedAt      int64  `gorm:"autoCreateTime:milli"`
 	UpdatedAt      int64  `gorm:"autoUpdateTime:milli"`
 }
@@ -407,12 +409,15 @@ func (db *DB) SaveForm(ctx context.Context, form FormDefinition) (FormDefinition
 	if form.DatabaseName == "" {
 		return FormDefinition{}, errors.New("database_name is required")
 	}
-	if form.ID != 0 && form.PublishedToken == "" {
+	if form.ID != 0 {
 		existing, err := db.Form(ctx, form.ID)
 		if err != nil {
 			return FormDefinition{}, err
 		}
-		form.PublishedToken = existing.PublishedToken
+		form.CreatorID = existing.CreatorID
+		if form.PublishedToken == "" {
+			form.PublishedToken = existing.PublishedToken
+		}
 	}
 	model := formToModel(form)
 	if form.ID == 0 {
@@ -552,7 +557,7 @@ func (db *DB) ReplaceRoleGrants(ctx context.Context, databaseName, roleName stri
 			return err
 		}
 		for _, grant := range grants {
-			if grant.Level == permission.None && grant.Scope != permission.ScopeField {
+			if grant.Level == permission.None {
 				continue
 			}
 			grant.SubjectID = subjectID
@@ -725,6 +730,7 @@ func formToModel(form FormDefinition) formModel {
 		Name:           form.Name,
 		Script:         form.Script,
 		PublishedToken: form.PublishedToken,
+		CreatorID:      form.CreatorID,
 		CreatedAt:      form.CreatedAt,
 		UpdatedAt:      form.UpdatedAt,
 	}
@@ -737,6 +743,7 @@ func modelToForm(model formModel) FormDefinition {
 		Name:           model.Name,
 		Script:         model.Script,
 		PublishedToken: model.PublishedToken,
+		CreatorID:      model.CreatorID,
 		CreatedAt:      model.CreatedAt,
 		UpdatedAt:      model.UpdatedAt,
 	}

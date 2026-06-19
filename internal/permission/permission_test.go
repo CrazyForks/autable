@@ -4,7 +4,7 @@ import "testing"
 
 func TestFieldLevelPermission(t *testing.T) {
 	perms := New(
-		Grant{SubjectID: "u1", Scope: ScopeTable, Resource: "db.contacts", Level: Read},
+		Grant{SubjectID: "u1", Scope: ScopeFieldSet, Resource: "db.contacts", Level: Read},
 		Grant{SubjectID: "u1", Scope: ScopeField, Resource: "db.contacts", Field: "email", Level: Write},
 	)
 
@@ -22,30 +22,44 @@ func TestFieldLevelPermission(t *testing.T) {
 	}
 }
 
-func TestFieldGrantOverridesTableDefault(t *testing.T) {
+func TestFieldGrantsDoNotOverrideFieldSet(t *testing.T) {
 	perms := New(
-		Grant{SubjectID: "u1", Scope: ScopeTable, Resource: "db.contacts", Level: Write},
+		Grant{SubjectID: "u1", Scope: ScopeFieldSet, Resource: "db.contacts", Level: Write},
 		Grant{SubjectID: "u1", Scope: ScopeField, Resource: "db.contacts", Field: "email", Level: Read},
-		Grant{SubjectID: "u1", Scope: ScopeField, Resource: "db.contacts", Field: "secret", Level: None},
 	)
 
 	if !perms.CanWriteField("u1", "db.contacts", "name") {
-		t.Fatal("expected table write permission to apply without a field grant")
+		t.Fatal("expected field set write permission to apply without a field grant")
 	}
 	if !perms.CanReadField("u1", "db.contacts", "email") {
 		t.Fatal("expected field read grant to allow reads")
 	}
-	if perms.CanWriteField("u1", "db.contacts", "email") {
-		t.Fatal("did not expect table write to override field read")
+	if !perms.CanWriteField("u1", "db.contacts", "email") {
+		t.Fatal("expected field set write to remain effective")
 	}
-	if perms.CanReadField("u1", "db.contacts", "secret") {
-		t.Fatal("did not expect table write to override explicit field none")
+}
+
+func TestViewLevelPermission(t *testing.T) {
+	perms := New(
+		Grant{SubjectID: "u1", Scope: ScopeViewSet, Resource: "db.contacts", Level: Read},
+		Grant{SubjectID: "u1", Scope: ScopeView, Resource: "db.contacts", Field: "kanban", Level: Write},
+	)
+
+	if !perms.CanReadView("u1", "db.contacts", "list") {
+		t.Fatal("expected view set read permission")
+	}
+	if perms.CanWriteView("u1", "db.contacts", "list") {
+		t.Fatal("did not expect view set read permission to allow writes")
+	}
+	if !perms.CanWriteView("u1", "db.contacts", "kanban") {
+		t.Fatal("expected specific view write permission")
 	}
 }
 
 func TestResourceLevelPermission(t *testing.T) {
 	perms := New(
 		Grant{SubjectID: "u1", Scope: ScopeDatabase, Resource: "workspace", Level: Write},
+		Grant{SubjectID: "u1", Scope: ScopeWorkflowSet, Resource: "workspace", Level: Read},
 		Grant{SubjectID: "u1", Scope: ScopeWorkflow, Resource: "7", Level: Write},
 		Grant{SubjectID: "u1", Scope: ScopeForm, Resource: "3", Level: Read},
 	)

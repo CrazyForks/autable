@@ -29,12 +29,10 @@ func TestCreateRowAssignsRecordIDAndWritesHistory(t *testing.T) {
 		}},
 	}}}
 	service, catalog, _ := newSQLiteService(t, store, catalog)
-	perms := permission.New(permission.Grant{
-		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	})
+	perms := permission.New(
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Write},
+	)
 
 	row, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{
 		"name":  "Ada",
@@ -78,12 +76,10 @@ func TestCreateRowNotifiesHistoryBackedRowChange(t *testing.T) {
 		}},
 	}}}
 	service, catalog, _ := newSQLiteService(t, store, catalog)
-	perms := permission.New(permission.Grant{
-		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	})
+	perms := permission.New(
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Write},
+	)
 	var notifiedKey string
 	var notifiedChange history.RowChange
 	service.SetRowChangeHandler(func(_ context.Context, historyKey string, change history.RowChange) {
@@ -126,7 +122,7 @@ func TestCreateRowRejectsDeletedField(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
@@ -150,7 +146,7 @@ func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Read,
 	})
@@ -161,7 +157,7 @@ func TestCreateRowEnforcesFieldWritePermission(t *testing.T) {
 	}
 }
 
-func TestCreateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
+func TestCreateRowHonorsPartialFieldWriteGrant(t *testing.T) {
 	ctx := context.Background()
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
@@ -178,8 +174,9 @@ func TestCreateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 	perms := permission.New(
 		permission.Grant{
 			SubjectID: "u1",
-			Scope:     permission.ScopeTable,
+			Scope:     permission.ScopeField,
 			Resource:  "db.contacts",
+			Field:     "name",
 			Level:     permission.Write,
 		},
 		permission.Grant{
@@ -218,12 +215,10 @@ func TestUpdateRowMergesValuesAndWritesHistory(t *testing.T) {
 		}},
 	}}}
 	service, catalog, _ := newSQLiteService(t, store, catalog)
-	perms := permission.New(permission.Grant{
-		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	})
+	perms := permission.New(
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Write},
+	)
 
 	row, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{
 		"name":  "Ada",
@@ -276,13 +271,13 @@ func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	writePerms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
 	readPerms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Read,
 	})
@@ -301,7 +296,7 @@ func TestUpdateRowRejectsRecordIDAndReadOnlyField(t *testing.T) {
 	}
 }
 
-func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
+func TestUpdateRowHonorsPartialFieldWriteGrant(t *testing.T) {
 	ctx := context.Background()
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
 		Name:       "db",
@@ -317,15 +312,16 @@ func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	writePerms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
 	fieldReadPerms := permission.New(
 		permission.Grant{
 			SubjectID: "u1",
-			Scope:     permission.ScopeTable,
+			Scope:     permission.ScopeField,
 			Resource:  "db.contacts",
+			Field:     "name",
 			Level:     permission.Write,
 		},
 		permission.Grant{
@@ -353,7 +349,7 @@ func TestUpdateRowHonorsFieldOverrideOfTableWrite(t *testing.T) {
 	}
 }
 
-func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
+func TestDeleteRowRequiresDatabaseWriteRemovesRowAndWritesHistory(t *testing.T) {
 	ctx := context.Background()
 	store := history.NewMemoryStore()
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
@@ -367,15 +363,21 @@ func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, store, catalog)
 	writePerms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
 	readPerms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Read,
+	})
+	deletePerms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
+		Level:     permission.Write,
 	})
 
 	row, err := service.CreateRow(ctx, catalog, writePerms, "u1", "db", "contacts", map[string]any{"name": "Ada"})
@@ -385,7 +387,7 @@ func TestDeleteRowRequiresTableWriteRemovesRowAndWritesHistory(t *testing.T) {
 	if _, err := service.DeleteRow(ctx, catalog, readPerms, "u1", "db", "contacts", row.RecordID); !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected read-only delete permission error, got %v", err)
 	}
-	deleted, err := service.DeleteRow(ctx, catalog, writePerms, "u1", "db", "contacts", row.RecordID)
+	deleted, err := service.DeleteRow(ctx, catalog, deletePerms, "u1", "db", "contacts", row.RecordID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +434,7 @@ func TestCreateRowUsesInjectedRepository(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
@@ -517,8 +519,14 @@ func TestDeleteRowDoesNotMutateWhenHistoryWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deletePerms := permission.New(permission.Grant{
+		SubjectID: "u1",
+		Scope:     permission.ScopeDatabase,
+		Resource:  "db",
+		Level:     permission.Write,
+	})
 	service := table.NewServiceWithRepository(failingHistoryStore{}, repository)
-	if _, err := service.DeleteRow(ctx, catalog, perms, "u1", "db", "contacts", row.RecordID); err == nil {
+	if _, err := service.DeleteRow(ctx, catalog, deletePerms, "u1", "db", "contacts", row.RecordID); err == nil {
 		t.Fatal("expected history failure")
 	}
 	tableMeta, _ := catalog.Table("db", "contacts")
@@ -564,7 +572,8 @@ func TestRowsAppliesComposedViewQueryAndSorts(t *testing.T) {
 	}}}
 	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
 	perms := permission.New(
-		permission.Grant{SubjectID: "u1", Scope: permission.ScopeTable, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Write},
 	)
 	for _, values := range []map[string]any{
 		{"name": "Ada", "status": "active"},
@@ -615,12 +624,10 @@ func TestFormulaFieldsAreComputedAndNotWritable(t *testing.T) {
 		}},
 	}}}
 	service, catalog, _ := newSQLiteService(t, store, catalog)
-	perms := permission.New(permission.Grant{
-		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	})
+	perms := permission.New(
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "u1", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Write},
+	)
 
 	low, err := service.CreateRow(ctx, catalog, perms, "u1", "db", "contacts", map[string]any{
 		"name":  "Ada",
@@ -689,7 +696,7 @@ func TestSyncTableRecomputesFormulaFieldsWithoutHistory(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
@@ -748,7 +755,7 @@ func TestFormulaErrorsClearValueInsteadOfFailingWrite(t *testing.T) {
 	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
@@ -808,7 +815,7 @@ func TestInvalidTypedFieldInputClearsValueInsteadOfKeepingOldValue(t *testing.T)
 	service, catalog, _ := newSQLiteService(t, store, catalog)
 	perms := permission.New(permission.Grant{
 		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
+		Scope:     permission.ScopeFieldSet,
 		Resource:  "db.contacts",
 		Level:     permission.Write,
 	})
@@ -863,12 +870,20 @@ func testTableCatalog() metadata.Catalog {
 }
 
 func testWritePerms() permission.Set {
-	return permission.New(permission.Grant{
-		SubjectID: "u1",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	})
+	return permission.New(
+		permission.Grant{
+			SubjectID: "u1",
+			Scope:     permission.ScopeFieldSet,
+			Resource:  "db.contacts",
+			Level:     permission.Write,
+		},
+		permission.Grant{
+			SubjectID: "u1",
+			Scope:     permission.ScopeViewSet,
+			Resource:  "db.contacts",
+			Level:     permission.Write,
+		},
+	)
 }
 
 func newSQLiteService(t *testing.T, store history.Store, catalog metadata.Catalog) (*table.Service, metadata.Catalog, *recorddb.Repository) {
@@ -920,12 +935,10 @@ func TestRowsRejectsViewsUsingUnreadableFields(t *testing.T) {
 		}},
 	}}}
 	service, catalog, _ := newSQLiteService(t, history.NewMemoryStore(), catalog)
-	writerPerms := permission.New(permission.Grant{
-		SubjectID: "writer",
-		Scope:     permission.ScopeTable,
-		Resource:  "db.contacts",
-		Level:     permission.Write,
-	})
+	writerPerms := permission.New(
+		permission.Grant{SubjectID: "writer", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+		permission.Grant{SubjectID: "writer", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Write},
+	)
 	if _, err := service.CreateRow(ctx, catalog, writerPerms, "writer", "db", "contacts", map[string]any{
 		"name":   "Ada",
 		"email":  "ada@example.com",
@@ -933,13 +946,10 @@ func TestRowsRejectsViewsUsingUnreadableFields(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	readerPerms := permission.New(permission.Grant{
-		SubjectID: "reader",
-		Scope:     permission.ScopeField,
-		Resource:  "db.contacts",
-		Field:     "email",
-		Level:     permission.Read,
-	})
+	readerPerms := permission.New(
+		permission.Grant{SubjectID: "reader", Scope: permission.ScopeField, Resource: "db.contacts", Field: "email", Level: permission.Read},
+		permission.Grant{SubjectID: "reader", Scope: permission.ScopeViewSet, Resource: "db.contacts", Level: permission.Read},
+	)
 
 	if _, err := service.Rows(ctx, catalog, readerPerms, "reader", "db", "contacts", "active"); !errors.Is(err, table.ErrPermissionDenied) {
 		t.Fatalf("expected unreadable filter permission error, got %v", err)

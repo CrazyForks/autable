@@ -39,7 +39,7 @@ func (service workflowCodeTableService) CreateFields(ctx context.Context, input 
 	}
 	resource := dbName + "." + tableName
 	if perms.ResourceLevel(info.CreatorID, permission.ScopeDatabase, dbName) < permission.Write &&
-		perms.ResourceLevel(info.CreatorID, permission.ScopeTable, resource) < permission.Write {
+		perms.ResourceLevel(info.CreatorID, permission.ScopeFieldSet, resource) < permission.Write {
 		return nil, table.ErrPermissionDenied
 	}
 	mutation, err := server.addTableFields(ctx, dbName, tableName, fields)

@@ -40,11 +40,12 @@ type Field struct {
 }
 
 type View struct {
-	Name        string     `yaml:"name" json:"name"`
-	DisplayName string     `yaml:"display_name" json:"display_name"`
-	BaseView    string     `yaml:"base_view" json:"base_view,omitempty"`
-	Query       *ViewQuery `yaml:"query,omitempty" json:"query,omitempty"`
-	Sorts       []ViewSort `yaml:"sorts" json:"sorts"`
+	Name            string     `yaml:"name" json:"name"`
+	DisplayName     string     `yaml:"display_name" json:"display_name"`
+	BaseView        string     `yaml:"base_view" json:"base_view,omitempty"`
+	Query           *ViewQuery `yaml:"query,omitempty" json:"query,omitempty"`
+	Sorts           []ViewSort `yaml:"sorts" json:"sorts"`
+	PermissionLevel int        `yaml:"-" json:"permission_level,omitempty"`
 }
 
 type ViewQuery struct {

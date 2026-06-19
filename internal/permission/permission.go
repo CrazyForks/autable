@@ -11,11 +11,15 @@ const (
 type Scope string
 
 const (
-	ScopeDatabase Scope = "database"
-	ScopeTable    Scope = "table"
-	ScopeField    Scope = "field"
-	ScopeWorkflow Scope = "workflow"
-	ScopeForm     Scope = "form"
+	ScopeDatabase    Scope = "database"
+	ScopeFieldSet    Scope = "field_set"
+	ScopeField       Scope = "field"
+	ScopeViewSet     Scope = "view_set"
+	ScopeView        Scope = "view"
+	ScopeWorkflowSet Scope = "workflow_set"
+	ScopeWorkflow    Scope = "workflow"
+	ScopeFormSet     Scope = "form_set"
+	ScopeForm        Scope = "form"
 )
 
 type Grant struct {
@@ -35,31 +39,39 @@ func New(grants ...Grant) Set {
 }
 
 func (set Set) FieldLevel(subjectID, resource, field string) Level {
-	tableLevel := None
-	fieldLevel := None
-	hasFieldGrant := false
+	level := None
 	for _, grant := range set.grants {
 		if grant.SubjectID != subjectID || grant.Resource != resource {
 			continue
 		}
 		switch grant.Scope {
-		case ScopeTable:
-			if grant.Level > tableLevel {
-				tableLevel = grant.Level
-			}
+		case ScopeFieldSet:
+			level = maxLevel(level, grant.Level)
 		case ScopeField:
 			if grant.Field == field {
-				hasFieldGrant = true
-				if grant.Level > fieldLevel {
-					fieldLevel = grant.Level
-				}
+				level = maxLevel(level, grant.Level)
 			}
 		}
 	}
-	if hasFieldGrant {
-		return fieldLevel
+	return level
+}
+
+func (set Set) ViewLevel(subjectID, resource, view string) Level {
+	level := None
+	for _, grant := range set.grants {
+		if grant.SubjectID != subjectID || grant.Resource != resource {
+			continue
+		}
+		switch grant.Scope {
+		case ScopeViewSet:
+			level = maxLevel(level, grant.Level)
+		case ScopeView:
+			if grant.Field == view {
+				level = maxLevel(level, grant.Level)
+			}
+		}
 	}
-	return tableLevel
+	return level
 }
 
 func (set Set) ResourceLevel(subjectID string, scope Scope, resource string) Level {
@@ -83,12 +95,27 @@ func (set Set) CanWriteField(subjectID, resource, field string) bool {
 	return set.FieldLevel(subjectID, resource, field) >= Write
 }
 
+func (set Set) CanReadView(subjectID, resource, view string) bool {
+	return set.ViewLevel(subjectID, resource, view) >= Read
+}
+
+func (set Set) CanWriteView(subjectID, resource, view string) bool {
+	return set.ViewLevel(subjectID, resource, view) >= Write
+}
+
 func (set Set) CanReadResource(subjectID string, scope Scope, resource string) bool {
 	return set.ResourceLevel(subjectID, scope, resource) >= Read
 }
 
 func (set Set) CanWriteResource(subjectID string, scope Scope, resource string) bool {
 	return set.ResourceLevel(subjectID, scope, resource) >= Write
+}
+
+func maxLevel(left, right Level) Level {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func (level Level) String() string {

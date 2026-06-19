@@ -332,7 +332,7 @@ func TestRoleDefinitionStoresReplaceableGrants(t *testing.T) {
 	}
 
 	role, err = db.ReplaceRoleGrants(ctx, "workspace", "editor", []permission.Grant{
-		{Scope: permission.ScopeTable, Resource: "workspace.contacts", Level: permission.Write},
+		{Scope: permission.ScopeFieldSet, Resource: "workspace.contacts", Level: permission.Write},
 		{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "email", Level: permission.Read},
 		{Scope: permission.ScopeField, Resource: "workspace.contacts", Field: "secret", Level: permission.None},
 		{Scope: permission.ScopeWorkflow, Resource: "9", Level: permission.None},
@@ -340,21 +340,21 @@ func TestRoleDefinitionStoresReplaceableGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(role.Grants) != 3 {
-		t.Fatalf("expected table, field read, and field none grants, got %#v", role.Grants)
+	if len(role.Grants) != 2 {
+		t.Fatalf("expected field set and field read grants, got %#v", role.Grants)
 	}
 	perms, err := db.GrantsForSubject(ctx, role.SubjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !perms.CanWriteField(role.SubjectID, "workspace.contacts", "name") {
-		t.Fatal("expected table write grant")
+		t.Fatal("expected field set write grant")
 	}
 	if !perms.CanReadField(role.SubjectID, "workspace.contacts", "email") {
 		t.Fatal("expected field read grant")
 	}
-	if perms.CanReadField(role.SubjectID, "workspace.contacts", "secret") {
-		t.Fatal("expected field none grant to override table write")
+	if !perms.CanWriteField(role.SubjectID, "workspace.contacts", "secret") {
+		t.Fatal("expected field set write grant to apply to secret")
 	}
 	role, err = db.ReplaceRoleMembers(ctx, "workspace", "editor", []string{"u1", "u2", "u1", ""})
 	if err != nil {
@@ -368,13 +368,13 @@ func TestRoleDefinitionStoresReplaceableGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !effectivePerms.CanWriteField("u1", "workspace.contacts", "name") {
-		t.Fatal("expected role member to inherit table write grant")
+		t.Fatal("expected role member to inherit field set write grant")
 	}
 	if !effectivePerms.CanReadField("u1", "workspace.contacts", "email") {
 		t.Fatal("expected role member to inherit field read grant")
 	}
-	if effectivePerms.CanReadField("u1", "workspace.contacts", "secret") {
-		t.Fatal("expected role member to inherit field none grant")
+	if !effectivePerms.CanWriteField("u1", "workspace.contacts", "secret") {
+		t.Fatal("expected role member to inherit field set write grant")
 	}
 
 	role, err = db.ReplaceRoleGrants(ctx, "workspace", "editor", []permission.Grant{
