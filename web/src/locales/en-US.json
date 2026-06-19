@@ -125,6 +125,8 @@
     "noWorkflowMembers": "No workflows",
     "partial": "Partial",
     "records": "Records",
+    "recordCreate": "Create",
+    "recordDelete": "Delete",
     "recordModes": {
       "none": "None",
       "create": "Create",

@@ -16,7 +16,8 @@ import {
   PopoverSurface,
   PopoverTrigger,
   Select,
-  Text
+  Text,
+  ToggleButton
 } from "@fluentui/react-components";
 import {
   ChevronDownRegular,
@@ -316,7 +317,7 @@ function PermissionMatrix({
             <Text size={200} weight="semibold">
               {table.display_name || table.name}
             </Text>
-            <RecordPermissionSelect
+            <RecordPermissionToggle
               resource={`${database.name}.${table.name}`}
               grants={grants}
               onGrantChange={onGrantChange}
@@ -392,9 +393,7 @@ function PermissionMatrix({
 
 type ScopeItem = { key: string; label: string; resource: string; field: string };
 
-type RecordPermissionMode = "none" | "create" | "delete" | "create_delete";
-
-function RecordPermissionSelect(props: {
+function RecordPermissionToggle(props: {
   grants: PermissionGrant[];
   resource: string;
   onGrantChange: (
@@ -407,34 +406,33 @@ function RecordPermissionSelect(props: {
   const { t } = useTranslation();
   const canCreate = grantLevel(props.grants, "record", props.resource, "create") >= 2;
   const canDelete = grantLevel(props.grants, "record", props.resource, "delete") >= 2;
-  const mode: RecordPermissionMode = canCreate && canDelete ? "create_delete" : canCreate ? "create" : canDelete ? "delete" : "none";
-  const labels: Record<RecordPermissionMode, string> = {
-    none: t("permission.recordModes.none"),
-    create: t("permission.recordModes.create"),
-    delete: t("permission.recordModes.delete"),
-    create_delete: t("permission.recordModes.createDelete")
-  };
-
-  function changeMode(nextMode: RecordPermissionMode) {
-    props.onGrantChange("record", props.resource, "create", nextMode === "create" || nextMode === "create_delete" ? 2 : 0);
-    props.onGrantChange("record", props.resource, "delete", nextMode === "delete" || nextMode === "create_delete" ? 2 : 0);
-  }
+  const createLabel = t("permission.recordCreate", "Create");
+  const deleteLabel = t("permission.recordDelete", "Delete");
 
   return (
-    <label className="permission-row">
-      <span>{t("permission.records")}</span>
-      <Select
-        aria-label={t("permission.records")}
-        value={mode}
-        onChange={(_, data) => changeMode(data.value as RecordPermissionMode)}
-      >
-        {(Object.keys(labels) as RecordPermissionMode[]).map((key) => (
-          <option key={key} value={key}>
-            {labels[key]}
-          </option>
-        ))}
-      </Select>
-    </label>
+    <div className="permission-scope">
+      <span className="permission-scope-label">{t("permission.records")}</span>
+      <div className="perm-split" role="group" aria-label={t("permission.records")}>
+        <ToggleButton
+          className="perm-split-all"
+          appearance={canCreate ? "primary" : "secondary"}
+          checked={canCreate}
+          aria-label={createLabel}
+          onClick={() => props.onGrantChange("record", props.resource, "create", canCreate ? 0 : 2)}
+        >
+          {createLabel}
+        </ToggleButton>
+        <ToggleButton
+          className="perm-split-partial"
+          appearance={canDelete ? "primary" : "secondary"}
+          checked={canDelete}
+          aria-label={deleteLabel}
+          onClick={() => props.onGrantChange("record", props.resource, "delete", canDelete ? 0 : 2)}
+        >
+          {deleteLabel}
+        </ToggleButton>
+      </div>
+    </div>
   );
 }
 

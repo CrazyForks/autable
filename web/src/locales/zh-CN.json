@@ -125,6 +125,8 @@
     "noWorkflowMembers": "暂无工作流",
     "partial": "部分",
     "records": "记录",
+    "recordCreate": "新增",
+    "recordDelete": "删除",
     "recordModes": {
       "none": "无",
       "create": "可增",
