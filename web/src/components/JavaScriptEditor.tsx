@@ -65,6 +65,9 @@ export function JavaScriptEditor({
         onChange={(nextValue) => onChange(nextValue ?? "")}
         options={{
           ariaLabel: label,
+          // Render suggestion/hover/parameter-hint popups with position: fixed
+          // so they aren't clipped by the editor pane's overflow: hidden.
+          fixedOverflowWidgets: true,
           fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
           fontSize: 13,
           lineNumbersMinChars: 3,
