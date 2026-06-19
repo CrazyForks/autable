@@ -34,6 +34,7 @@ export type TableView = {
   base_view?: string;
   query?: TableViewQuery;
   sorts: TableViewSort[];
+  permission_level?: 0 | 1 | 2;
 };
 
 export type TableMetadata = {
@@ -142,7 +143,7 @@ export type FormDefinition = {
 
 export type PermissionGrant = {
   subject_id: string;
-  scope: "database" | "table" | "field" | "workflow" | "form";
+  scope: "database" | "field_set" | "field" | "view_set" | "view" | "workflow_set" | "workflow" | "form_set" | "form";
   resource: string;
   field: string;
   level: 0 | 1 | 2;

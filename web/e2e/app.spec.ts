@@ -288,8 +288,15 @@ test("shows database-owned workflow and form lists across table owners", async (
   });
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: tableOwner.id,
-    scope: "table",
-    resource: `${databaseName}.contacts`,
+    scope: "workflow_set",
+    resource: databaseName,
+    field: "",
+    level: 2
+  });
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: tableOwner.id,
+    scope: "form_set",
+    resource: databaseName,
     field: "",
     level: 2
   });
@@ -350,7 +357,7 @@ test("hides workflow and form resources without resource permission", async ({ p
   });
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: resourceUser.id,
-    scope: "table",
+    scope: "field_set",
     resource: `${databaseName}.contacts`,
     field: "",
     level: 1
@@ -405,7 +412,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
   })) as { id: number };
   await api(page, "POST", "/api/permissions/grants", {
     subject_id: readOnlyUser.id,
-    scope: "table",
+    scope: "field_set",
     resource: `${databaseName}.contacts`,
     field: "",
     level: 1
@@ -979,6 +986,13 @@ test("publishes form links that require login and explicit form permission", asy
     field: "",
     level: 1
   });
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: reader.id,
+    scope: "field_set",
+    resource: `${workspace.databaseName}.${workspace.tableName}`,
+    field: "",
+    level: 2
+  });
 
   await page.context().clearCookies();
   await page.goto(link);
@@ -1041,8 +1055,9 @@ test("covers role members and resource permission grants through the real backen
   await page.getByRole("option", { name: user.email }).click();
   await expect(membersPopover.getByText(user.email)).toBeVisible();
   await page.keyboard.press("Escape");
-  await permissionView.getByLabel("contacts permission").selectOption("2");
-  await permissionView.getByLabel("email permission").selectOption("1");
+  await permissionView.getByLabel("contacts fields permission").selectOption("1");
+  await permissionView.getByLabel("contacts views permission").selectOption("1");
+  await permissionView.getByLabel("email permission").selectOption("2");
   await permissionView.getByLabel(`${workflow.name} permission`).selectOption("1");
   await permissionView.getByLabel(`${form.name} permission`).selectOption("2");
   await permissionView.getByRole("button", { name: "Save" }).click();
@@ -1063,9 +1078,9 @@ test("covers role members and resource permission grants through the real backen
   expect(typeof role?.updated_at).toBe("number");
   expect(role?.grants).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ scope: "table", resource: `${databaseName}.${tableName}`, field: "", level: 2 }),
-      expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "name", level: 0 }),
-      expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "email", level: 1 }),
+      expect.objectContaining({ scope: "field_set", resource: `${databaseName}.${tableName}`, field: "", level: 1 }),
+      expect.objectContaining({ scope: "view_set", resource: `${databaseName}.${tableName}`, field: "", level: 1 }),
+      expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "email", level: 2 }),
       expect.objectContaining({ scope: "workflow", resource: String(workflow.id), field: "", level: 1 }),
       expect.objectContaining({ scope: "form", resource: String(form.id), field: "", level: 2 })
     ])

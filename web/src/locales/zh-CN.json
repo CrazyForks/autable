@@ -103,6 +103,8 @@
   "permission": {
     "addRoleMember": "添加角色成员",
     "empty": "创建角色后即可配置表、字段、工作流和表单权限。",
+    "fieldSet": "{{table}} 字段",
+    "formSet": "全部表单",
     "forms": "表单",
     "levels": {
       "none": "无",
@@ -117,6 +119,9 @@
     "roleMemberEmail": "角色成员邮箱",
     "searchEmail": "搜索邮箱",
     "tables": "表",
+    "view": "{{view}} 视图",
+    "viewSet": "{{table}} 视图",
+    "workflowSet": "全部工作流",
     "workflows": "工作流"
   },
   "status": {

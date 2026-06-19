@@ -199,9 +199,14 @@ function PermissionMatrix({
         {database.tables.map((table) => (
           <div key={table.name} className="permission-resource">
             <PermissionLevelSelect
-              label={table.name}
-              value={grantLevel(grants, "table", `${database.name}.${table.name}`, "")}
-              onChange={(level) => onGrantChange("table", `${database.name}.${table.name}`, "", level)}
+              label={t("permission.fieldSet", { table: table.name })}
+              value={grantLevel(grants, "field_set", `${database.name}.${table.name}`, "")}
+              onChange={(level) => onGrantChange("field_set", `${database.name}.${table.name}`, "", level)}
+            />
+            <PermissionLevelSelect
+              label={t("permission.viewSet", { table: table.name })}
+              value={grantLevel(grants, "view_set", `${database.name}.${table.name}`, "")}
+              onChange={(level) => onGrantChange("view_set", `${database.name}.${table.name}`, "", level)}
             />
             <div className="permission-fields">
               {table.fields
@@ -214,12 +219,25 @@ function PermissionMatrix({
                     onChange={(level) => onGrantChange("field", `${database.name}.${table.name}`, field.name, level)}
                   />
                 ))}
+              {table.views.map((view) => (
+                <PermissionLevelSelect
+                  key={view.name}
+                  label={t("permission.view", { view: view.name })}
+                  value={grantLevel(grants, "view", `${database.name}.${table.name}`, view.name)}
+                  onChange={(level) => onGrantChange("view", `${database.name}.${table.name}`, view.name, level)}
+                />
+              ))}
             </div>
           </div>
         ))}
       </div>
       <div className="permission-card">
         <Text weight="semibold">{t("permission.workflows")}</Text>
+        <PermissionLevelSelect
+          label={t("permission.workflowSet")}
+          value={grantLevel(grants, "workflow_set", database.name, "")}
+          onChange={(level) => onGrantChange("workflow_set", database.name, "", level)}
+        />
         {workflows.map((workflow) => (
           <PermissionLevelSelect
             key={workflow.id ?? workflow.name}
@@ -231,6 +249,11 @@ function PermissionMatrix({
       </div>
       <div className="permission-card">
         <Text weight="semibold">{t("permission.forms")}</Text>
+        <PermissionLevelSelect
+          label={t("permission.formSet")}
+          value={grantLevel(grants, "form_set", database.name, "")}
+          onChange={(level) => onGrantChange("form_set", database.name, "", level)}
+        />
         {forms.map((form) => (
           <PermissionLevelSelect
             key={form.id ?? form.name}

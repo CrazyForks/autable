@@ -141,7 +141,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
       return;
     }
     try {
-      await saveRoleGrants(database.name, selectedRole.name, compactRoleGrants(roleDraftGrants, database));
+      await saveRoleGrants(database.name, selectedRole.name, compactRoleGrants(roleDraftGrants));
       const saved = await saveRoleMembers(database.name, selectedRole.name, compactMembers(roleDraftMembers));
       setRoles((current) => replaceRole(current, saved));
       setSelectedRoleName(saved.name);

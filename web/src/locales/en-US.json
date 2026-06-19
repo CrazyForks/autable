@@ -103,6 +103,8 @@
   "permission": {
     "addRoleMember": "Add role member",
     "empty": "Create a role to configure table, field, workflow, and form permissions.",
+    "fieldSet": "{{table}} fields",
+    "formSet": "All forms",
     "forms": "Forms",
     "levels": {
       "none": "None",
@@ -117,6 +119,9 @@
     "roleMemberEmail": "Role member email",
     "searchEmail": "Search email",
     "tables": "Tables",
+    "view": "{{view}} view",
+    "viewSet": "{{table}} views",
+    "workflowSet": "All workflows",
     "workflows": "Workflows"
   },
   "status": {
