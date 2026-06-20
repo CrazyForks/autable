@@ -8,6 +8,15 @@ dist/
 *.out
 *.tsbuildinfo
 
+# Release builds copy web/dist here before go build so the frontend can be
+# embedded into the Go binary. Keep the placeholder index tracked so Go builds
+# still compile before a frontend build has run.
+!internal/webui/
+!internal/webui/dist/
+!internal/webui/dist/index.html
+internal/webui/dist/*
+!internal/webui/dist/index.html
+
 # Runtime data: users/operators must back these up manually.
 *.sqlite
 *.sqlite3

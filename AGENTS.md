@@ -1,0 +1,9 @@
+# Repository Rules
+
+- Release versions are represented by Git tags only.
+- A normal push to `main` creates the next patch `vX.Y.Z` tag and a GitHub Release without committing version changes back to `main`.
+- If no release tag exists yet, use `web/package.json` as the initial semantic-version baseline without editing it.
+- Manual release workflow runs may create `patch`, `minor`, or `major` tags; use `patch` unless the user explicitly asks for a different release level.
+- Do not add version bump commits, generated release commits, or package version edits to application branches.
+- Do not manually create release tags unless the user explicitly asks for a manual release fix.
+- Release binaries must embed the built frontend by copying `web/dist` into `internal/webui/dist` before `go build`.

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,11 +18,18 @@ import (
 	"autable/internal/repository"
 	"autable/internal/systemdb"
 	"autable/internal/table"
+	"autable/internal/version"
+	"autable/internal/webui"
 )
 
 func main() {
 	configPath := flag.String("config", "config.yml", "path to autable config.yml")
+	showVersion := flag.Bool("version", false, "print autable version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.String())
+		return
+	}
 
 	if err := run(context.Background(), *configPath); err != nil {
 		slog.Error("autable stopped", "error", err)
@@ -75,5 +83,5 @@ func run(ctx context.Context, configPath string) error {
 	server.StartWorkflowWorkers(ctx)
 	server.StartWorkflowScheduler(ctx, 15*time.Second)
 	slog.Info("autable listening", "address", address)
-	return http.ListenAndServe(address, server)
+	return http.ListenAndServe(address, webui.Handler(server))
 }

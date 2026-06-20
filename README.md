@@ -58,6 +58,18 @@ Run the API server with git-managed config. The server loads metadata from `repo
 go run ./cmd/autable -config examples/config.yml
 ```
 
+Build a single Go binary with the frontend embedded:
+
+```sh
+cd web
+npm install
+cd ..
+./scripts/embed-web.sh
+go build -o autable ./cmd/autable
+```
+
+The binary serves the API and frontend on the same `server.address`.
+
 Run the frontend:
 
 ```sh
