@@ -3,31 +3,32 @@ import userEvent from "@testing-library/user-event";
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../i18n";
-import type { UseZxingOptions } from "react-zxing";
+import type { BarcodeScanResult } from "../hooks/useBarcodeScanner";
 import { FormPreviewFields } from "./FormPreviewFields";
 
-let latestZxingOptions: UseZxingOptions | undefined;
+type ScannerHookOptions = {
+  active: boolean;
+  onResult: (result: BarcodeScanResult) => void;
+  onError: (error: unknown) => void;
+};
 
-vi.mock("react-zxing", () => ({
-  useZxing: (options: UseZxingOptions) => {
-    latestZxingOptions = options;
+let latestScannerOptions: ScannerHookOptions | undefined;
+
+vi.mock("../hooks/useBarcodeScanner", () => ({
+  useBarcodeScanner: (options: ScannerHookOptions) => {
+    latestScannerOptions = options;
     return {
-      ref: { current: null },
-      torch: { isOn: false, isAvailable: false, on: vi.fn(), off: vi.fn() }
+      videoRef: { current: null },
+      torchOn: false,
+      torchAvailable: false,
+      toggleTorch: vi.fn(),
+      resume: vi.fn()
     };
   }
 }));
 
 beforeEach(async () => {
-  latestZxingOptions = undefined;
-  Object.defineProperty(HTMLMediaElement.prototype, "play", {
-    configurable: true,
-    value: vi.fn().mockResolvedValue(undefined)
-  });
-  Object.defineProperty(HTMLMediaElement.prototype, "pause", {
-    configurable: true,
-    value: vi.fn()
-  });
+  latestScannerOptions = undefined;
   await i18n.changeLanguage("en-US");
 });
 
@@ -62,9 +63,7 @@ describe("FormPreviewFields", () => {
     await screen.findByText("Point the camera at a QR code or barcode.");
 
     act(() => {
-      latestZxingOptions?.onDecodeResult?.({ rawValue: "DEVICE-001", format: "qr_code" } as Parameters<
-        NonNullable<UseZxingOptions["onDecodeResult"]>
-      >[0]);
+      latestScannerOptions?.onResult({ value: "DEVICE-001", format: "qr_code" });
     });
 
     expect(onFormValueChange).toHaveBeenCalledWith("device_code", "DEVICE-001");
@@ -100,7 +99,11 @@ describe("FormPreviewFields", () => {
     await user.click(screen.getByRole("button", { name: "Scan Asset code" }));
     await screen.findByText("Point the camera at a QR code or barcode.");
     act(() => {
-      latestZxingOptions?.onDecodeResult?.(detectedBarcode("ASSET-001"));
+      latestScannerOptions?.onResult({
+        value: "ASSET-001",
+        format: "qr_code",
+        overlay: { points: "10,20 110,20 110,70 10,70", viewBox: "0 0 120 80" }
+      });
     });
 
     expect(onFormValueChange).not.toHaveBeenCalled();
@@ -116,17 +119,3 @@ describe("FormPreviewFields", () => {
     await waitFor(() => expect(screen.queryByText("Detected value")).not.toBeInTheDocument());
   });
 });
-
-function detectedBarcode(rawValue: string): Parameters<NonNullable<UseZxingOptions["onDecodeResult"]>>[0] {
-  return {
-    rawValue,
-    format: "qr_code",
-    boundingBox: { x: 10, y: 20, width: 100, height: 50 },
-    cornerPoints: [
-      { x: 10, y: 20 },
-      { x: 110, y: 20 },
-      { x: 110, y: 70 },
-      { x: 10, y: 70 }
-    ]
-  } as Parameters<NonNullable<UseZxingOptions["onDecodeResult"]>>[0];
-}

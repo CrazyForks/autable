@@ -68,6 +68,8 @@
     "scannerEmptyResult": "No valid scanner result",
     "scannerInput": "Scanner input triggers automatically",
     "scannerRescan": "Scan again",
+    "scannerTorchOff": "Torch off",
+    "scannerTorchOn": "Torch on",
     "selectedRecord": "Record {{id}}",
     "unpublish": "Unpublish"
   },

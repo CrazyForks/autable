@@ -68,6 +68,8 @@
     "scannerEmptyResult": "没有读取到有效内容",
     "scannerInput": "支持扫码枪/摄像头输入后自动触发",
     "scannerRescan": "重新扫描",
+    "scannerTorchOff": "关闭手电筒",
+    "scannerTorchOn": "打开手电筒",
     "selectedRecord": "记录 {{id}}",
     "unpublish": "取消发布"
   },

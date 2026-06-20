@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Caption1,
@@ -12,14 +12,12 @@ import {
   Select,
   Text
 } from "@fluentui/react-components";
-import { ScanQrCode24Regular } from "@fluentui/react-icons";
+import { Flash24Regular, FlashOff24Regular, ScanQrCode24Regular } from "@fluentui/react-icons";
 import type { Column } from "react-data-grid";
 import { useTranslation } from "react-i18next";
-import { useZxing } from "react-zxing";
-import type { DetectedBarcode } from "react-zxing";
-import zxingReaderWasmURL from "../../node_modules/zxing-wasm/dist/reader/zxing_reader.wasm?url";
 import { listRows, type RowRecord, type TableMetadata } from "../api";
 import type { FormElement } from "../formRuntime";
+import { useBarcodeScanner, type BarcodeScanResult } from "../hooks/useBarcodeScanner";
 import { rowRecordToValues, type TableGridRow } from "../tableGrid";
 import { RecordDataGrid } from "./RecordDataGrid";
 
@@ -31,15 +29,6 @@ type FormPreviewFieldsProps = {
   onAction: (actionID: string, valueOverrides?: Record<string, string>) => void | Promise<void>;
   onFormValueChange: (name: string, value: string) => void;
   tables?: TableMetadata[];
-};
-
-type ScannerResult = {
-  value: string;
-  format: string;
-  overlay?: {
-    points: string;
-    viewBox: string;
-  };
 };
 
 export function FormPreviewFields({
@@ -181,32 +170,29 @@ function ScannerInput({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
-  const [pendingResult, setPendingResult] = useState<ScannerResult | null>(null);
-  const decodedRef = useRef(false);
+  const [pendingResult, setPendingResult] = useState<BarcodeScanResult | null>(null);
   const confirmBeforeWrite = scannerRequiresConfirmation(element.scanner);
-  const { ref } = useZxing({
-    paused: !open,
-    wasmUrl: zxingReaderWasmURL,
-    constraints: { video: { facingMode: { ideal: "environment" } }, audio: false },
-    timeBetweenDecodingAttempts: 250,
-    trySkew: true,
-    onDecodeResult: (result) => {
-      if (decodedRef.current) {
-        return;
-      }
-      const scannedValue = result.rawValue;
-      if (!scannedValue) {
+
+  const commitScannedValue = (nextValue: string) => {
+    onFormValueChange(element.field, nextValue);
+    if (element.onChangeActionID) {
+      void onAction(element.onChangeActionID, { [element.field]: nextValue });
+    }
+  };
+
+  const { videoRef, torchOn, torchAvailable, toggleTorch, resume } = useBarcodeScanner({
+    active: open,
+    onResult: (scanResult) => {
+      if (!scanResult.value) {
         setError(t("form.scannerEmptyResult"));
+        resume();
         return;
       }
-      decodedRef.current = true;
-      const nextResult = scannerResultFromDetectedBarcode(result, ref.current);
       if (confirmBeforeWrite) {
-        setPendingResult(nextResult);
-        ref.current?.pause();
+        setPendingResult(scanResult);
         return;
       }
-      commitScannedValue(nextResult.value);
+      commitScannedValue(scanResult.value);
       setOpen(false);
     },
     onError: (nextError) => {
@@ -216,10 +202,8 @@ function ScannerInput({
 
   useEffect(() => {
     if (open) {
-      decodedRef.current = false;
       setError("");
       setPendingResult(null);
-      void ref.current?.play();
     }
   }, [open]);
 
@@ -230,18 +214,10 @@ function ScannerInput({
     }
   };
 
-  const commitScannedValue = (nextValue: string) => {
-    onFormValueChange(element.field, nextValue);
-    if (element.onChangeActionID) {
-      void onAction(element.onChangeActionID, { [element.field]: nextValue });
-    }
-  };
-
   const rescan = () => {
-    decodedRef.current = false;
     setPendingResult(null);
     setError("");
-    void ref.current?.play();
+    resume();
   };
 
   return (
@@ -275,7 +251,7 @@ function ScannerInput({
                 <Text size={200}>{t("form.scannerDialogHint")}</Text>
                 {error && <Text className="form-error">{error}</Text>}
                 <div className="scanner-video-frame">
-                  <video ref={ref as RefObject<HTMLVideoElement>} className="scanner-video" muted playsInline autoPlay />
+                  <video ref={videoRef} className="scanner-video" muted playsInline autoPlay />
                   {pendingResult?.overlay && (
                     <svg
                       className="scanner-overlay"
@@ -296,6 +272,15 @@ function ScannerInput({
                 )}
               </DialogContent>
               <DialogActions>
+                {torchAvailable && (
+                  <Button
+                    type="button"
+                    icon={torchOn ? <FlashOff24Regular /> : <Flash24Regular />}
+                    onClick={() => void toggleTorch()}
+                  >
+                    {torchOn ? t("form.scannerTorchOff", "Torch off") : t("form.scannerTorchOn", "Torch on")}
+                  </Button>
+                )}
                 {pendingResult && (
                   <>
                     <Button type="button" onClick={rescan}>{t("form.scannerRescan")}</Button>
@@ -330,30 +315,6 @@ function scannerErrorMessage(error: unknown): string {
 
 function scannerRequiresConfirmation(scanner: Extract<FormElement, { kind: "input" }>["scanner"]): boolean {
   return typeof scanner === "object" && Boolean(scanner.confirm);
-}
-
-function scannerResultFromDetectedBarcode(result: DetectedBarcode, video: HTMLVideoElement | null): ScannerResult {
-  return {
-    value: result.rawValue,
-    format: String(result.format),
-    overlay: scannerOverlayFromDetectedBarcode(result, video)
-  };
-}
-
-function scannerOverlayFromDetectedBarcode(
-  result: DetectedBarcode,
-  video: HTMLVideoElement | null
-): ScannerResult["overlay"] | undefined {
-  const points = result.cornerPoints;
-  if (!points || points.length !== 4) {
-    return undefined;
-  }
-  const width = video?.videoWidth || Math.ceil(result.boundingBox?.x + result.boundingBox?.width) || 1;
-  const height = video?.videoHeight || Math.ceil(result.boundingBox?.y + result.boundingBox?.height) || 1;
-  return {
-    viewBox: `0 0 ${width} ${height}`,
-    points: points.map((point) => `${point.x},${point.y}`).join(" ")
-  };
 }
 
 function FormResultView({ result, tables }: { result?: unknown; tables: TableMetadata[] }) {
