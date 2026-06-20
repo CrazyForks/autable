@@ -7,3 +7,4 @@
 - Do not add version bump commits, generated release commits, or package version edits to application branches.
 - Do not manually create release tags unless the user explicitly asks for a manual release fix.
 - Release binaries must embed the built frontend by copying `web/dist` into `internal/webui/dist` before `go build`.
+- Release artifacts are built for Linux amd64/arm64, Windows amd64/arm64, and macOS arm64 only.

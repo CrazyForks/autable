@@ -88,12 +88,28 @@ jobs:
           - target: linux-amd64
             runner: ubuntu-latest
             binary: autable
-          - target: darwin-amd64
-            runner: macos-13
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
             binary: autable
+            goos: linux
+            goarch: arm64
+          - target: windows-amd64
+            runner: windows-latest
+            binary: autable.exe
+            goos: windows
+            goarch: amd64
+          - target: windows-arm64
+            runner: windows-11-arm
+            binary: autable.exe
+            goos: windows
+            goarch: arm64
           - target: darwin-arm64
-            runner: macos-14
+            runner: macos-15
             binary: autable
+            goos: darwin
+            goarch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -115,23 +131,42 @@ jobs:
           ./scripts/embed-web.sh
       - name: Test Go
         shell: bash
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: go test ./...
       - name: Build binary
         shell: bash
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
           version="${{ needs.prepare.outputs.version }}"
           commit="$(git rev-parse --short HEAD)"
           built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p release
-          CGO_ENABLED=1 go build \
+          go build \
             -ldflags "-s -w -X autable/internal/version.Version=${version} -X autable/internal/version.Commit=${commit} -X autable/internal/version.BuiltAt=${built_at}" \
             -o "release/${{ matrix.binary }}" \
             ./cmd/autable
+      - name: Package Unix artifact
+        if: matrix.goos != 'windows'
+        shell: bash
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
           tar -czf "autable-${version}-${{ matrix.target }}.tar.gz" -C release "${{ matrix.binary }}"
+      - name: Package Windows artifact
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          $version = "${{ needs.prepare.outputs.version }}"
+          Compress-Archive -Path "release/${{ matrix.binary }}" -DestinationPath "autable-$version-${{ matrix.target }}.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: autable-${{ needs.prepare.outputs.version }}-${{ matrix.target }}
-          path: autable-${{ needs.prepare.outputs.version }}-${{ matrix.target }}.tar.gz
+          path: autable-${{ needs.prepare.outputs.version }}-${{ matrix.target }}.*
           if-no-files-found: error
 
   publish:
