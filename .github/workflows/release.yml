@@ -179,13 +179,11 @@ jobs:
           path: artifacts
           merge-multiple: true
       - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          version="${{ needs.prepare.outputs.version }}"
-          commit="${{ needs.prepare.outputs.commit }}"
-          gh release create "v${version}" artifacts/* \
-            --target "$commit" \
-            --title "autable v${version}" \
-            --notes "Automated release for autable v${version}."
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit }}
+          name: autable ${{ needs.prepare.outputs.tag }}
+          body: Automated release for autable ${{ needs.prepare.outputs.tag }}.
+          files: artifacts/*
+          fail_on_unmatched_files: true
