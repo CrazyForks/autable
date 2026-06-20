@@ -7,7 +7,7 @@ import zxingReaderWasmURL from "../../node_modules/zxing-wasm/dist/reader/zxing_
 // of the default CDN.
 prepareZXingModule({
   overrides: {
-    locateFile: (path, prefix) => (path.endsWith(".wasm") ? zxingReaderWasmURL : prefix + path)
+    locateFile: (path: string, prefix: string) => (path.endsWith(".wasm") ? zxingReaderWasmURL : prefix + path)
   }
 });
 

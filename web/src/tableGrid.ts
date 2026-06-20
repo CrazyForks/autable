@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { textEditor, type Column } from "react-data-grid";
+import { renderTextEditor, type Column } from "react-data-grid";
 import type { Field, RowRecord } from "./api";
 
 export type TableGridRow = Record<string, unknown> & { ct_record_id: number };
@@ -16,7 +16,7 @@ export function buildTableColumns(
     name: field.name,
     minWidth: Math.max(128, field.name.length * 14),
     resizable: true,
-    renderEditCell: textEditor,
+    renderEditCell: renderTextEditor,
     editable: (row) => Number.isFinite(row.ct_record_id) && field.type !== "formula" && (field.permission_level ?? 2) >= 2,
     renderCell: ({ row }) => {
       if (field.type !== "relation") {

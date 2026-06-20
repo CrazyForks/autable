@@ -1,4 +1,4 @@
-import DataGrid, { type DataGridProps } from "react-data-grid";
+import { DataGrid, type DataGridProps } from "react-data-grid";
 import type { TableGridRow } from "../tableGrid";
 
 type RecordDataGridProps<R extends TableGridRow> = Omit<DataGridProps<R>, "className" | "defaultColumnOptions"> & {
