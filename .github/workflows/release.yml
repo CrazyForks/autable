@@ -19,6 +19,10 @@ on:
 permissions:
   contents: write
 
+env:
+  GO_VERSION: "1.26.4"
+  NODE_VERSION: 24
+
 concurrency:
   group: release-main
   cancel-in-progress: false
@@ -37,7 +41,7 @@ jobs:
           ref: main
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Compute release version
         id: version
         shell: bash
@@ -117,10 +121,10 @@ jobs:
           ref: ${{ needs.prepare.outputs.commit }}
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24.5"
+          go-version: ${{ env.GO_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Build frontend for embedding
@@ -186,7 +190,7 @@ jobs:
         run: |
           version="${{ needs.prepare.outputs.version }}"
           commit="${{ needs.prepare.outputs.commit }}"
-          gh release create "v${version}" artifacts/*.tar.gz \
+          gh release create "v${version}" artifacts/* \
             --target "$commit" \
             --title "autable v${version}" \
             --notes "Automated release for autable v${version}."

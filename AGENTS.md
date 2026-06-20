@@ -8,3 +8,4 @@
 - Do not manually create release tags unless the user explicitly asks for a manual release fix.
 - Release binaries must embed the built frontend by copying `web/dist` into `internal/webui/dist` before `go build`.
 - Release artifacts are built for Linux amd64/arm64, Windows amd64/arm64, and macOS arm64 only.
+- CI uses Node.js 24 and the latest stable Go compiler; keep both current when release tooling changes.
