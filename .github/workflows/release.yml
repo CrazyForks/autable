@@ -104,11 +104,6 @@ jobs:
             binary: autable.exe
             goos: windows
             goarch: amd64
-          - target: windows-arm64
-            runner: windows-11-arm
-            binary: autable.exe
-            goos: windows
-            goarch: arm64
           - target: darwin-arm64
             runner: macos-15
             binary: autable
