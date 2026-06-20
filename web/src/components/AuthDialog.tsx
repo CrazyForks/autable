@@ -23,6 +23,7 @@ type AuthDialogProps = {
   onRegister: () => Promise<void>;
   open: boolean;
   password: string;
+  passwordEnabled: boolean;
   providers: OIDCProvider[];
 };
 
@@ -36,15 +37,20 @@ export function AuthDialog({
   onRegister,
   open,
   password,
+  passwordEnabled,
   providers
 }: AuthDialogProps) {
   const { t } = useTranslation();
+  const hasOIDCProviders = providers.length > 0;
   return (
     <Dialog open={open} onOpenChange={(_, data) => onOpenChange(data.open)}>
       <DialogSurface>
         <form
           onSubmit={async (event) => {
             event.preventDefault();
+            if (!passwordEnabled) {
+              return;
+            }
             await onLogin();
             onOpenChange(false);
           }}
@@ -53,25 +59,29 @@ export function AuthDialog({
             <DialogTitle>{t("auth.loginTitle")}</DialogTitle>
             <DialogContent>
               <div className="auth-modal">
-                <Field label={t("auth.email")}>
-                  <Input
-                    type="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(_, data) => onEmailChange(data.value)}
-                  />
-                </Field>
-                <Field label={t("auth.password")}>
-                  <Input
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(_, data) => onPasswordChange(data.value)}
-                  />
-                </Field>
-                {providers.length > 0 && (
+                {passwordEnabled && (
                   <>
-                    <Divider>{t("auth.or")}</Divider>
+                    <Field label={t("auth.email")}>
+                      <Input
+                        type="email"
+                        autoComplete="email"
+                        value={email}
+                        onChange={(_, data) => onEmailChange(data.value)}
+                      />
+                    </Field>
+                    <Field label={t("auth.password")}>
+                      <Input
+                        type="password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(_, data) => onPasswordChange(data.value)}
+                      />
+                    </Field>
+                  </>
+                )}
+                {passwordEnabled && hasOIDCProviders && <Divider>{t("auth.or")}</Divider>}
+                {hasOIDCProviders && (
+                  <>
                     <div className="oidc-actions">
                       {providers.map((provider) => (
                         <Button key={provider.name} onClick={() => onOIDCLogin(provider.name)}>
@@ -81,22 +91,25 @@ export function AuthDialog({
                     </div>
                   </>
                 )}
+                {!passwordEnabled && !hasOIDCProviders && <div>{t("auth.noMethods")}</div>}
               </div>
             </DialogContent>
-            <DialogActions>
-              <Button
-                type="button"
-                onClick={async () => {
-                  await onRegister();
-                  onOpenChange(false);
-                }}
-              >
-                {t("common.register")}
-              </Button>
-              <Button type="submit" appearance="primary">
-                {t("common.login")}
-              </Button>
-            </DialogActions>
+            {passwordEnabled && (
+              <DialogActions>
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    await onRegister();
+                    onOpenChange(false);
+                  }}
+                >
+                  {t("common.register")}
+                </Button>
+                <Button type="submit" appearance="primary">
+                  {t("common.login")}
+                </Button>
+              </DialogActions>
+            )}
           </DialogBody>
         </form>
       </DialogSurface>

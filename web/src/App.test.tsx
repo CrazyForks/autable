@@ -132,8 +132,8 @@ async function defaultFetch(input: RequestInfo | URL, init?: RequestInit): Promi
   if (url === "/api/auth/me") {
     return jsonResponse(authUserFixture);
   }
-  if (url === "/api/auth/oidc/providers") {
-    return jsonResponse([]);
+  if (url === "/api/auth/config") {
+    return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
   }
   if (url === "/api/metadata") {
     return jsonResponse(catalogFixture);
@@ -237,8 +237,8 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse({ error: "not authenticated" }, 401);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return jsonResponse([]);
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       return jsonResponse({ error: `unexpected ${url}` }, 500);
     });
@@ -261,11 +261,12 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse({ error: "not authenticated" }, 401);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return new Response(
-          JSON.stringify([{ name: "example", issuer_url: "https://accounts.example.com", scopes: ["openid"] }]),
-          { status: 200 }
-        );
+      if (url === "/api/auth/config") {
+        return jsonResponse({
+          password_enabled: true,
+          oidc_enabled: true,
+          oidc_providers: [{ name: "example", issuer_url: "https://accounts.example.com", scopes: ["openid"] }]
+        });
       }
       return defaultFetch(input);
     });
@@ -281,8 +282,8 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse(authUserFixture);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return new Response(JSON.stringify([]), { status: 200 });
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       if (url === "/api/tables/workspace/contacts/rows") {
         return new Response(
@@ -345,8 +346,8 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse(authUserFixture);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return new Response(JSON.stringify([]), { status: 200 });
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       if (url.startsWith("/api/tables/workspace/contacts/rows")) {
         return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
@@ -388,14 +389,14 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse(authUserFixture);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return new Response(JSON.stringify([]), { status: 200 });
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       if (url.startsWith("/api/tables/workspace/contacts/rows")) {
         return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
       }
       if (url === "/api/tables/workspace/projects/rows") {
-        return new Response(JSON.stringify([]), { status: 200 });
+        return jsonResponse([]);
       }
       if (url === "/api/databases/workspace/tables" && init?.method === "POST") {
         return new Response(
@@ -481,8 +482,8 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse(authUserFixture);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return new Response(JSON.stringify([]), { status: 200 });
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       if (url === "/api/tables/workspace/contacts/rows") {
         return new Response(
@@ -580,8 +581,8 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse(authUserFixture);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return new Response(JSON.stringify([]), { status: 200 });
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       if (url.startsWith("/api/tables/workspace/contacts/rows")) {
         return new Response(JSON.stringify({ error: "permission denied" }), { status: 403 });
@@ -697,8 +698,8 @@ describe("App", () => {
       if (url === "/api/auth/me") {
         return jsonResponse(authUserFixture);
       }
-      if (url === "/api/auth/oidc/providers") {
-        return jsonResponse([]);
+      if (url === "/api/auth/config") {
+        return jsonResponse({ password_enabled: true, oidc_enabled: false, oidc_providers: [] });
       }
       if (url === "/api/metadata") {
         return jsonResponse({
@@ -747,7 +748,7 @@ describe("App", () => {
         return jsonResponse([]);
       }
       if (url === "/api/workflow/nodes") {
-        return jsonResponse([]);
+        return jsonResponse(workflowNodeFixture);
       }
       return jsonResponse({ error: `unhandled ${url}` }, 404);
     });

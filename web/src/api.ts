@@ -207,6 +207,12 @@ export type OIDCProvider = {
   scopes: string[];
 };
 
+export type AuthConfig = {
+  password_enabled: boolean;
+  oidc_enabled: boolean;
+  oidc_providers: OIDCProvider[];
+};
+
 export async function loadMetadata(): Promise<Catalog> {
   const response = await fetch("/api/metadata");
   if (!response.ok) {
@@ -478,12 +484,12 @@ export async function searchUsers(query: string): Promise<AuthUser[]> {
   return response.json() as Promise<AuthUser[]>;
 }
 
-export async function listOIDCProviders(): Promise<OIDCProvider[]> {
-  const response = await fetch("/api/auth/oidc/providers");
+export async function loadAuthConfig(): Promise<AuthConfig> {
+  const response = await fetch("/api/auth/config");
   if (!response.ok) {
-    throw new Error(`oidc providers failed: ${response.status}`);
+    throw new Error(`auth config failed: ${response.status}`);
   }
-  return response.json() as Promise<OIDCProvider[]>;
+  return response.json() as Promise<AuthConfig>;
 }
 
 export function oidcStartURL(providerName: string): string {

@@ -13,7 +13,7 @@ type Config struct {
 	Server     ServerConfig     `yaml:"server"`
 	Data       DataConfig       `yaml:"data"`
 	Repository RepositoryConfig `yaml:"repository"`
-	OIDC       OIDCConfig       `yaml:"oidc"`
+	Auth       AuthConfig       `yaml:"auth"`
 }
 
 type ServerConfig struct {
@@ -28,7 +28,17 @@ type RepositoryConfig struct {
 	Path string `yaml:"path"`
 }
 
+type AuthConfig struct {
+	Password PasswordAuthConfig `yaml:"password"`
+	OIDC     OIDCConfig         `yaml:"oidc"`
+}
+
+type PasswordAuthConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 type OIDCConfig struct {
+	Enabled   bool           `yaml:"enabled"`
 	Providers []OIDCProvider `yaml:"providers"`
 }
 
@@ -64,15 +74,24 @@ func (cfg Config) Validate() error {
 	if cfg.Repository.Path == "" {
 		return errors.New("repository.path is required")
 	}
-	for i, provider := range cfg.OIDC.Providers {
+	if !cfg.Auth.Password.Enabled && !cfg.Auth.OIDC.Enabled {
+		return errors.New("at least one auth method is required")
+	}
+	if !cfg.Auth.OIDC.Enabled {
+		return nil
+	}
+	if len(cfg.Auth.OIDC.Providers) == 0 {
+		return errors.New("auth.oidc.providers is required when auth.oidc.enabled is true")
+	}
+	for i, provider := range cfg.Auth.OIDC.Providers {
 		if provider.Name == "" {
-			return fmt.Errorf("oidc.providers[%d].name is required", i)
+			return fmt.Errorf("auth.oidc.providers[%d].name is required", i)
 		}
 		if provider.IssuerURL == "" {
-			return fmt.Errorf("oidc.providers[%d].issuer_url is required", i)
+			return fmt.Errorf("auth.oidc.providers[%d].issuer_url is required", i)
 		}
 		if provider.ClientID == "" {
-			return fmt.Errorf("oidc.providers[%d].client_id is required", i)
+			return fmt.Errorf("auth.oidc.providers[%d].client_id is required", i)
 		}
 	}
 	return nil

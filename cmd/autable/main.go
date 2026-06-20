@@ -70,12 +70,12 @@ func run(ctx context.Context, configPath string) error {
 	if address == "" {
 		address = "127.0.0.1:8080"
 	}
-	server := api.NewServerWithOIDCProviders(
+	server := api.NewServerWithAuthConfig(
 		catalog,
 		system,
 		table.NewServiceWithRepository(historyStore, rowRepository),
 		historyStore,
-		cfg.OIDC.Providers,
+		cfg.Auth,
 	)
 	server.EnableMetadataWrites(metadataPath)
 	server.SetDatabaseOpener(func(ctx context.Context, name string) error {

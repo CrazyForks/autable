@@ -24,8 +24,12 @@ writeFileSync(
     `  path: "${join(runtimeDir, "data")}"`,
     "repository:",
     `  path: "${repositoryPath}"`,
-    "oidc:",
-    "  providers: []",
+    "auth:",
+    "  password:",
+    "    enabled: true",
+    "  oidc:",
+    "    enabled: false",
+    "    providers: []",
     ""
   ].join("\n")
 );

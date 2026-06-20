@@ -4,10 +4,14 @@ data:
   path: "./data"
 repository:
   path: "./examples"
-oidc:
-  providers:
-    - name: "example"
-      issuer_url: "https://accounts.example.com"
-      client_id: "autable"
-      client_secret: "replace-me"
-      scopes: ["openid", "email", "profile"]
+auth:
+  password:
+    enabled: true
+  oidc:
+    enabled: false
+    providers:
+      - name: "example"
+        issuer_url: "https://accounts.example.com"
+        client_id: "autable"
+        client_secret: "replace-me"
+        scopes: ["openid", "email", "profile"]

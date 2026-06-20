@@ -37,7 +37,7 @@ test("does not request protected workspace resources before login", async ({ pag
   await expect(page.getByRole("button", { name: "Refresh metadata" })).toBeDisabled();
 
   expect(apiPaths).toContain("/api/auth/me");
-  expect(apiPaths).toContain("/api/auth/oidc/providers");
+  expect(apiPaths).toContain("/api/auth/config");
   expect(apiPaths).not.toContain("/api/metadata");
   expect(apiPaths.some((path) => path.includes("/rows"))).toBe(false);
   expect(apiPaths.some((path) => path.includes("/workflows"))).toBe(false);

@@ -36,7 +36,7 @@ type Server struct {
 	tables           *table.Service
 	history          history.Store
 	runner           *workflow.Runner
-	oidc             []config.OIDCProvider
+	auth             config.AuthConfig
 	workflowWorkers  map[string]*workflowEventWorker
 	workflowWorker   context.Context
 	workflowWorkerMu sync.Mutex
@@ -103,6 +103,12 @@ type oidcProviderResponse struct {
 	Name      string   `json:"name"`
 	IssuerURL string   `json:"issuer_url"`
 	Scopes    []string `json:"scopes"`
+}
+
+type authConfigResponse struct {
+	PasswordEnabled bool                   `json:"password_enabled"`
+	OIDCEnabled     bool                   `json:"oidc_enabled"`
+	OIDCProviders   []oidcProviderResponse `json:"oidc_providers"`
 }
 
 type oidcEmailClaims struct {
@@ -198,28 +204,28 @@ func NewServer(catalog metadata.Catalog, system *systemdb.DB, tables *table.Serv
 }
 
 func NewServerWithWorkflowRunner(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store, runner *workflow.Runner) *Server {
-	return NewServerWithWorkflowRunnerAndOIDC(catalog, system, tables, historyStore, runner, nil)
+	return NewServerWithWorkflowRunnerAndAuth(catalog, system, tables, historyStore, runner, defaultServerAuthConfig())
 }
 
-func NewServerWithOIDCProviders(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store, providers []config.OIDCProvider) *Server {
-	return NewServerWithWorkflowRunnerAndOIDC(
+func NewServerWithAuthConfig(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store, authConfig config.AuthConfig) *Server {
+	return NewServerWithWorkflowRunnerAndAuth(
 		catalog,
 		system,
 		tables,
 		historyStore,
 		nil,
-		providers,
+		authConfig,
 	)
 }
 
-func NewServerWithWorkflowRunnerAndOIDC(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store, runner *workflow.Runner, providers []config.OIDCProvider) *Server {
+func NewServerWithWorkflowRunnerAndAuth(catalog metadata.Catalog, system *systemdb.DB, tables *table.Service, historyStore history.Store, runner *workflow.Runner, authConfig config.AuthConfig) *Server {
 	server := &Server{
 		catalog: catalog,
 		system:  system,
 		tables:  tables,
 		history: historyStore,
 		runner:  runner,
-		oidc:    append([]config.OIDCProvider(nil), providers...),
+		auth:    cloneAuthConfig(authConfig),
 		mux:     http.NewServeMux(),
 	}
 	if runner == nil {
@@ -255,9 +261,9 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) routes() {
+	server.mux.HandleFunc("GET /api/auth/config", server.handleAuthConfig)
 	server.mux.HandleFunc("POST /api/auth/register", server.handleRegister)
 	server.mux.HandleFunc("POST /api/auth/login", server.handleLogin)
-	server.mux.HandleFunc("GET /api/auth/oidc/providers", server.handleOIDCProviders)
 	server.mux.HandleFunc("GET /api/auth/oidc/", server.handleOIDC)
 	server.mux.HandleFunc("GET /api/auth/me", server.handleMe)
 	server.mux.HandleFunc("POST /api/auth/logout", server.handleLogout)
@@ -285,7 +291,19 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/published/forms/", server.handleGetPublishedForm)
 }
 
+func (server *Server) handleAuthConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, authConfigResponse{
+		PasswordEnabled: server.auth.Password.Enabled,
+		OIDCEnabled:     server.auth.OIDC.Enabled,
+		OIDCProviders:   server.publicOIDCProviders(),
+	})
+}
+
 func (server *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if !server.auth.Password.Enabled {
+		writeError(w, http.StatusNotFound, errors.New("password auth is disabled"))
+		return
+	}
 	var request authRequest
 	if err := readJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -314,6 +332,10 @@ func (server *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !server.auth.Password.Enabled {
+		writeError(w, http.StatusNotFound, errors.New("password auth is disabled"))
+		return
+	}
 	var request authRequest
 	if err := readJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -333,21 +355,13 @@ func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toUserResponse(user))
 }
 
-func (server *Server) handleOIDCProviders(w http.ResponseWriter, _ *http.Request) {
-	providers := make([]oidcProviderResponse, 0, len(server.oidc))
-	for _, provider := range server.oidc {
-		providers = append(providers, oidcProviderResponse{
-			Name:      provider.Name,
-			IssuerURL: provider.IssuerURL,
-			Scopes:    oidcScopes(provider),
-		})
-	}
-	writeJSON(w, http.StatusOK, providers)
-}
-
 func (server *Server) handleOIDC(w http.ResponseWriter, r *http.Request) {
 	providerName, action, ok := parseOIDCPath(r.URL.Path)
 	if !ok || r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	if !server.auth.OIDC.Enabled {
 		http.NotFound(w, r)
 		return
 	}
@@ -3112,8 +3126,34 @@ func clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
+func defaultServerAuthConfig() config.AuthConfig {
+	return config.AuthConfig{
+		Password: config.PasswordAuthConfig{Enabled: true},
+	}
+}
+
+func cloneAuthConfig(authConfig config.AuthConfig) config.AuthConfig {
+	authConfig.OIDC.Providers = append([]config.OIDCProvider(nil), authConfig.OIDC.Providers...)
+	return authConfig
+}
+
+func (server *Server) publicOIDCProviders() []oidcProviderResponse {
+	if !server.auth.OIDC.Enabled {
+		return []oidcProviderResponse{}
+	}
+	providers := make([]oidcProviderResponse, 0, len(server.auth.OIDC.Providers))
+	for _, provider := range server.auth.OIDC.Providers {
+		providers = append(providers, oidcProviderResponse{
+			Name:      provider.Name,
+			IssuerURL: provider.IssuerURL,
+			Scopes:    oidcScopes(provider),
+		})
+	}
+	return providers
+}
+
 func (server *Server) oidcProvider(name string) (config.OIDCProvider, bool) {
-	for _, provider := range server.oidc {
+	for _, provider := range server.auth.OIDC.Providers {
 		if provider.Name == name {
 			return provider, true
 		}

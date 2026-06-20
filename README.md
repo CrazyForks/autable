@@ -13,7 +13,7 @@ autable is a code-first alternative to multidimensional tables. The project is n
 
 This repository currently contains the backend core primitives:
 
-- `config.yml` loading and validation, including OIDC settings.
+- `config.yml` loading and validation, including password and OIDC auth toggles under `auth`.
 - YAML metadata for databases and tables, including soft-deleted fields.
 - Authenticated database/table creation that writes metadata YAML and grants database/table owner permissions.
 - Hidden, auto-incrementing `ct_record_id` handling for user table storage.

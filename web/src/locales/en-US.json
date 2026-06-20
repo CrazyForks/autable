@@ -36,6 +36,7 @@
     "continueWith": "Continue with {{provider}}",
     "email": "Email",
     "loginTitle": "Login",
+    "noMethods": "No login method is enabled",
     "or": "or",
     "password": "Password"
   },

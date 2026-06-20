@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Text } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import {
-  listOIDCProviders,
+  loadAuthConfig,
   loadCurrentUser,
   loadMetadata,
   loadPublishedForm,
@@ -29,6 +29,7 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [passwordAuthEnabled, setPasswordAuthEnabled] = useState(true);
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
   const [form, setForm] = useState<FormDefinition | null>(null);
   const [tables, setTables] = useState<TableMetadata[]>([]);
@@ -47,7 +48,7 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
         if (cancelled) {
           return;
         }
-          setCurrentUser(user);
+        setCurrentUser(user);
         if (!user) {
           setAuthDialogOpen(true);
           setStatus(t("status.loginToOpenForm"));
@@ -63,10 +64,11 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
           setAuthReady(true);
         }
       });
-    void listOIDCProviders()
-      .then((providers) => {
+    void loadAuthConfig()
+      .then((authConfig) => {
         if (!cancelled) {
-          setOIDCProviders(providers);
+          setPasswordAuthEnabled(authConfig.password_enabled);
+          setOIDCProviders(authConfig.oidc_providers);
         }
       })
       .catch(() => undefined);
@@ -180,6 +182,7 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
         onRegister={registerUser}
         open={authDialogOpen}
         password={authPassword}
+        passwordEnabled={passwordAuthEnabled}
         providers={oidcProviders}
       />
     </div>

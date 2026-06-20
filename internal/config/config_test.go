@@ -14,11 +14,15 @@ data:
   path: ./data
 repository:
   path: ./repo
-oidc:
-  providers:
-    - name: main
-      issuer_url: https://issuer.example
-      client_id: autable
+auth:
+  password:
+    enabled: true
+  oidc:
+    enabled: true
+    providers:
+      - name: main
+        issuer_url: https://issuer.example
+        client_id: autable
 `)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
@@ -37,13 +41,52 @@ oidc:
 	if cfg.HistoryPath() != filepath.Join("./data", "leveldb") {
 		t.Fatalf("unexpected history path: %q", cfg.HistoryPath())
 	}
-	if got := cfg.OIDC.Providers[0].Name; got != "main" {
+	if got := cfg.Auth.OIDC.Providers[0].Name; got != "main" {
 		t.Fatalf("unexpected provider name: %q", got)
 	}
 }
 
 func TestValidateRequiresCorePaths(t *testing.T) {
 	err := (Config{}).Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestValidateRequiresAtLeastOneAuthMethod(t *testing.T) {
+	cfg := Config{
+		Data:       DataConfig{Path: "./data"},
+		Repository: RepositoryConfig{Path: "./repo"},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestValidateOIDCProvidersOnlyWhenEnabled(t *testing.T) {
+	cfg := Config{
+		Data:       DataConfig{Path: "./data"},
+		Repository: RepositoryConfig{Path: "./repo"},
+		Auth: AuthConfig{
+			Password: PasswordAuthConfig{Enabled: true},
+			OIDC: OIDCConfig{
+				Enabled: false,
+				Providers: []OIDCProvider{
+					{Name: "incomplete"},
+				},
+			},
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+
+	cfg.Auth.Password.Enabled = false
+	cfg.Auth.OIDC.Enabled = true
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected validation error")
 	}

@@ -36,6 +36,7 @@
     "continueWith": "使用 {{provider}} 继续",
     "email": "邮箱",
     "loginTitle": "登录",
+    "noMethods": "没有启用登录方式",
     "or": "或",
     "password": "密码"
   },

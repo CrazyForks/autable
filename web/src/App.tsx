@@ -15,7 +15,7 @@ import { useWorkflowFormWorkspace } from "./hooks/useWorkflowFormWorkspace";
 import {
   createDatabase,
   createTable,
-  listOIDCProviders,
+  loadAuthConfig,
   loadCurrentUser,
   loadMetadata,
   login,
@@ -54,6 +54,7 @@ function WorkspaceApp() {
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [passwordAuthEnabled, setPasswordAuthEnabled] = useState(true);
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [newDatabaseName, setNewDatabaseName] = useState("");
@@ -149,10 +150,11 @@ function WorkspaceApp() {
           setAuthReady(true);
         }
       });
-    void listOIDCProviders()
-      .then((providers) => {
+    void loadAuthConfig()
+      .then((authConfig) => {
         if (!cancelled) {
-          setOIDCProviders(providers);
+          setPasswordAuthEnabled(authConfig.password_enabled);
+          setOIDCProviders(authConfig.oidc_providers);
         }
       })
       .catch(() => undefined);
@@ -575,6 +577,7 @@ function WorkspaceApp() {
         onRegister={registerUser}
         open={authDialogOpen}
         password={authPassword}
+        passwordEnabled={passwordAuthEnabled}
         providers={oidcProviders}
       />
     </div>

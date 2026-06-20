@@ -139,6 +139,29 @@ func TestLoginRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
+func TestPasswordAuthDisabledRejectsPasswordEndpoints(t *testing.T) {
+	server, _ := newTestServerWithAuth(t, config.AuthConfig{
+		OIDC: config.OIDCConfig{
+			Enabled: true,
+			Providers: []config.OIDCProvider{
+				{Name: "main", IssuerURL: "https://issuer.example", ClientID: "autable"},
+			},
+		},
+	})
+
+	for _, path := range []string{"/api/auth/register", "/api/auth/login"} {
+		request := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{
+			"email":"person@example.com",
+			"password":"correct horse"
+		}`))
+		recorder := httptest.NewRecorder()
+		server.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("expected %s 404, got %d: %s", path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestUserSearchAPIRequiresAuthenticationAndMatchesEmail(t *testing.T) {
 	server, system := newTestServer(t)
 	_ = testSessionCookie(t, system, "ada")
@@ -167,7 +190,7 @@ func TestUserSearchAPIRequiresAuthenticationAndMatchesEmail(t *testing.T) {
 	}
 }
 
-func TestOIDCProvidersExposePublicConfig(t *testing.T) {
+func TestAuthConfigExposesPublicConfig(t *testing.T) {
 	server, _ := newTestServerWithOIDC(t, []config.OIDCProvider{
 		{
 			Name:         "main",
@@ -178,29 +201,66 @@ func TestOIDCProvidersExposePublicConfig(t *testing.T) {
 		},
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/providers", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
 	recorder := httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected providers 200, got %d: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("expected auth config 200, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 
-	var providers []map[string]any
-	if err := json.NewDecoder(recorder.Body).Decode(&providers); err != nil {
+	var response map[string]any
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatal(err)
+	}
+	if response["password_enabled"] != true || response["oidc_enabled"] != true {
+		t.Fatalf("unexpected auth flags: %#v", response)
+	}
+	providers, ok := response["oidc_providers"].([]any)
+	if !ok {
+		t.Fatalf("unexpected oidc providers: %#v", response["oidc_providers"])
 	}
 	if len(providers) != 1 {
 		t.Fatalf("expected one provider, got %#v", providers)
 	}
-	if providers[0]["name"] != "main" || providers[0]["issuer_url"] != "https://issuer.example" {
+	provider, ok := providers[0].(map[string]any)
+	if !ok {
 		t.Fatalf("unexpected provider response: %#v", providers[0])
 	}
-	if _, ok := providers[0]["client_secret"]; ok {
-		t.Fatalf("provider response leaked client_secret: %#v", providers[0])
+	if provider["name"] != "main" || provider["issuer_url"] != "https://issuer.example" {
+		t.Fatalf("unexpected provider response: %#v", provider)
 	}
-	scopes, ok := providers[0]["scopes"].([]any)
+	if _, ok := provider["client_secret"]; ok {
+		t.Fatalf("provider response leaked client_secret: %#v", provider)
+	}
+	scopes, ok := provider["scopes"].([]any)
 	if !ok || len(scopes) != 2 || scopes[0] != "openid" || scopes[1] != "email" {
-		t.Fatalf("expected openid to be prepended to custom scopes, got %#v", providers[0]["scopes"])
+		t.Fatalf("expected openid to be prepended to custom scopes, got %#v", provider["scopes"])
+	}
+}
+
+func TestOIDCDisabledDoesNotExposeProviders(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected auth config 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response authConfigResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.PasswordEnabled || response.OIDCEnabled || len(response.OIDCProviders) != 0 {
+		t.Fatalf("unexpected auth config: %#v", response)
+	}
+
+	start := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/main/start", nil)
+	startRecorder := httptest.NewRecorder()
+	server.ServeHTTP(startRecorder, start)
+	if startRecorder.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled oidc start 404, got %d: %s", startRecorder.Code, startRecorder.Body.String())
 	}
 }
 
@@ -3485,10 +3545,23 @@ func TestPublishedFormRequiresExplicitFormPermission(t *testing.T) {
 
 func newTestServer(t *testing.T) (*Server, *systemdb.DB) {
 	t.Helper()
-	return newTestServerWithOIDC(t, nil)
+	return newTestServerWithAuth(t, config.AuthConfig{
+		Password: config.PasswordAuthConfig{Enabled: true},
+	})
 }
 
 func newTestServerWithOIDC(t *testing.T, providers []config.OIDCProvider) (*Server, *systemdb.DB) {
+	t.Helper()
+	return newTestServerWithAuth(t, config.AuthConfig{
+		Password: config.PasswordAuthConfig{Enabled: true},
+		OIDC: config.OIDCConfig{
+			Enabled:   true,
+			Providers: providers,
+		},
+	})
+}
+
+func newTestServerWithAuth(t *testing.T, authConfig config.AuthConfig) (*Server, *systemdb.DB) {
 	t.Helper()
 	system, err := systemdb.Open(context.Background(), filepath.Join(t.TempDir(), "system.sqlite"))
 	if err != nil {
@@ -3510,7 +3583,7 @@ func newTestServerWithOIDC(t *testing.T, providers []config.OIDCProvider) (*Serv
 			t.Fatal(err)
 		}
 	})
-	return NewServerWithOIDCProviders(catalog, system, table.NewServiceWithRepository(historyStore, repository), historyStore, providers), system
+	return NewServerWithAuthConfig(catalog, system, table.NewServiceWithRepository(historyStore, repository), historyStore, authConfig), system
 }
 
 func assertWorkflowRunCount(t *testing.T, server *Server, system *systemdb.DB, workflowID int64, actorID string, expected int) []workflowRunResponse {
