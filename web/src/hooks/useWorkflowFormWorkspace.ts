@@ -145,12 +145,9 @@ export function useWorkflowFormWorkspace({
     }
     void listWorkflowRuns(selectedWorkflow.id)
       .then((runs) => {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          applyWorkflowRuns(runs);
         }
-        const newestFirst = [...runs].reverse();
-        setWorkflowRuns(newestFirst);
-        setSelectedWorkflowRunKey(newestFirst[0]?.history_key ?? "");
       })
       .catch(() => {
         if (!cancelled) {
@@ -162,6 +159,29 @@ export function useWorkflowFormWorkspace({
       cancelled = true;
     };
   }, [currentUserID, selectedWorkflow?.id]);
+
+  async function loadWorkflowRuns(workflowID: number, preferredRunKey = "") {
+    const runs = await listWorkflowRuns(workflowID);
+    const newestFirst = applyWorkflowRuns(runs, preferredRunKey);
+    return newestFirst;
+  }
+
+  function applyWorkflowRuns(runs: WorkflowRunResponse[], preferredRunKey = "") {
+    const newestFirst = [...runs].reverse();
+    setWorkflowRuns(newestFirst);
+    const preferredExists = preferredRunKey && newestFirst.some((run) => run.history_key === preferredRunKey);
+    setSelectedWorkflowRunKey(preferredExists ? preferredRunKey : newestFirst[0]?.history_key ?? "");
+    return newestFirst;
+  }
+
+  async function refreshWorkflowRuns(preferredRunKey = "", workflowID = selectedWorkflow?.id ?? 0) {
+    if (!currentUserID || !workflowID) {
+      setWorkflowRuns([]);
+      setSelectedWorkflowRunKey("");
+      return [];
+    }
+    return loadWorkflowRuns(workflowID, preferredRunKey);
+  }
 
   function applyResources(
     nextWorkflows: WorkflowDefinition[],
@@ -250,15 +270,16 @@ export function useWorkflowFormWorkspace({
     }
     try {
       const response = await runWorkflow(selectedWorkflow.id, {});
-      setWorkflowRuns((current) => [response, ...current.filter((run) => run.history_key !== response.history_key)]);
-      setSelectedWorkflowRunKey(response.history_key);
+      await refreshWorkflowRuns(response.history_key, selectedWorkflow.id);
       if (response.run.error) {
         onStatus(t("status.workflowFailed", { error: response.run.error }));
-        return;
+        return response;
       }
       onStatus(t("status.workflowRunSaved", { key: response.history_key }));
+      return response;
     } catch (error) {
       onStatus(error instanceof Error ? error.message : t("status.workflowRunFailed"), "error");
+      return undefined;
     }
   }
 
@@ -485,6 +506,7 @@ export function useWorkflowFormWorkspace({
     renameSelectedForm,
     renameSelectedWorkflow,
     refreshResources,
+    refreshWorkflowRuns,
     setNewFormName,
     setNewWorkflowName,
     setSelectedFormID,

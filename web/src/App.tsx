@@ -13,7 +13,7 @@ import { FormWorkspace } from "./components/FormWorkspace";
 import { PermissionPanel } from "./components/PermissionPanel";
 import { PublishedFormPage } from "./components/PublishedFormPage";
 import { TableWorkspace } from "./components/TableWorkspace";
-import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
+import { WorkflowWorkspace, type WorkflowTab } from "./components/WorkflowWorkspace";
 import { WorkspaceEmptyState } from "./components/WorkspaceEmptyState";
 import { WorkspaceNavigation, type WorkspaceView } from "./components/WorkspaceNavigation";
 import { useNotifier } from "./notifications";
@@ -131,6 +131,10 @@ function WorkspaceApp() {
     roles,
     selectedRole
   } = permissionWorkspace;
+  const selectedWorkflowTab: WorkflowTab =
+    workspaceRoute?.databaseName === database.name && workspaceRoute.view === "workflow"
+      ? workspaceRoute.workflowTab ?? "editor"
+      : "editor";
 
   useEffect(() => {
     function handlePopState() {
@@ -211,13 +215,28 @@ function WorkspaceApp() {
     if (workspaceRoute.view === "workflow" && workspaceRoute.workflowID && workflows.some((item) => item.id === workspaceRoute.workflowID)) {
       workflowFormWorkspace.setSelectedWorkflowID(workspaceRoute.workflowID);
     }
+    if (
+      workspaceRoute.view === "workflow" &&
+      workspaceRoute.workflowTab === "history" &&
+      workspaceRoute.workflowRunKey &&
+      workflowRuns.some((run) => run.history_key === workspaceRoute.workflowRunKey)
+    ) {
+      workflowFormWorkspace.setSelectedWorkflowRunKey(workspaceRoute.workflowRunKey);
+    }
     if (workspaceRoute.view === "form" && workspaceRoute.formID && forms.some((item) => item.id === workspaceRoute.formID)) {
       workflowFormWorkspace.setSelectedFormID(workspaceRoute.formID);
     }
     if (workspaceRoute.view === "permission" && workspaceRoute.roleName && roles.some((item) => item.name === workspaceRoute.roleName)) {
       permissionWorkspace.setSelectedRoleName(workspaceRoute.roleName);
     }
-  }, [database.name, forms, locationPath, resourcesReady, roles, rolesReady, workflows, workspaceRoute]);
+  }, [database.name, forms, locationPath, resourcesReady, roles, rolesReady, workflowRuns, workflows, workspaceRoute]);
+
+  useEffect(() => {
+    if (selectedWorkflowTab !== "history" || !selectedWorkflow?.id) {
+      return;
+    }
+    void workflowFormWorkspace.refreshWorkflowRuns(workspaceRoute?.workflowRunKey ?? "", selectedWorkflow.id);
+  }, [selectedWorkflow?.id, selectedWorkflowTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -467,7 +486,53 @@ function WorkspaceApp() {
 
   function selectWorkflowFromNavigation(id: number) {
     workflowFormWorkspace.setSelectedWorkflowID(id);
-    navigateWorkspace({ databaseName: database.name, view: "workflow", workflowID: id }, "push");
+    navigateWorkspace({
+      databaseName: database.name,
+      view: "workflow",
+      workflowID: id,
+      workflowTab: selectedWorkflowTab
+    }, "push");
+  }
+
+  async function executeWorkflowFromWorkspace() {
+    const response = await workflowFormWorkspace.executeWorkflow();
+    if (response?.history_key && selectedWorkflow?.id) {
+      navigateWorkspace({
+        databaseName: database.name,
+        view: "workflow",
+        workflowID: selectedWorkflow.id,
+        workflowTab: "history",
+        workflowRunKey: response.history_key
+      }, "push");
+    }
+  }
+
+  function selectWorkflowTabFromWorkspace(tab: WorkflowTab) {
+    if (!selectedWorkflow?.id) {
+      navigateWorkspace({ databaseName: database.name, view: "workflow" }, "push");
+      return;
+    }
+    navigateWorkspace({
+      databaseName: database.name,
+      view: "workflow",
+      workflowID: selectedWorkflow.id,
+      workflowTab: tab,
+      workflowRunKey: tab === "history" ? selectedWorkflowRun?.history_key : undefined
+    }, "push");
+  }
+
+  function selectWorkflowRunFromWorkspace(historyKey: string) {
+    workflowFormWorkspace.setSelectedWorkflowRunKey(historyKey);
+    if (!selectedWorkflow?.id) {
+      return;
+    }
+    navigateWorkspace({
+      databaseName: database.name,
+      view: "workflow",
+      workflowID: selectedWorkflow.id,
+      workflowTab: "history",
+      workflowRunKey: historyKey
+    }, "push");
   }
 
   function selectFormFromNavigation(id: number) {
@@ -712,11 +777,13 @@ function WorkspaceApp() {
           {view === "workflow" &&
             (selectedWorkflow ? (
             <WorkflowWorkspace
+              activeTab={selectedWorkflowTab}
               databaseName={database.name}
-              onExecute={workflowFormWorkspace.executeWorkflow}
+              onExecute={executeWorkflowFromWorkspace}
               onSave={workflowFormWorkspace.persistWorkflow}
               onSaveInstanceConfig={workflowFormWorkspace.saveSelectedWorkflowInstanceConfig}
-              onSelectRunKey={workflowFormWorkspace.setSelectedWorkflowRunKey}
+              onSelectRunKey={selectWorkflowRunFromWorkspace}
+              onSelectTab={selectWorkflowTabFromWorkspace}
               onUpdateScript={workflowFormWorkspace.updateSelectedWorkflowScript}
               onToggleEnabled={workflowFormWorkspace.toggleSelectedWorkflowEnabled}
               language={language}

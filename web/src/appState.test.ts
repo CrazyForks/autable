@@ -74,7 +74,16 @@ describe("appState", () => {
     expect(parseWorkspaceRoute("/databases/workspace/workflows/12")).toEqual({
       databaseName: "workspace",
       view: "workflow",
-      workflowID: 12
+      workflowID: 12,
+      workflowTab: "editor",
+      workflowRunKey: undefined
+    });
+    expect(parseWorkspaceRoute("/databases/workspace/workflows/12/history/run%2F1")).toEqual({
+      databaseName: "workspace",
+      view: "workflow",
+      workflowID: 12,
+      workflowTab: "history",
+      workflowRunKey: "run/1"
     });
     expect(parseWorkspaceRoute("/databases/workspace/forms/9")).toEqual({
       databaseName: "workspace",
@@ -100,6 +109,13 @@ describe("appState", () => {
     expect(buildWorkspacePath({ databaseName: "workspace", view: "workflow", workflowID: 3 })).toBe(
       "/databases/workspace/workflows/3"
     );
+    expect(buildWorkspacePath({
+      databaseName: "workspace",
+      view: "workflow",
+      workflowID: 3,
+      workflowTab: "history",
+      workflowRunKey: "run/1"
+    })).toBe("/databases/workspace/workflows/3/history/run%2F1");
     expect(buildWorkspacePath({ databaseName: "workspace", view: "form", formID: 4 })).toBe(
       "/databases/workspace/forms/4"
     );

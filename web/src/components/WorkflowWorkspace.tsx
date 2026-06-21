@@ -37,6 +37,7 @@ import type { WorkflowTriggerDeclaration } from "../workflowInstances";
 import { JavaScriptEditor } from "./JavaScriptEditor";
 
 type WorkflowWorkspaceProps = {
+  activeTab: WorkflowTab;
   databaseName: string;
   language: string;
   onExecute: () => void;
@@ -46,6 +47,7 @@ type WorkflowWorkspaceProps = {
     variables: Record<string, string>,
     secrets: Record<string, string>
   ) => void | Promise<void>;
+  onSelectTab: (tab: WorkflowTab) => void;
   onSelectRunKey: (historyKey: string) => void;
   onToggleEnabled: (enabled: boolean) => void;
   onUpdateScript: (script: string) => void;
@@ -59,7 +61,7 @@ type WorkflowWorkspaceProps = {
   workflowRuns: WorkflowRunResponse[];
 };
 
-type WorkflowTab = "editor" | "history";
+export type WorkflowTab = "editor" | "history";
 
 type WorkflowRunListItem = {
   id: string;
@@ -71,11 +73,13 @@ type WorkflowRunListItem = {
 };
 
 export function WorkflowWorkspace({
+  activeTab,
   databaseName,
   language,
   onExecute,
   onSave,
   onSaveInstanceConfig,
+  onSelectTab,
   onSelectRunKey,
   onToggleEnabled,
   onUpdateScript,
@@ -89,7 +93,6 @@ export function WorkflowWorkspace({
   const { t } = useTranslation();
   const canWriteWorkflow = (workflow?.permission_level ?? 2) >= 2;
   const workflowNodesByType = new Map(workflowNodes.map((node) => [node.type, node]));
-  const [activeTab, setActiveTab] = useState<WorkflowTab>("editor");
   const editorExtraLibs = useMemo(
     () =>
       workflowEditorExtraLibs({
@@ -126,7 +129,7 @@ export function WorkflowWorkspace({
 
       <TabList
         selectedValue={activeTab}
-        onTabSelect={(_, data) => setActiveTab(data.value as WorkflowTab)}
+        onTabSelect={(_, data) => onSelectTab(data.value as WorkflowTab)}
         aria-label={t("workflow.workspaceTabs")}
       >
         <Tab value="editor">{t("workflow.editor")}</Tab>

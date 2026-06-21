@@ -8,6 +8,8 @@ export type WorkspaceRoute = {
   tableName?: string;
   tableViewName?: string;
   workflowID?: number;
+  workflowTab?: "editor" | "history";
+  workflowRunKey?: string;
   formID?: number;
   roleName?: string;
 };
@@ -70,7 +72,9 @@ export function parseWorkspaceRoute(pathname: string): WorkspaceRoute | null {
     return {
       databaseName,
       view: "workflow",
-      workflowID: parsePositiveInteger(segments[3])
+      workflowID: parsePositiveInteger(segments[3]),
+      workflowTab: segments[4] === "history" ? "history" : "editor",
+      workflowRunKey: segments[4] === "history" ? segments[5] : undefined
     };
   }
   if (segments[2] === "forms") {
@@ -96,7 +100,16 @@ export function buildWorkspacePath(route: WorkspaceRoute | null): string {
   }
   const database = encodePathSegment(route.databaseName);
   if (route.view === "workflow") {
-    return route.workflowID ? `/databases/${database}/workflows/${route.workflowID}` : `/databases/${database}/workflows`;
+    if (!route.workflowID) {
+      return `/databases/${database}/workflows`;
+    }
+    const workflowPath = `/databases/${database}/workflows/${route.workflowID}`;
+    if (route.workflowTab !== "history") {
+      return workflowPath;
+    }
+    return route.workflowRunKey
+      ? `${workflowPath}/history/${encodePathSegment(route.workflowRunKey)}`
+      : `${workflowPath}/history`;
   }
   if (route.view === "form") {
     return route.formID ? `/databases/${database}/forms/${route.formID}` : `/databases/${database}/forms`;

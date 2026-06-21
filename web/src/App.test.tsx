@@ -678,15 +678,16 @@ describe("App", () => {
       return defaultFetch(input, init);
     });
 
-    renderApp();
-    await waitForDefaultNavigationReady();
-    await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
-    await screen.findByRole("button", { name: /welcome-contact/ });
-    await userEvent.click(await screen.findByRole("tab", { name: "History" }));
+    renderApp("/databases/workspace/workflows/1/history");
+    await waitForSignedIn();
+    expect(await screen.findByRole("button", { name: /^Workflow$/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /record-review/ })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "History", selected: true })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Workflow run history" })).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Workflow run history" })).toHaveTextContent(
       new Date(1781604000000).toLocaleString()
     );
+    expect(window.location.pathname).toBe("/databases/workspace/workflows/1/history");
     expect(screen.queryByText("whistory_00000000000000000001_00000000000000000100")).not.toBeInTheDocument();
     expect(screen.queryByText("No runs yet")).not.toBeInTheDocument();
     expect(screen.getAllByText("Run input").length).toBeGreaterThan(0);
@@ -724,23 +725,26 @@ describe("App", () => {
 
   it("runs workflows with only the explicit inputs JSON", async () => {
     let runBody: unknown;
+    let runSaved = false;
+    const savedRun = {
+      history_key: "whistory_00000000000000000001_00000000000000000101",
+      run: {
+        workflow_id: 1,
+        timestamp: 1781604000000,
+        inputs: {},
+        outputs: {},
+        steps: []
+      }
+    };
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === "/api/workflows/1/runs" && init?.method === "POST") {
         runBody = JSON.parse(String(init.body));
-        return new Response(
-          JSON.stringify({
-            history_key: "whistory_00000000000000000001_00000000000000000101",
-            run: {
-              workflow_id: 1,
-              timestamp: 1781604000000,
-              inputs: {},
-              outputs: {},
-              steps: []
-            }
-          }),
-          { status: 201 }
-        );
+        runSaved = true;
+        return jsonResponse(savedRun, 201);
+      }
+      if (url === "/api/workflows/1/runs") {
+        return jsonResponse(runSaved ? [savedRun] : []);
       }
       return defaultFetch(input, init);
     });
@@ -751,6 +755,15 @@ describe("App", () => {
     await screen.findByRole("button", { name: /record-review/ });
     await userEvent.click(await findEnabledButton("Run"));
     await waitFor(() => expect(runBody).toEqual({ inputs: {} }));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(
+        "/databases/workspace/workflows/1/history/whistory_00000000000000000001_00000000000000000101"
+      )
+    );
+    expect(await screen.findByRole("tab", { name: "History", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Workflow run history" })).toHaveTextContent(
+      new Date(1781604000000).toLocaleString()
+    );
   });
 
   it("shows form JavaScript and preview controls", async () => {
