@@ -1,5 +1,11 @@
 .DS_Store
 
+# Local config may contain OIDC client secrets.
+config.yml
+config.yaml
+examples/config.yml
+examples/config.yaml
+
 # Build/test artifacts
 /bin/
 dist/

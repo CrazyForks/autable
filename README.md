@@ -56,6 +56,7 @@ go test ./...
 Run the API server with git-managed config. The server loads metadata from `repository.path/metadata/main.yml` and stores runtime data under `data.path`:
 
 ```sh
+cp examples/config.example.yml examples/config.yml
 go run ./cmd/autable -config examples/config.yml
 ```
 
