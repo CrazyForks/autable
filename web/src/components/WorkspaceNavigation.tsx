@@ -89,8 +89,7 @@ type WorkspaceNavigationProps = {
   onSelectDatabaseSection: (databaseName: string, view: WorkspaceView) => void;
   onSelectFormID: (id: number) => void;
   onSelectRoleName: (name: string) => void;
-  onSelectTable: (name: string) => void;
-  onSelectTableView: (name: string) => void;
+  onSelectTableView: (tableName: string, viewName: string) => void;
   onSelectWorkflowID: (id: number) => void;
   onRenameForm: (name: string, id?: number) => void;
   onRenameWorkflow: (name: string, id?: number) => void;
@@ -134,7 +133,6 @@ export function WorkspaceNavigation({
   onSelectDatabaseSection,
   onSelectFormID,
   onSelectRoleName,
-  onSelectTable,
   onSelectTableView,
   onSelectWorkflowID,
   onRenameForm,
@@ -260,7 +258,6 @@ export function WorkspaceNavigation({
                 database={database}
                 onCreateTable={onCreateTable}
                 onNewTableNameChange={onNewTableNameChange}
-                onSelectTable={onSelectTable}
                 onSelectTableView={onSelectTableView}
                 onCreateTableView={onCreateTableView}
                 newTableName={newTableName}
@@ -547,8 +544,7 @@ function TableNav(props: {
   onCreateTable: () => void;
   onNewTableNameChange: (value: string) => void;
   onCreateTableView: (tableName: string, viewName: string) => void;
-  onSelectTable: (name: string) => void;
-  onSelectTableView: (name: string) => void;
+  onSelectTableView: (tableName: string, viewName: string) => void;
   selectedTableView: string;
   table: TableMetadata;
 }) {
@@ -584,8 +580,7 @@ function TableNav(props: {
         onNavCategoryItemToggle={(_, data) => {
           const tableName = data.categoryValue ?? data.value;
           if (tableName) {
-            props.onSelectTable(tableName);
-            props.onSelectTableView("all");
+            props.onSelectTableView(tableName, "all");
           }
         }}
         onNavItemSelect={(_, data) => {
@@ -593,9 +588,8 @@ function TableNav(props: {
           if (!tableName) {
             return;
           }
-          props.onSelectTable(tableName);
           if (action === "view") {
-            props.onSelectTableView(viewName || "all");
+            props.onSelectTableView(tableName, viewName || "all");
           }
         }}
       >
@@ -620,7 +614,6 @@ function TableNav(props: {
                     name={newViewName(item.name)}
                     onNameChange={(value) => setNewViewName(item.name, value)}
                     onSave={() => {
-                      props.onSelectTable(item.name);
                       props.onCreateTableView(item.name, newViewName(item.name));
                       setNewViewName(item.name, "");
                     }}

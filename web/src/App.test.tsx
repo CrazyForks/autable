@@ -179,12 +179,14 @@ async function defaultFetch(input: RequestInfo | URL, init?: RequestInit): Promi
 beforeEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  window.history.replaceState(null, "", "/");
   window.localStorage.clear();
   await i18n.changeLanguage("en-US");
   vi.spyOn(globalThis, "fetch").mockImplementation(defaultFetch);
 });
 
-function renderApp() {
+function renderApp(path = "/databases/workspace/tables/contacts") {
+  window.history.replaceState(null, "", path);
   return render(
     <FluentProvider theme={webLightTheme}>
       <App />
@@ -214,9 +216,57 @@ async function findEnabledButton(name: string | RegExp) {
 }
 
 describe("App", () => {
-  it("renders table view first", async () => {
+  it("renders the unselected default page at root", async () => {
+    renderApp("/");
+    await waitForSignedIn();
+    expect(await screen.findByText("No database selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "workspace" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("renders a table view from a workspace route", async () => {
     renderApp();
     await waitForDefaultTableReady();
+  });
+
+  it("returns unmatched URLs to the unselected default page", async () => {
+    renderApp("/not-a-real-route");
+    await waitForSignedIn();
+    expect(await screen.findByText("No database selected")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("returns unknown database URLs to the unselected default page", async () => {
+    renderApp("/databases/missing/tables/contacts");
+    await waitForSignedIn();
+    expect(await screen.findByText("No database selected")).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+  });
+
+  it("updates the URL when navigating workspace resources", async () => {
+    renderApp();
+    await waitForDefaultTableReady();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Active" }));
+    expect(window.location.pathname).toBe("/databases/workspace/tables/contacts/views/active");
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
+    expect(window.location.pathname).toBe("/databases/workspace/workflows");
+    await userEvent.click(await screen.findByRole("button", { name: /welcome-contact/ }));
+    expect(window.location.pathname).toBe("/databases/workspace/workflows/2");
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
+    expect(window.location.pathname).toBe("/databases/workspace/forms");
+    await userEvent.click(await screen.findByRole("button", { name: /quick-status/ }));
+    expect(window.location.pathname).toBe("/databases/workspace/forms/2");
+  });
+
+  it("restores a workspace route on initial render", async () => {
+    renderApp("/databases/workspace/tables/contacts/views/active-ops");
+
+    await waitForDefaultNavigationReady();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Active ops" })).toHaveAttribute("aria-current", "page"));
+    expect(window.location.pathname).toBe("/databases/workspace/tables/contacts/views/active-ops");
   });
 
   it("requests temporary table sorting from the rows API", async () => {
@@ -227,7 +277,7 @@ describe("App", () => {
     });
 
     const user = userEvent.setup();
-    renderApp();
+    renderApp("/databases/workspace");
     await waitForDefaultTableReady();
     const sortButton = await findEnabledButton("Toggle name sort");
 
@@ -452,7 +502,7 @@ describe("App", () => {
       return defaultFetch(input, init);
     });
 
-    renderApp();
+    renderApp("/databases/workspace");
     await waitForSignedIn();
     await userEvent.click(await findEnabledButton("Create Table"));
     await userEvent.type(screen.getByRole("textbox", { name: "New table name" }), "projects");

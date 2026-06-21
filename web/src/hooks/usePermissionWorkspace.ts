@@ -34,6 +34,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
   const [roleDraftMemberWorkflows, setRoleDraftMemberWorkflows] = useState<WorkflowDefinition[]>([]);
   const [newRoleMemberEmail, setNewRoleMemberEmail] = useState("");
   const [memberSearchResults, setMemberSearchResults] = useState<AuthUser[]>([]);
+  const [rolesReady, setRolesReady] = useState(false);
 
   const selectedRole = useMemo(
     () => roles.find((item) => item.name === selectedRoleName) ?? roles[0],
@@ -92,11 +93,13 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     };
 
     async function loadRoles(dbName: string) {
+      setRolesReady(false);
       const nextRoles = await listRoles(dbName);
       if (cancelled) {
         return;
       }
       applyRoles(nextRoles);
+      setRolesReady(true);
     }
   }, [currentUserID, database.name]);
 
@@ -107,6 +110,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
 
   function clearRoles() {
     applyRoles([]);
+    setRolesReady(false);
   }
 
   async function refreshRoles(dbName = database.name) {
@@ -116,6 +120,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     }
     const nextRoles = await listRoles(dbName).catch(() => []);
     applyRoles(nextRoles);
+    setRolesReady(true);
     return nextRoles;
   }
 
@@ -220,6 +225,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     roleDraftMemberWorkflows,
     roleDraftMembers,
     roles,
+    rolesReady,
     selectedRole,
     addRoleMember,
     addWorkflowMember,

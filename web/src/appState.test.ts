@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { compactMembers, replaceResource, replaceRole, rowDraftFromRecord } from "./appState";
+import {
+  buildWorkspacePath,
+  compactMembers,
+  parseWorkspaceRoute,
+  replaceResource,
+  replaceRole,
+  rowDraftFromRecord
+} from "./appState";
 import type { RoleDefinition } from "./api";
 
 describe("appState", () => {
@@ -48,5 +55,56 @@ describe("appState", () => {
       missing: "",
       count: "3"
     });
+  });
+
+  it("parses workspace routes", () => {
+    expect(parseWorkspaceRoute("/")).toBeNull();
+    expect(parseWorkspaceRoute("/databases/workspace")).toEqual({ databaseName: "workspace", view: "table" });
+    expect(parseWorkspaceRoute("/databases/workspace/tables/contacts")).toEqual({
+      databaseName: "workspace",
+      view: "table",
+      tableName: "contacts"
+    });
+    expect(parseWorkspaceRoute("/databases/workspace/tables/contacts/views/active")).toEqual({
+      databaseName: "workspace",
+      view: "table",
+      tableName: "contacts",
+      tableViewName: "active"
+    });
+    expect(parseWorkspaceRoute("/databases/workspace/workflows/12")).toEqual({
+      databaseName: "workspace",
+      view: "workflow",
+      workflowID: 12
+    });
+    expect(parseWorkspaceRoute("/databases/workspace/forms/9")).toEqual({
+      databaseName: "workspace",
+      view: "form",
+      formID: 9
+    });
+    expect(parseWorkspaceRoute("/databases/workspace/permissions/admin")).toEqual({
+      databaseName: "workspace",
+      view: "permission",
+      roleName: "admin"
+    });
+  });
+
+  it("builds encoded workspace paths", () => {
+    expect(buildWorkspacePath(null)).toBe("/");
+    expect(buildWorkspacePath({ databaseName: "workspace", view: "table" })).toBe("/databases/workspace");
+    expect(buildWorkspacePath({
+      databaseName: "sales ops",
+      view: "table",
+      tableName: "customer/list",
+      tableViewName: "needs review"
+    })).toBe("/databases/sales%20ops/tables/customer%2Flist/views/needs%20review");
+    expect(buildWorkspacePath({ databaseName: "workspace", view: "workflow", workflowID: 3 })).toBe(
+      "/databases/workspace/workflows/3"
+    );
+    expect(buildWorkspacePath({ databaseName: "workspace", view: "form", formID: 4 })).toBe(
+      "/databases/workspace/forms/4"
+    );
+    expect(buildWorkspacePath({ databaseName: "workspace", view: "permission", roleName: "owner/admin" })).toBe(
+      "/databases/workspace/permissions/owner%2Fadmin"
+    );
   });
 });

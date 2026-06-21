@@ -58,6 +58,7 @@ export function useWorkflowFormWorkspace({
   const [newFormName, setNewFormName] = useState("");
   const [workflowInstances, setWorkflowInstances] = useState<WorkflowInstanceResult>(emptyWorkflowInstances);
   const [workflowTrigger, setWorkflowTrigger] = useState<WorkflowTriggerDeclaration | undefined>(undefined);
+  const [resourcesReady, setResourcesReady] = useState(false);
 
   const selectedWorkflow = workflows.find((item) => item.id === selectedWorkflowID) ?? workflows[0];
   const selectedForm = forms.find((item) => item.id === selectedFormID) ?? forms[0];
@@ -119,6 +120,7 @@ export function useWorkflowFormWorkspace({
     };
 
     async function loadResources(dbName: string) {
+      setResourcesReady(false);
       const [nextWorkflows, nextForms, nextWorkflowNodes] = await Promise.all([
         listWorkflows(dbName),
         listForms(dbName),
@@ -128,6 +130,7 @@ export function useWorkflowFormWorkspace({
         return;
       }
       applyResources(nextWorkflows, nextForms, nextWorkflowNodes);
+      setResourcesReady(true);
     }
   }, [currentUserID, databaseName]);
 
@@ -174,6 +177,7 @@ export function useWorkflowFormWorkspace({
 
   function clearResources() {
     applyResources([], [], []);
+    setResourcesReady(false);
     setWorkflowRuns([]);
     setSelectedWorkflowRunKey("");
   }
@@ -189,6 +193,7 @@ export function useWorkflowFormWorkspace({
       loadWorkflowNodes()
     ]);
     applyResources(nextWorkflows, nextForms, nextWorkflowNodes);
+    setResourcesReady(true);
   }
 
   async function persistWorkflow() {
@@ -231,8 +236,10 @@ export function useWorkflowFormWorkspace({
       setSelectedWorkflowRunKey("");
       setNewWorkflowName("");
       onStatus(t("status.createdWorkflow", { name: saved.name }));
+      return saved;
     } catch (error) {
       onStatus(error instanceof Error ? error.message : t("status.workflowCreationFailed"), "error");
+      return undefined;
     }
   }
 
@@ -400,8 +407,10 @@ export function useWorkflowFormWorkspace({
       setSelectedFormID(saved.id ?? 0);
       setNewFormName("");
       onStatus(t("status.createdForm", { name: saved.name }));
+      return saved;
     } catch (error) {
       onStatus(error instanceof Error ? error.message : t("status.formCreationFailed"), "error");
+      return undefined;
     }
   }
 
@@ -458,6 +467,7 @@ export function useWorkflowFormWorkspace({
     selectedForm,
     selectedWorkflow,
     selectedWorkflowRun,
+    resourcesReady,
     workflowInstances,
     workflowTrigger,
     workflowNodes,
