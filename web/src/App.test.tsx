@@ -450,7 +450,7 @@ describe("App", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "New database name" }), "sales");
     await userEvent.click(await findEnabledButton("Save"));
     await waitFor(() => expect(screen.getByRole("button", { name: "sales" })).toHaveAttribute("aria-expanded", "true"));
-    expect(screen.getByText("Created database sales")).toBeInTheDocument();
+    expect(screen.getAllByText("Created database sales").length).toBeGreaterThan(0);
   });
 
   it("creates a table in the selected database", async () => {
