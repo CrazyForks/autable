@@ -39,7 +39,7 @@ const child = spawn(
   ["run", "./cmd/autable", "-config", configPath],
   {
     cwd: rootDir,
-    env: { ...process.env, GOTOOLCHAIN: "local" },
+    env: { ...process.env },
     stdio: "inherit"
   }
 );

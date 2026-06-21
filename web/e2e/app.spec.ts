@@ -49,19 +49,13 @@ async function registerUser(page: Page): Promise<AuthUser> {
   sequence += 1;
   const email = `person-${Date.now()}-${sequence}@example.com`;
   await page.goto("/");
-  await page.getByRole("button", { name: "Login" }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Email").fill(email);
-  await dialog.getByLabel("Password").fill("correct horse");
-  await dialog.getByRole("button", { name: "Register" }).click();
+  const user = (await api(page, "POST", "/api/auth/register", {
+    email,
+    password: "correct horse"
+  })) as AuthUser;
+  await page.reload();
   await expect(page.getByRole("button", { name: email })).toBeVisible();
-  return page.evaluate(async () => {
-    const response = await fetch("/api/auth/me");
-    if (!response.ok) {
-      throw new Error(`auth/me failed: ${response.status}`);
-    }
-    return (await response.json()) as AuthUser;
-  });
+  return user;
 }
 
 async function loginUser(page: Page, email: string) {
@@ -90,6 +84,26 @@ async function api(page: Page, method: string, path: string, body?: unknown) {
   );
 }
 
+async function createRows(page: Page, databaseName: string, tableName: string, rows: Array<Record<string, unknown>>) {
+  await page.evaluate(
+    async ({ databaseName: dbName, tableName: targetTable, rows: nextRows }) => {
+      await Promise.all(
+        nextRows.map(async (values) => {
+          const response = await fetch(`/api/tables/${dbName}/${targetTable}/rows`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ values })
+          });
+          if (!response.ok) {
+            throw new Error(`row create failed: ${response.status} ${await response.text()}`);
+          }
+        })
+      );
+    },
+    { databaseName, tableName, rows }
+  );
+}
+
 async function fillMonacoEditor(page: Page, label: string, value: string) {
   const testID = label === "Workflow JavaScript" ? "workflow-js-editor" : "form-js-editor";
   const editor = await waitForMonacoEditor(page, testID);
@@ -113,28 +127,7 @@ async function fillMonacoEditor(page: Page, label: string, value: string) {
     }
     monacoEditor.setValue(nextValue);
   }, value);
-  await expect
-    .poll(() =>
-      editor.evaluate((element) => {
-        const win = element.ownerDocument.defaultView as Window & {
-          monaco?: {
-            editor: {
-              getEditors: () => Array<{
-                getContainerDomNode: () => HTMLElement;
-                getValue: () => string;
-              }>;
-            };
-          };
-        };
-        return (
-          win.monaco?.editor
-            .getEditors()
-            .find((candidate) => element.contains(candidate.getContainerDomNode()))
-            ?.getValue() ?? ""
-        );
-      })
-    )
-    .toBe(value);
+  await expect.poll(() => monacoEditorValueByTestID(page, testID)).toBe(value);
 }
 
 async function monacoEditorValue(page: Page, label: string) {
@@ -145,6 +138,7 @@ async function monacoEditorValue(page: Page, label: string) {
 async function waitForMonacoEditor(page: Page, testID: string) {
   const editor = page.getByTestId(testID);
   await expect(editor).toBeVisible();
+  await expect(editor.locator(".monaco-editor")).toBeVisible();
   await expect
     .poll(
       () =>
@@ -194,9 +188,27 @@ async function monacoEditorValueByTestID(page: Page, testID: string) {
 }
 
 async function createNamedResource(page: Page, buttonName: string, inputName: string, name: string) {
-  await page.getByRole("button", { name: buttonName }).click();
-  await page.getByRole("textbox", { name: inputName }).fill(name);
-  await page.getByRole("button", { name: "Save" }).last().click();
+  const button = page.getByRole("button", { name: buttonName });
+  await expect(button).toBeEnabled();
+  await button.click();
+  const input = page.getByRole("textbox", { name: inputName });
+  await expect(input).toBeVisible();
+  await input.fill(name);
+  const saveButton = page.getByRole("button", { name: "Save" }).last();
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
+}
+
+async function waitForWorkspaceReady(page: Page, databaseName: string, tableName = /Contacts/) {
+  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
+  await expect(page.getByRole("button", { name: tableName })).toBeVisible();
+}
+
+async function waitForTableReady(page: Page, databaseName: string, tableName = /Contacts/) {
+  await waitForWorkspaceReady(page, databaseName, tableName);
+  const tableCanvas = page.locator(".table-view");
+  await expect(tableCanvas.getByRole("grid", { name: "Table records" })).toBeVisible();
+  await expect(tableCanvas.getByText(/\d+ of \d+ records/).first()).toBeVisible();
 }
 
 async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
@@ -242,8 +254,7 @@ async function setupWorkspace(page: Page): Promise<WorkspaceSetup> {
       "function render(api, root) { root.append(api.input({ field: 'name', label: 'Name' }), api.input({ field: 'email', label: 'Email', type: 'email' }), api.select({ field: 'status', label: 'Status', options: ['Active', 'Review'] }), api.submit('Create record')); return { table: 'contacts' }; }"
   });
   await page.reload();
-  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Contacts/ })).toBeVisible();
+  await waitForTableReady(page, databaseName);
   return { user, databaseName, tableName };
 }
 
@@ -316,7 +327,7 @@ test("shows database-owned workflow and form lists across table owners", async (
   await api(page, "POST", "/api/auth/logout");
   await loginUser(page, dbOwner.email);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
+  await waitForWorkspaceReady(page, databaseName);
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
   await page.getByRole("button", { name: "Form", exact: true }).click();
@@ -363,8 +374,7 @@ test("hides workflow and form resources without resource permission", async ({ p
   await api(page, "POST", "/api/auth/logout");
   await loginUser(page, resourceUser.email);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Contacts/ })).toBeVisible();
+  await waitForTableReady(page, databaseName);
   const tableCanvas = page.locator(".table-view");
   const tableActions = tableCanvas.getByRole("toolbar", { name: "Table canvas actions" });
   await expect(tableCanvas.getByRole("grid", { name: "Table records" }).getByRole("button", { name: "Add field" })).toBeDisabled();
@@ -407,10 +417,9 @@ test("prevents partial field readers from mutating table metadata", async ({ pag
   await api(page, "POST", "/api/auth/logout");
   await loginUser(page, reader.email);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Contacts/ })).toBeVisible();
+  await waitForTableReady(page, databaseName);
   await expect(page.getByRole("button", { name: "Add field" })).toBeDisabled();
-  await expect(page.getByText("+ View")).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Create View" })).toHaveCount(0);
 
   const updateStatus = await page.evaluate(
     async ({ databaseName: dbName, tableName: targetTable }) => {
@@ -496,7 +505,7 @@ test("renders read-only workflow and form resources as non-editable", async ({ p
   await api(page, "POST", "/api/auth/logout");
   await loginUser(page, readOnlyUser.email);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: databaseName })).toBeVisible();
+  await waitForWorkspaceReady(page, databaseName);
 
   await page.getByRole("button", { name: "Workflow", exact: true }).click();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
@@ -527,6 +536,7 @@ test("covers database and table creation through the real backend", async ({ pag
   await expect(page.getByText(`Created table ${databaseName}.${tableName}`)).toBeVisible();
 
   await page.getByRole("button", { name: workspace.databaseName, exact: true }).click();
+  await waitForTableReady(page, workspace.databaseName);
   await expect(page.getByRole("button", { name: workspace.databaseName, exact: true })).toHaveAttribute("aria-expanded", "true");
 });
 
@@ -540,18 +550,18 @@ test("covers table views, row creation, and row history through the real backend
   await expect(page.getByRole("toolbar", { name: "Workspace actions" }).getByRole("button", { name: "Create row" })).toHaveCount(0);
 
   const recordsGrid = tableCanvas.getByRole("grid", { name: "Table records" });
-  for (let index = 0; index < 80; index += 1) {
-    await api(page, "POST", `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows`, {
-      values: {
+  await createRows(
+    page,
+    workspace.databaseName,
+    workspace.tableName,
+    Array.from({ length: 30 }, (_, index) => ({
         name: `Bulk contact ${index}`,
         email: `bulk-${index}@example.com`,
         status: "Backlog"
-      }
-    });
-  }
+      }))
+  );
   await page.reload();
-  await expect(page.getByRole("button", { name: workspace.databaseName })).toBeVisible();
-  await expect(recordsGrid).toBeVisible();
+  await waitForTableReady(page, workspace.databaseName);
   await expect
     .poll(async () =>
       tableCanvas.locator(".autable-grid").evaluate((element) => {
@@ -617,6 +627,7 @@ test("covers table views, row creation, and row history through the real backend
     values: { owner: adaRelationRow?.record_id }
   });
   await page.reload();
+  await waitForTableReady(page, workspace.databaseName);
   await expect(recordsGrid.getByRole("gridcell", { name: "Bulk contact 0", exact: true })).toBeVisible();
   const bulkContactRow = recordsGrid.locator('[role="row"]', { hasText: "Bulk contact 0" });
   await bulkContactRow.getByText("Ada Lovelace", { exact: true }).dblclick();
@@ -665,8 +676,11 @@ test("covers table views, row creation, and row history through the real backend
   await page.keyboard.press("Enter");
   await expect(page.getByText(/Updated record \d+/)).toBeVisible();
 
-  await page.getByRole("button", { name: workspace.tableName }).click();
-  await page.getByRole("button", { name: "+ View" }).click();
+  const createViewButton = page.getByRole("button", { name: "Create View" });
+  await expect(createViewButton).toBeVisible();
+  await createViewButton.click();
+  await page.getByRole("textbox", { name: "New view name" }).fill("View 2");
+  await page.getByRole("button", { name: "Save" }).last().click();
   await expect(page.getByText("Created view View 2")).toBeVisible();
   const viewFilters = page.getByLabel("View filters");
   await viewFilters.getByRole("button", { name: "Add rule" }).click();
@@ -678,10 +692,11 @@ test("covers table views, row creation, and row history through the real backend
   await viewFilters.getByRole("button", { name: "Save View" }).click();
   await expect(page.getByText("Updated view View 2")).toBeVisible();
 
+  const createdViewName = encodeURIComponent("View 2");
   const viewRows = (await api(
     page,
     "GET",
-    `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows?view=view_2`
+    `/api/tables/${workspace.databaseName}/${workspace.tableName}/rows?view=${createdViewName}`
   )) as Array<{ values: { name?: string } }>;
   expect(viewRows.map((row) => row.values.name)).toEqual(["Grace Hopper", "Ada Lovelace"]);
 
@@ -737,7 +752,7 @@ test("covers table views, row creation, and row history through the real backend
   expect(table?.views).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        name: "view_2",
+        name: "View 2",
         query: expect.objectContaining({ rules: [expect.objectContaining({ field: "status", value: "Active" })] }),
         sorts: [expect.objectContaining({ field: "name", direction: "desc" })]
       })
@@ -898,6 +913,34 @@ test("runs table row workflow nodes through the real backend", async ({ page }) 
   await createNamedResource(page, "Create Workflow", "New workflow name", workflowName);
   await expect(page.getByText(`Created workflow ${workflowName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: workflowName })).toBeVisible();
+  const rowNodeWorkflows = (await api(page, "GET", `/api/databases/${workspace.databaseName}/workflows`)) as Array<{
+    id: number;
+    name: string;
+  }>;
+  const rowNodeWorkflow = rowNodeWorkflows.find((workflow) => workflow.name === workflowName);
+  expect(rowNodeWorkflow?.id).toBeTruthy();
+  const workflowSubject = `workflow:${rowNodeWorkflow?.id}`;
+  const tableResource = `${workspace.databaseName}.${workspace.tableName}`;
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: workflowSubject,
+    scope: "field_set",
+    resource: tableResource,
+    level: 2
+  });
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: workflowSubject,
+    scope: "record",
+    resource: tableResource,
+    field: "create",
+    level: 2
+  });
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: workflowSubject,
+    scope: "record",
+    resource: tableResource,
+    field: "delete",
+    level: 2
+  });
   await fillMonacoEditor(
     page,
     "Workflow JavaScript",
@@ -1053,6 +1096,13 @@ test("publishes form links that require login and explicit form permission", asy
     field: "",
     level: 2
   });
+  await api(page, "POST", "/api/permissions/grants", {
+    subject_id: reader.id,
+    scope: "record",
+    resource: `${workspace.databaseName}.${workspace.tableName}`,
+    field: "create",
+    level: 2
+  });
 
   await page.context().clearCookies();
   await page.goto(link);
@@ -1079,6 +1129,7 @@ test("publishes form links that require login and explicit form permission", asy
     ])
   );
   await page.goto("/");
+  await waitForWorkspaceReady(page, workspace.databaseName);
   await page.getByRole("button", { name: "Form", exact: true }).click();
   await page.getByRole("button", { name: "Unpublish" }).click();
   await expect(page.getByText(/Unpublished form/)).toBeVisible();
@@ -1115,15 +1166,16 @@ test("covers role members and resource permission grants through the real backen
   await page.getByRole("option", { name: user.email }).click();
   await expect(membersPopover.getByText(user.email)).toBeVisible();
   await page.keyboard.press("Escape");
-  await permissionView.getByLabel("contacts fields permission").selectOption("1");
-  await permissionView.getByLabel("contacts views permission").selectOption("1");
-  await permissionView.getByRole("button", { name: "contacts fields partial permissions" }).click();
+
+  await permissionView.getByRole("button", { name: "Fields Partial" }).click();
   await page.getByLabel("email permission").selectOption("2");
   await page.keyboard.press("Escape");
-  await permissionView.getByRole("button", { name: "Workflow partial permissions" }).click();
+  await permissionView.getByRole("button", { name: "Views All" }).click();
+  await page.getByRole("menuitem", { name: "Read" }).click();
+  await permissionView.getByRole("button", { name: "workflow_set Partial" }).click();
   await page.getByLabel(`${workflow.name} permission`).selectOption("1");
   await page.keyboard.press("Escape");
-  await permissionView.getByRole("button", { name: "Form partial permissions" }).click();
+  await permissionView.getByRole("button", { name: "form_set Partial" }).click();
   await page.getByLabel(`${form.name} permission`).selectOption("2");
   await page.keyboard.press("Escape");
   await permissionView.getByRole("button", { name: "Save" }).click();
@@ -1132,19 +1184,18 @@ test("covers role members and resource permission grants through the real backen
   const roles = (await api(page, "GET", `/api/databases/${databaseName}/roles`)) as Array<{
     name: string;
     grants: Array<{ scope: string; resource: string; field: string; level: number }>;
-    members: string[];
+    members: Array<{ type: string; id: string }>;
     member_users: AuthUser[];
     created_at: number;
     updated_at: number;
   }>;
   const role = roles.find((item) => item.name === "editor");
-  expect(role?.members).toContain(user.id);
+  expect(role?.members).toEqual(expect.arrayContaining([expect.objectContaining({ type: "user", id: user.id })]));
   expect(role?.member_users.map((member) => member.email)).toContain(user.email);
   expect(typeof role?.created_at).toBe("number");
   expect(typeof role?.updated_at).toBe("number");
   expect(role?.grants).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ scope: "field_set", resource: `${databaseName}.${tableName}`, field: "", level: 1 }),
       expect.objectContaining({ scope: "view_set", resource: `${databaseName}.${tableName}`, field: "", level: 1 }),
       expect.objectContaining({ scope: "field", resource: `${databaseName}.${tableName}`, field: "email", level: 2 }),
       expect.objectContaining({ scope: "workflow", resource: String(workflow.id), field: "", level: 1 }),

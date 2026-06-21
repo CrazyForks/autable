@@ -192,13 +192,31 @@ function renderApp() {
   );
 }
 
+async function waitForSignedIn() {
+  expect(await screen.findByRole("button", { name: authUserFixture.email })).toBeInTheDocument();
+}
+
+async function waitForDefaultTableReady(recordCountText = "3 of 3 records") {
+  await waitForDefaultNavigationReady();
+  await waitFor(() => expect(screen.getAllByText(recordCountText).length).toBeGreaterThan(0));
+}
+
+async function waitForDefaultNavigationReady() {
+  await waitForSignedIn();
+  expect(await screen.findByRole("button", { name: /^Table$/ })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /Contacts/ })).toBeInTheDocument();
+}
+
+async function findEnabledButton(name: string | RegExp) {
+  const button = await screen.findByRole("button", { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
+
 describe("App", () => {
   it("renders table view first", async () => {
     renderApp();
-    expect(await screen.findByRole("button", { name: authUserFixture.email })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /^Table$/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Contacts/ })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByText("3 of 3 records").length).toBeGreaterThan(0));
+    await waitForDefaultTableReady();
   });
 
   it("requests temporary table sorting from the rows API", async () => {
@@ -210,7 +228,8 @@ describe("App", () => {
 
     const user = userEvent.setup();
     renderApp();
-    const sortButton = await screen.findByRole("button", { name: "Toggle name sort" });
+    await waitForDefaultTableReady();
+    const sortButton = await findEnabledButton("Toggle name sort");
 
     await user.click(sortButton);
     await waitFor(() =>
@@ -272,7 +291,7 @@ describe("App", () => {
     });
 
     renderApp();
-    await userEvent.click(screen.getByRole("button", { name: "Login" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Login" }));
     expect(await screen.findByRole("button", { name: "Continue with example" })).toBeInTheDocument();
   });
 
@@ -295,7 +314,7 @@ describe("App", () => {
     });
 
     renderApp();
-    await waitFor(() => expect(screen.getAllByText("1 of 1 records").length).toBeGreaterThan(0));
+    await waitForDefaultTableReady("1 of 1 records");
   });
 
   it("hides database permissions for non-owners", async () => {
@@ -310,7 +329,8 @@ describe("App", () => {
     });
 
     renderApp();
-    await screen.findByRole("button", { name: authUserFixture.email });
+    await waitForSignedIn();
+    await screen.findByRole("button", { name: /Contacts/ });
     expect(screen.queryByRole("button", { name: "Permission" })).not.toBeInTheDocument();
   });
 
@@ -326,15 +346,16 @@ describe("App", () => {
     });
 
     renderApp();
-    await screen.findByRole("button", { name: authUserFixture.email });
-    await userEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    await waitForSignedIn();
+    await screen.findByRole("button", { name: /Contacts/ });
+    await userEvent.click(await findEnabledButton("Collapse sidebar"));
 
     expect(screen.queryByRole("button", { name: "Permission" })).not.toBeInTheDocument();
   });
 
   it("disables row creation outside all records", async () => {
     renderApp();
-    await screen.findByRole("button", { name: authUserFixture.email });
+    await waitForDefaultTableReady();
     await userEvent.click(await screen.findByRole("button", { name: "Active" }));
 
     expect(screen.getByRole("button", { name: "Row" })).toBeDisabled();
@@ -374,11 +395,10 @@ describe("App", () => {
     });
 
     renderApp();
-    await screen.findByRole("button", { name: authUserFixture.email });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Create DB" })).toBeEnabled());
-    await userEvent.click(screen.getByRole("button", { name: "Create DB" }));
+    await waitForSignedIn();
+    await userEvent.click(await findEnabledButton("Create DB"));
     await userEvent.type(screen.getByRole("textbox", { name: "New database name" }), "sales");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(await findEnabledButton("Save"));
     await waitFor(() => expect(screen.getByRole("button", { name: "sales" })).toHaveAttribute("aria-expanded", "true"));
     expect(screen.getByText("Created database sales")).toBeInTheDocument();
   });
@@ -433,10 +453,10 @@ describe("App", () => {
     });
 
     renderApp();
-    await screen.findByRole("button", { name: authUserFixture.email });
-    await userEvent.click(screen.getByRole("button", { name: "Create Table" }));
+    await waitForSignedIn();
+    await userEvent.click(await findEnabledButton("Create Table"));
     await userEvent.type(screen.getByRole("textbox", { name: "New table name" }), "projects");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(await findEnabledButton("Save"));
     await waitFor(() => expect(screen.getByRole("button", { name: /projects/ })).toBeInTheDocument());
   });
 
@@ -464,10 +484,10 @@ describe("App", () => {
     });
 
     renderApp();
-    await screen.findByRole("button", { name: authUserFixture.email });
-    await userEvent.click(screen.getByRole("button", { name: "Create View" }));
+    await waitForDefaultTableReady();
+    await userEvent.click(await findEnabledButton("Create View"));
     await userEvent.type(screen.getByRole("textbox", { name: "New view name" }), "Needs Review");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(await findEnabledButton("Save"));
 
     await waitFor(() => expect(screen.getByText("Created view Needs Review")).toBeInTheDocument());
     expect(savedTable).toMatchObject({
@@ -511,8 +531,8 @@ describe("App", () => {
     });
 
     renderApp();
-    await waitFor(() => expect(screen.getAllByText("1 of 1 records").length).toBeGreaterThan(0));
-    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    await waitForDefaultTableReady("1 of 1 records");
+    await userEvent.click(await findEnabledButton("History"));
     expect(await screen.findByRole("tab", { name: "History", selected: true })).toBeInTheDocument();
     expect(screen.getByText("Record change")).toBeInTheDocument();
     expect(screen.queryByText("rhistory_workspace_contacts_00000000000000000042_00000000000000000100")).not.toBeInTheDocument();
@@ -521,24 +541,25 @@ describe("App", () => {
 
   it("shows workflow JavaScript as the workflow view", async () => {
     renderApp();
+    await waitForDefaultTableReady();
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
-    expect(screen.getByRole("button", { name: /welcome-contact/ })).toBeInTheDocument();
-    expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
+    expect(await screen.findByRole("button", { name: /welcome-contact/ })).toBeInTheDocument();
+    await waitFor(() => expect((screen.getByLabelText("Workflow JavaScript") as HTMLTextAreaElement).value).toContain(
       'info.instance("review_echo").exec'
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Workflow nodes" }));
-    expect(screen.getByRole("dialog", { name: "Workflow node catalog" })).toBeInTheDocument();
+    ));
+    await userEvent.click(await findEnabledButton("Workflow nodes"));
+    expect(await screen.findByRole("dialog", { name: "Workflow node catalog" })).toBeInTheDocument();
     expect(screen.getAllByText("dingtalk.robot.send").length).toBeGreaterThan(0);
     expect(screen.getAllByText("DingTalk robot").length).toBeGreaterThan(0);
     expect(screen.getByText(/DingTalk custom robot access token/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /table\.record\.changed/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /table\.record\.changed/ }));
     expect(screen.getByText("Record changed")).toBeInTheDocument();
     expect(screen.getByText(/run\(info\)\.inputs/)).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     await act(async () => {
       await i18n.changeLanguage("zh-CN");
     });
-    await userEvent.click(screen.getByRole("button", { name: "工作流节点" }));
+    await userEvent.click(await findEnabledButton("工作流节点"));
     expect(await screen.findByRole("dialog", { name: "工作流节点目录" })).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "dingtalk.robot.send" }));
     expect(screen.getByText("钉钉机器人")).toBeInTheDocument();
@@ -547,19 +568,19 @@ describe("App", () => {
     await act(async () => {
       await i18n.changeLanguage("en-US");
     });
-    await userEvent.click(screen.getByRole("button", { name: "Edit config review_echo" }));
+    await userEvent.click(await findEnabledButton("Edit config review_echo"));
     expect(screen.getByLabelText("Variable review_echo.CHANNEL")).toHaveValue("ops");
     expect(screen.getByLabelText("Secret review_echo.TOKEN")).toHaveValue("x".repeat(12));
     expect(screen.queryByText(/Saved secret length/)).not.toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText("Variable review_echo.CHANNEL"));
     fireEvent.change(screen.getByLabelText("Variable review_echo.CHANNEL"), { target: { value: "support" } });
     expect(screen.getByLabelText("Variable review_echo.CHANNEL")).toHaveValue("support");
-    await userEvent.click(screen.getByRole("button", { name: "Save config" }));
+    await userEvent.click(await findEnabledButton("Save config"));
     expect(screen.getAllByText("echo").length).toBeGreaterThan(0);
     expect(screen.getAllByText("review_echo").length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    await userEvent.click(await screen.findByRole("tab", { name: "History" }));
     expect(screen.getAllByText("No runs yet").length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole("tab", { name: "Editor" }));
+    await userEvent.click(await screen.findByRole("tab", { name: "Editor" }));
     vi.useFakeTimers();
     fireEvent.change(screen.getByLabelText("Workflow JavaScript"), {
       target: {
@@ -571,7 +592,7 @@ describe("App", () => {
       vi.advanceTimersByTime(5000);
     });
     vi.useRealTimers();
-    await userEvent.click(screen.getByRole("button", { name: "Edit config ding" }));
+    await userEvent.click(await findEnabledButton("Edit config ding"));
     expect(screen.getByLabelText("Secret ding.access_token")).toBeInTheDocument();
   });
 
@@ -608,8 +629,10 @@ describe("App", () => {
     });
 
     renderApp();
+    await waitForDefaultNavigationReady();
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
-    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    await screen.findByRole("button", { name: /welcome-contact/ });
+    await userEvent.click(await screen.findByRole("tab", { name: "History" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Workflow run history" })).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Workflow run history" })).toHaveTextContent(
       new Date(1781604000000).toLocaleString()
@@ -634,14 +657,17 @@ describe("App", () => {
     });
 
     renderApp();
+    await waitForDefaultTableReady();
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
+    await screen.findByRole("button", { name: /record-review/ });
+    expect(await screen.findByRole("button", { name: "Save" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Run" })).toBeDisabled();
     expect(screen.getByLabelText("Workflow JavaScript")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Edit config review_echo" })).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("button", { name: /^Form$/ }));
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
+    await screen.findByRole("button", { name: /contact-intake/ });
+    expect(await screen.findByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByLabelText("Form JavaScript")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Create record" })).not.toBeDisabled();
   });
@@ -670,24 +696,27 @@ describe("App", () => {
     });
 
     renderApp();
+    await waitForDefaultTableReady();
     await userEvent.click(await screen.findByRole("button", { name: /^Workflow$/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Run" }));
+    await screen.findByRole("button", { name: /record-review/ });
+    await userEvent.click(await findEnabledButton("Run"));
     await waitFor(() => expect(runBody).toEqual({ inputs: {} }));
   });
 
   it("shows form JavaScript and preview controls", async () => {
     renderApp();
+    await waitForDefaultTableReady();
     await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
-    expect(screen.getByRole("button", { name: /quick-status/ })).toBeInTheDocument();
-    expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append");
+    expect(await screen.findByRole("button", { name: /quick-status/ })).toBeInTheDocument();
+    await waitFor(() => expect((screen.getByLabelText("Form JavaScript") as HTMLTextAreaElement).value).toContain("root.append"));
     await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Margaret Hamilton");
     expect(screen.getByRole("button", { name: "Create record" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Create record" }));
-    await userEvent.click(screen.getByRole("button", { name: /^Table$/ }));
+    await userEvent.click(await findEnabledButton("Create record"));
+    await userEvent.click(await screen.findByRole("button", { name: /^Table$/ }));
     await waitFor(() => expect(screen.getAllByText("4 of 4 records").length).toBeGreaterThan(0));
 
-    await userEvent.click(screen.getByRole("button", { name: /^Form$/ }));
-    await userEvent.click(screen.getByRole("button", { name: /quick-status/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /quick-status/ }));
     expect(screen.getByRole("button", { name: "Update status" })).toBeInTheDocument();
   });
 
@@ -754,9 +783,11 @@ describe("App", () => {
     });
 
     renderApp();
+    await waitForSignedIn();
     await userEvent.click(await screen.findByRole("button", { name: /^Form$/ }));
+    await screen.findByRole("button", { name: /targeted-contact/ });
     await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Ada");
-    await userEvent.click(screen.getByRole("button", { name: "Create contact" }));
+    await userEvent.click(await findEnabledButton("Create contact"));
 
     await waitFor(() => expect(submittedURL).toBe("/api/tables/workspace/contacts/rows"));
     expect(screen.getByText("Form created contacts record 9")).toBeInTheDocument();
