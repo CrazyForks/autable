@@ -26,6 +26,7 @@ type PublishedFormPageProps = {
 export function PublishedFormPage({ token }: PublishedFormPageProps) {
   const { t } = useTranslation();
   const [authEmail, setAuthEmail] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -116,12 +117,14 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
 
   async function registerUser() {
     try {
-      const user = await register(authEmail, authPassword);
+      const user = await register(authEmail, authPassword, authDisplayName);
       setCurrentUser(user);
       setAuthDialogOpen(false);
-      notify(t("status.signedInAs", { email: user.email }), "success");
+      notify(t("status.signedInAs", { name: user.display_name }), "success");
+      return true;
     } catch (error) {
       notify(error instanceof Error ? error.message : t("status.registrationFailed"), "error");
+      return false;
     }
   }
 
@@ -130,9 +133,11 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
       const user = await login(authEmail, authPassword);
       setCurrentUser(user);
       setAuthDialogOpen(false);
-      notify(t("status.signedInAs", { email: user.email }), "success");
+      notify(t("status.signedInAs", { name: user.display_name }), "success");
+      return true;
     } catch (error) {
       notify(error instanceof Error ? error.message : t("status.loginFailed"), "error");
+      return false;
     }
   }
 
@@ -146,7 +151,7 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
         <div className="section-header">
           <div>
             <Text weight="semibold">{form?.name ?? t("form.publishedForm")}</Text>
-            <Text size={200}>{currentUser ? currentUser.email : t("status.loginRequired")}</Text>
+            <Text size={200}>{currentUser ? currentUser.display_name : t("status.loginRequired")}</Text>
           </div>
           {!currentUser && (
             <Button appearance="primary" onClick={() => setAuthDialogOpen(true)}>
@@ -174,7 +179,9 @@ export function PublishedFormPage({ token }: PublishedFormPageProps) {
       </main>
       <Toaster />
       <AuthDialog
+        displayName={authDisplayName}
         email={authEmail}
+        onDisplayNameChange={setAuthDisplayName}
         onEmailChange={setAuthEmail}
         onLogin={loginUser}
         onOIDCLogin={loginWithOIDC}

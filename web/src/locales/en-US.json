@@ -34,11 +34,14 @@
   },
   "auth": {
     "continueWith": "Continue with {{provider}}",
+    "displayName": "Display name",
     "email": "Email",
     "loginTitle": "Login",
+    "mode": "Authentication mode",
     "noMethods": "No login method is enabled",
     "or": "or",
-    "password": "Password"
+    "password": "Password",
+    "registerTitle": "Register"
   },
   "empty": {
     "noDatabaseTitle": "No database selected",
@@ -159,11 +162,11 @@
       "delete": "Delete",
       "createDelete": "Create and delete"
     },
-    "removeMember": "Remove {{email}}",
+    "removeMember": "Remove {{name}}",
     "roleAccessMatrix": "{{database}} role access matrix",
-    "roleMemberEmail": "Role member email",
+    "roleMemberDisplayName": "Role member display name",
     "scope": "scope",
-    "searchEmail": "Search email",
+    "searchMember": "Search member",
     "tables": "Tables",
     "view": "{{view}} view",
     "viewSet": "{{table}} views",
@@ -251,8 +254,7 @@
     "selectTableBeforeMetadata": "Select a table before updating metadata",
     "selectTableBeforeRows": "Create a table before adding rows",
     "selectTableBeforeView": "Select a table before adding a view",
-    "selectUserSuggestion": "Select a user email from the member suggestions",
-    "signedInAs": "Signed in as {{email}}",
+    "signedInAs": "Signed in as {{name}}",
     "signedOut": "Signed out",
     "tableCreationFailed": "Table creation failed",
     "viewAlreadyExists": "View {{name}} already exists",

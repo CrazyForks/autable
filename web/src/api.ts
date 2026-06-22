@@ -175,6 +175,7 @@ export type RoleMember = {
 export type AuthUser = {
   id: string;
   email: string;
+  display_name: string;
   provider: string;
 };
 
@@ -438,11 +439,11 @@ export async function listRowHistory(
   return response.json() as Promise<RowChange[]>;
 }
 
-export async function register(email: string, password: string): Promise<AuthUser> {
+export async function register(email: string, password: string, displayName: string): Promise<AuthUser> {
   const response = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password, display_name: displayName })
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));

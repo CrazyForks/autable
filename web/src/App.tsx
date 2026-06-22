@@ -61,6 +61,7 @@ function WorkspaceApp() {
   const [selectedTableView, setSelectedTableView] = useState("all");
   const [openViewPanelRequest, setOpenViewPanelRequest] = useState(0);
   const [authEmail, setAuthEmail] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -122,7 +123,7 @@ function WorkspaceApp() {
   });
   const {
     memberSearchResults,
-    newRoleMemberEmail,
+    newRoleMemberQuery,
     newRoleName,
     roleDraftGrants,
     roleDraftMemberUsers,
@@ -247,7 +248,7 @@ function WorkspaceApp() {
         }
         setCurrentUser(user);
         if (user) {
-          notify(t("status.signedInAs", { email: user.email }));
+          notify(t("status.signedInAs", { name: user.display_name }));
         }
       })
       .catch((error) => {
@@ -412,13 +413,15 @@ function WorkspaceApp() {
 
   async function registerUser() {
     try {
-      const user = await register(authEmail, authPassword);
+      const user = await register(authEmail, authPassword, authDisplayName);
       setCurrentUser(user);
       setAuthReady(true);
       await refreshCatalogAfterAuth();
-      notify(t("status.signedInAs", { email: user.email }));
+      notify(t("status.signedInAs", { name: user.display_name }));
+      return true;
     } catch (error) {
       notify(error instanceof Error ? error.message : t("status.registrationFailed"), "error");
+      return false;
     }
   }
 
@@ -428,9 +431,11 @@ function WorkspaceApp() {
       setCurrentUser(user);
       setAuthReady(true);
       await refreshCatalogAfterAuth();
-      notify(t("status.signedInAs", { email: user.email }));
+      notify(t("status.signedInAs", { name: user.display_name }));
+      return true;
     } catch (error) {
       notify(error instanceof Error ? error.message : t("status.loginFailed"), "error");
+      return false;
     }
   }
 
@@ -836,12 +841,12 @@ function WorkspaceApp() {
               memberOptions={memberSearchResults}
               memberUsers={roleDraftMemberUsers}
               memberWorkflows={permissionWorkspace.roleDraftMemberWorkflows}
-              newMemberEmail={newRoleMemberEmail}
+              newMemberQuery={newRoleMemberQuery}
               onAddMember={permissionWorkspace.addRoleMember}
               onAddWorkflowMember={permissionWorkspace.addWorkflowMember}
               onGrantChange={permissionWorkspace.updateRoleGrant}
               onMemberRemove={permissionWorkspace.removeRoleMember}
-              onNewMemberEmailChange={permissionWorkspace.setNewRoleMemberEmail}
+              onNewMemberQueryChange={permissionWorkspace.setNewRoleMemberQuery}
               onSave={permissionWorkspace.persistRoleGrants}
               role={selectedRole}
               workflows={workflows}
@@ -855,7 +860,9 @@ function WorkspaceApp() {
       <Toaster />
 
       <AuthDialog
+        displayName={authDisplayName}
         email={authEmail}
+        onDisplayNameChange={setAuthDisplayName}
         onEmailChange={setAuthEmail}
         onLogin={loginUser}
         onOIDCLogin={loginWithOIDC}

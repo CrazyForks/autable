@@ -120,6 +120,7 @@ const workflowNodeFixture = [
 const authUserFixture = {
   id: "test-user",
   email: "user@example.com",
+  display_name: "Test User",
   provider: "password"
 };
 
@@ -195,7 +196,7 @@ function renderApp(path = "/databases/workspace/tables/contacts") {
 }
 
 async function waitForSignedIn() {
-  expect(await screen.findByRole("button", { name: authUserFixture.email })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: authUserFixture.display_name })).toBeInTheDocument();
 }
 
 async function waitForDefaultTableReady(recordCountText = "3 of 3 records") {

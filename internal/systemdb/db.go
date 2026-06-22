@@ -68,6 +68,7 @@ type RoleMember struct {
 type userModel struct {
 	ID           string `gorm:"primaryKey"`
 	Email        string `gorm:"uniqueIndex;not null"`
+	DisplayName  string `gorm:"not null"`
 	Provider     string `gorm:"not null"`
 	ProviderName string `gorm:"not null"`
 	Subject      string `gorm:"not null"`
@@ -194,9 +195,14 @@ func (db *DB) UpsertUserByEmail(ctx context.Context, user auth.User) (auth.User,
 	if user.Email == "" {
 		return auth.User{}, errors.New("email is required")
 	}
+	displayName, err := auth.NormalizeDisplayName(user.DisplayName)
+	if err != nil {
+		return auth.User{}, err
+	}
+	user.DisplayName = displayName
 
 	var existing userModel
-	err := db.orm.WithContext(ctx).Where(&userModel{Email: user.Email}).First(&existing).Error
+	err = db.orm.WithContext(ctx).Where(&userModel{Email: user.Email}).First(&existing).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return auth.User{}, err
 	}
@@ -208,6 +214,7 @@ func (db *DB) UpsertUserByEmail(ctx context.Context, user auth.User) (auth.User,
 	err = db.orm.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "email"}},
 		DoUpdates: clause.AssignmentColumns([]string{
+			"display_name",
 			"provider",
 			"provider_name",
 			"subject",
@@ -251,7 +258,8 @@ func (db *DB) SearchUsers(ctx context.Context, query string, limit int) ([]auth.
 		Order(clause.OrderByColumn{Column: clause.Column{Name: "email"}}).
 		Limit(limit)
 	if normalized != "" {
-		request = request.Where(clause.Like{Column: clause.Column{Name: "email"}, Value: "%" + normalized + "%"})
+		like := "%" + normalized + "%"
+		request = request.Where("lower(email) LIKE ? OR lower(display_name) LIKE ?", like, like)
 	}
 	if err := request.Find(&models).Error; err != nil {
 		return nil, err
@@ -726,6 +734,7 @@ func userToModel(user auth.User) userModel {
 	return userModel{
 		ID:           user.ID,
 		Email:        user.Email,
+		DisplayName:  user.DisplayName,
 		Provider:     string(user.Provider),
 		ProviderName: user.ProviderName,
 		Subject:      user.Subject,
@@ -737,6 +746,7 @@ func modelToUser(model userModel) auth.User {
 	return auth.User{
 		ID:           model.ID,
 		Email:        model.Email,
+		DisplayName:  model.DisplayName,
 		Provider:     auth.Provider(model.Provider),
 		ProviderName: model.ProviderName,
 		Subject:      model.Subject,

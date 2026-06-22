@@ -17,8 +17,9 @@ func TestUserUpsertUsesEmailFallback(t *testing.T) {
 	db := openTestDB(t)
 
 	passwordUser, err := auth.NewPasswordUser(auth.PasswordRegistration{
-		Email:    "person@example.com",
-		Password: "correct horse",
+		Email:       "person@example.com",
+		DisplayName: "Person Example",
+		Password:    "correct horse",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +33,7 @@ func TestUserUpsertUsesEmailFallback(t *testing.T) {
 		ProviderName: "main",
 		Subject:      "sub-123",
 		Email:        "PERSON@example.com",
+		DisplayName:  "Renamed Person",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +43,7 @@ func TestUserUpsertUsesEmailFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if upserted.ID != inserted.ID {
-		t.Fatalf("expected email fallback to keep existing user id %q, got %q", inserted.ID, upserted.ID)
+		t.Fatalf("expected email upsert to keep existing user id %q, got %q", inserted.ID, upserted.ID)
 	}
 
 	loaded, err := db.UserByEmail(ctx, "person@example.com")
@@ -51,15 +53,55 @@ func TestUserUpsertUsesEmailFallback(t *testing.T) {
 	if loaded.Provider != auth.ProviderOIDC || loaded.Subject != "sub-123" {
 		t.Fatalf("unexpected loaded user: %#v", loaded)
 	}
+	if loaded.DisplayName != "Renamed Person" {
+		t.Fatalf("expected display name to be updated, got %q", loaded.DisplayName)
+	}
 }
 
-func TestSearchUsersByEmail(t *testing.T) {
+func TestUserUpsertAllowsDuplicateDisplayName(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
-	for _, email := range []string{"Ada@example.com", "grace@example.com", "linus@example.com"} {
+
+	first, err := auth.NewPasswordUser(auth.PasswordRegistration{
+		Email:       "first@example.com",
+		DisplayName: "Shared Name",
+		Password:    "correct horse",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UpsertUserByEmail(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := auth.NewPasswordUser(auth.PasswordRegistration{
+		Email:       "second@example.com",
+		DisplayName: "Shared Name",
+		Password:    "correct horse",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UpsertUserByEmail(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSearchUsersByEmailAndDisplayName(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	for _, item := range []struct {
+		email       string
+		displayName string
+	}{
+		{email: "Ada@example.com", displayName: "Ada Lovelace"},
+		{email: "grace@example.com", displayName: "Grace Hopper"},
+		{email: "linus@example.com", displayName: "Linus Torvalds"},
+	} {
 		user, err := auth.NewPasswordUser(auth.PasswordRegistration{
-			Email:    email,
-			Password: "correct horse",
+			Email:       item.email,
+			DisplayName: item.displayName,
+			Password:    "correct horse",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -83,6 +125,13 @@ func TestSearchUsersByEmail(t *testing.T) {
 	if len(users) != 1 || users[0].Email != "linus@example.com" {
 		t.Fatalf("expected linus match, got %#v", users)
 	}
+	users, err = db.SearchUsers(ctx, "hop", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 || users[0].DisplayName != "Grace Hopper" {
+		t.Fatalf("expected hopper match, got %#v", users)
+	}
 }
 
 func TestOpenCreatesParentDirectory(t *testing.T) {
@@ -104,8 +153,9 @@ func TestSessionLifecycle(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
-		Email:    "person@example.com",
-		Password: "correct horse",
+		Email:       "person@example.com",
+		DisplayName: "Person Example",
+		Password:    "correct horse",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -141,8 +191,9 @@ func TestExpiredSessionIsRejected(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
-		Email:    "person@example.com",
-		Password: "correct horse",
+		Email:       "person@example.com",
+		DisplayName: "Person Example",
+		Password:    "correct horse",
 	})
 	if err != nil {
 		t.Fatal(err)

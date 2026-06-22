@@ -76,6 +76,7 @@ func TestPasswordAuthSessionLifecycle(t *testing.T) {
 
 	register := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(`{
 		"email":"Person@Example.com",
+		"display_name":"Person Example",
 		"password":"correct horse"
 	}`))
 	registerRecorder := httptest.NewRecorder()
@@ -91,7 +92,7 @@ func TestPasswordAuthSessionLifecycle(t *testing.T) {
 	if err := json.NewDecoder(registerRecorder.Body).Decode(&registered); err != nil {
 		t.Fatal(err)
 	}
-	if registered.Email != "person@example.com" || registered.Provider != "password" {
+	if registered.Email != "person@example.com" || registered.DisplayName != "Person Example" || registered.Provider != "password" {
 		t.Fatalf("unexpected registered user: %#v", registered)
 	}
 
@@ -124,6 +125,7 @@ func TestLoginRejectsInvalidPassword(t *testing.T) {
 	server, _ := newTestServer(t)
 	register := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(`{
 		"email":"person@example.com",
+		"display_name":"Person Example",
 		"password":"correct horse"
 	}`))
 	server.ServeHTTP(httptest.NewRecorder(), register)
@@ -185,8 +187,21 @@ func TestUserSearchAPIRequiresAuthenticationAndMatchesEmail(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &users); err != nil {
 		t.Fatal(err)
 	}
-	if len(users) != 1 || users[0].ID != "ada" || users[0].Email != "ada@example.com" {
+	if len(users) != 1 || users[0].ID != "ada" || users[0].Email != "ada@example.com" || users[0].DisplayName != "ada" {
 		t.Fatalf("unexpected user search response: %#v", users)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/users?query=own", nil)
+	request.AddCookie(ownerCookie)
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected display name search 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &users); err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 || users[0].ID != "owner" || users[0].DisplayName != "owner" {
+		t.Fatalf("unexpected display name search response: %#v", users)
 	}
 }
 
@@ -362,6 +377,7 @@ func TestCreateRowAPIUsesSessionUser(t *testing.T) {
 	server, system := newTestServer(t)
 	register := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(`{
 		"email":"person@example.com",
+		"display_name":"Person Example",
 		"password":"correct horse"
 	}`))
 	registerRecorder := httptest.NewRecorder()
@@ -3691,8 +3707,9 @@ func testCatalog(sqlitePath string) metadata.Catalog {
 func testSessionCookie(t *testing.T, system *systemdb.DB, userID string) *http.Cookie {
 	t.Helper()
 	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
-		Email:    userID + "@example.com",
-		Password: "correct horse",
+		Email:       userID + "@example.com",
+		DisplayName: userID,
+		Password:    "correct horse",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3775,6 +3792,7 @@ func newFakeOIDCIssuer(t *testing.T, clientID, subject, email string) *httptest.
 			writeTestJSON(t, w, map[string]any{
 				"email":          email,
 				"email_verified": true,
+				"name":           "Person Example",
 			})
 		default:
 			http.NotFound(w, r)
@@ -3795,6 +3813,7 @@ func signTestIDToken(t *testing.T, key *rsa.PrivateKey, issuer, audience, subjec
 		"iat":            now.Add(-time.Minute).Unix(),
 		"email":          email,
 		"email_verified": true,
+		"name":           "Person Example",
 	}
 	headerJSON, err := json.Marshal(header)
 	if err != nil {

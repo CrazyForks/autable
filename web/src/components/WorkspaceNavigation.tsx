@@ -230,7 +230,7 @@ export function WorkspaceNavigation({
           <div className="account-slot">
             {currentUser ? (
               <Button icon={<PersonRegular />} onClick={onLogout}>
-                <span className="account-email">{currentUser.email}</span>
+                <span className="account-email">{currentUser.display_name}</span>
               </Button>
             ) : (
               <Button icon={<PersonRegular />} appearance="primary" onClick={onOpenLogin}>
@@ -415,8 +415,8 @@ function PrimaryRail({
       </div>
       <div className="rail-spacer" />
       {currentUser ? (
-        <Tooltip content={currentUser.email} relationship="label">
-          <Button appearance="subtle" icon={<PersonRegular />} aria-label={currentUser.email} onClick={onLogout} />
+        <Tooltip content={currentUser.display_name} relationship="label">
+          <Button appearance="subtle" icon={<PersonRegular />} aria-label={currentUser.display_name} onClick={onLogout} />
         </Tooltip>
       ) : (
         <Tooltip content={t("common.login")} relationship="label">

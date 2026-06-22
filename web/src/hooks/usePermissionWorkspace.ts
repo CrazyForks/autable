@@ -32,7 +32,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
   const [roleDraftMembers, setRoleDraftMembers] = useState<RoleMember[]>([]);
   const [roleDraftMemberUsers, setRoleDraftMemberUsers] = useState<AuthUser[]>([]);
   const [roleDraftMemberWorkflows, setRoleDraftMemberWorkflows] = useState<WorkflowDefinition[]>([]);
-  const [newRoleMemberEmail, setNewRoleMemberEmail] = useState("");
+  const [newRoleMemberQuery, setNewRoleMemberQuery] = useState("");
   const [memberSearchResults, setMemberSearchResults] = useState<AuthUser[]>([]);
   const [rolesReady, setRolesReady] = useState(false);
 
@@ -46,13 +46,13 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     setRoleDraftMembers(selectedRole?.members ?? []);
     setRoleDraftMemberUsers(selectedRole?.member_users ?? []);
     setRoleDraftMemberWorkflows(selectedRole?.member_workflows ?? []);
-    setNewRoleMemberEmail("");
+    setNewRoleMemberQuery("");
     setMemberSearchResults([]);
   }, [selectedRole?.subject_id]);
 
   useEffect(() => {
     let cancelled = false;
-    const query = newRoleMemberEmail.trim();
+    const query = newRoleMemberQuery.trim();
     if (!currentUserID || query.length < 2) {
       setMemberSearchResults([]);
       return () => {
@@ -73,7 +73,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     return () => {
       cancelled = true;
     };
-  }, [currentUserID, newRoleMemberEmail]);
+  }, [currentUserID, newRoleMemberQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,16 +186,10 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     });
   }
 
-  function addRoleMember(user?: AuthUser) {
-    const member =
-      user ?? memberSearchResults.find((item) => item.email.toLowerCase() === newRoleMemberEmail.trim().toLowerCase());
-    if (!member) {
-      onStatus(t("status.selectUserSuggestion"));
-      return;
-    }
-    setRoleDraftMembers((current) => compactMembers([...current, { type: "user", id: member.id }]));
-    setRoleDraftMemberUsers((current) => compactMemberUsers([...current, member]));
-    setNewRoleMemberEmail("");
+  function addRoleMember(user: AuthUser) {
+    setRoleDraftMembers((current) => compactMembers([...current, { type: "user", id: user.id }]));
+    setRoleDraftMemberUsers((current) => compactMemberUsers([...current, user]));
+    setNewRoleMemberQuery("");
     setMemberSearchResults([]);
   }
 
@@ -218,7 +212,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
 
   return {
     memberSearchResults,
-    newRoleMemberEmail,
+    newRoleMemberQuery,
     newRoleName,
     roleDraftGrants,
     roleDraftMemberUsers,
@@ -234,7 +228,7 @@ export function usePermissionWorkspace({ currentUserID, database, onStatus }: Us
     persistRoleGrants,
     refreshRoles,
     removeRoleMember,
-    setNewRoleMemberEmail,
+    setNewRoleMemberQuery,
     setNewRoleName,
     setSelectedRoleName,
     updateRoleGrant

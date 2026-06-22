@@ -89,14 +89,16 @@ type rowHistoryResponse struct {
 }
 
 type authRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Password    string `json:"password"`
 }
 
 type userResponse struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	Provider string `json:"provider"`
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Provider    string `json:"provider"`
 }
 
 type oidcProviderResponse struct {
@@ -114,6 +116,7 @@ type authConfigResponse struct {
 type oidcEmailClaims struct {
 	Email         string `json:"email"`
 	EmailVerified *bool  `json:"email_verified,omitempty"`
+	Name          string `json:"name,omitempty"`
 }
 
 type workflowRunRequest struct {
@@ -310,8 +313,9 @@ func (server *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := auth.NewPasswordUser(auth.PasswordRegistration{
-		Email:    request.Email,
-		Password: request.Password,
+		Email:       request.Email,
+		DisplayName: request.DisplayName,
+		Password:    request.Password,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -453,6 +457,7 @@ func (server *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request,
 		ProviderName: provider.Name,
 		Subject:      idToken.Subject,
 		Email:        claims.Email,
+		DisplayName:  claims.Name,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -3240,7 +3245,7 @@ func oidcClaims(ctx context.Context, provider *oidc.Provider, token *oauth2.Toke
 	if err := idToken.Claims(&claims); err != nil {
 		return oidcEmailClaims{}, err
 	}
-	if claims.Email != "" {
+	if claims.Email != "" && claims.Name != "" {
 		return claims, nil
 	}
 	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
@@ -3258,9 +3263,10 @@ func oidcClaims(ctx context.Context, provider *oidc.Provider, token *oauth2.Toke
 
 func toUserResponse(user auth.User) userResponse {
 	return userResponse{
-		ID:       user.ID,
-		Email:    user.Email,
-		Provider: string(user.Provider),
+		ID:          user.ID,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		Provider:    string(user.Provider),
 	}
 }
 

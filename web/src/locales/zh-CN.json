@@ -34,11 +34,14 @@
   },
   "auth": {
     "continueWith": "使用 {{provider}} 继续",
+    "displayName": "显示名",
     "email": "邮箱",
     "loginTitle": "登录",
+    "mode": "认证模式",
     "noMethods": "没有启用登录方式",
     "or": "或",
-    "password": "密码"
+    "password": "密码",
+    "registerTitle": "注册"
   },
   "empty": {
     "noDatabaseTitle": "未选择数据库",
@@ -159,11 +162,11 @@
       "delete": "可删",
       "createDelete": "可增删"
     },
-    "removeMember": "移除 {{email}}",
+    "removeMember": "移除 {{name}}",
     "roleAccessMatrix": "{{database}} 角色权限矩阵",
-    "roleMemberEmail": "角色成员邮箱",
+    "roleMemberDisplayName": "角色成员显示名",
     "scope": "范围",
-    "searchEmail": "搜索邮箱",
+    "searchMember": "搜索成员",
     "tables": "表",
     "view": "{{view}} 视图",
     "viewSet": "{{table}} 视图",
@@ -251,8 +254,7 @@
     "selectTableBeforeMetadata": "请先选择表再更新元数据",
     "selectTableBeforeRows": "请先创建表再添加记录",
     "selectTableBeforeView": "请先选择表再添加视图",
-    "selectUserSuggestion": "请从成员建议中选择一个用户邮箱",
-    "signedInAs": "已登录为 {{email}}",
+    "signedInAs": "已登录为 {{name}}",
     "signedOut": "已退出登录",
     "tableCreationFailed": "表创建失败",
     "viewAlreadyExists": "视图 {{name}} 已存在",

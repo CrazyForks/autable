@@ -19,6 +19,7 @@ const (
 type User struct {
 	ID           string
 	Email        string
+	DisplayName  string
 	Provider     Provider
 	ProviderName string
 	Subject      string
@@ -26,14 +27,16 @@ type User struct {
 }
 
 type PasswordRegistration struct {
-	Email    string
-	Password string
+	Email       string
+	DisplayName string
+	Password    string
 }
 
 type OIDCIdentity struct {
 	ProviderName string
 	Subject      string
 	Email        string
+	DisplayName  string
 }
 
 func NewPasswordUser(reg PasswordRegistration) (User, error) {
@@ -44,6 +47,10 @@ func NewPasswordUser(reg PasswordRegistration) (User, error) {
 	if len(reg.Password) < 8 {
 		return User{}, errors.New("password must be at least 8 characters")
 	}
+	displayName, err := NormalizeDisplayName(reg.DisplayName)
+	if err != nil {
+		return User{}, err
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(reg.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -53,6 +60,7 @@ func NewPasswordUser(reg PasswordRegistration) (User, error) {
 	return User{
 		ID:           uuid.NewString(),
 		Email:        email,
+		DisplayName:  displayName,
 		Provider:     ProviderPassword,
 		ProviderName: string(ProviderPassword),
 		Subject:      email,
@@ -71,10 +79,15 @@ func NewOIDCUser(identity OIDCIdentity) (User, error) {
 	if identity.Subject == "" {
 		return User{}, errors.New("subject is required")
 	}
+	displayName, err := NormalizeDisplayName(identity.DisplayName)
+	if err != nil {
+		return User{}, err
+	}
 
 	return User{
 		ID:           uuid.NewString(),
 		Email:        email,
+		DisplayName:  displayName,
 		Provider:     ProviderOIDC,
 		ProviderName: identity.ProviderName,
 		Subject:      identity.Subject,
@@ -89,6 +102,14 @@ func NormalizeEmail(email string) (string, error) {
 	return normalized, nil
 }
 
+func NormalizeDisplayName(displayName string) (string, error) {
+	normalized := strings.TrimSpace(displayName)
+	if normalized == "" {
+		return "", errors.New("display name is required")
+	}
+	return normalized, nil
+}
+
 func (user User) CheckPassword(password string) bool {
 	if user.Provider != ProviderPassword || len(user.PasswordHash) == 0 {
 		return false
@@ -96,6 +117,6 @@ func (user User) CheckPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword(user.PasswordHash, []byte(password)) == nil
 }
 
-func SameLoginFallback(left, right User) bool {
+func SameLoginEmail(left, right User) bool {
 	return left.Email != "" && left.Email == right.Email
 }

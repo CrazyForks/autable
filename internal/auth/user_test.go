@@ -4,8 +4,9 @@ import "testing"
 
 func TestPasswordUserNormalizesEmailAndChecksPassword(t *testing.T) {
 	user, err := NewPasswordUser(PasswordRegistration{
-		Email:    " Person@Example.COM ",
-		Password: "correct horse",
+		Email:       " Person@Example.COM ",
+		DisplayName: " Person Example ",
+		Password:    "correct horse",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -13,6 +14,9 @@ func TestPasswordUserNormalizesEmailAndChecksPassword(t *testing.T) {
 
 	if user.Email != "person@example.com" {
 		t.Fatalf("unexpected email: %q", user.Email)
+	}
+	if user.DisplayName != "Person Example" {
+		t.Fatalf("unexpected display name: %q", user.DisplayName)
 	}
 	if !user.CheckPassword("correct horse") {
 		t.Fatal("expected password to match")
@@ -22,10 +26,21 @@ func TestPasswordUserNormalizesEmailAndChecksPassword(t *testing.T) {
 	}
 }
 
-func TestOIDCUserUsesEmailFallback(t *testing.T) {
-	passwordUser, err := NewPasswordUser(PasswordRegistration{
+func TestPasswordUserRequiresDisplayName(t *testing.T) {
+	_, err := NewPasswordUser(PasswordRegistration{
 		Email:    "person@example.com",
 		Password: "correct horse",
+	})
+	if err == nil {
+		t.Fatal("expected display name to be required")
+	}
+}
+
+func TestOIDCUserUsesEmailFallback(t *testing.T) {
+	passwordUser, err := NewPasswordUser(PasswordRegistration{
+		Email:       "person@example.com",
+		DisplayName: "Person Example",
+		Password:    "correct horse",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -34,13 +49,14 @@ func TestOIDCUserUsesEmailFallback(t *testing.T) {
 		ProviderName: "main",
 		Subject:      "sub-123",
 		Email:        "PERSON@example.com",
+		DisplayName:  "Person Example",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !SameLoginFallback(passwordUser, oidcUser) {
-		t.Fatal("expected users to match by normalized email fallback")
+	if !SameLoginEmail(passwordUser, oidcUser) {
+		t.Fatal("expected users to match by normalized email")
 	}
 }
 
