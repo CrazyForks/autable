@@ -43,7 +43,8 @@ import {
   PanelLeftContractRegular,
   PanelLeftExpandRegular,
   PeopleRegular,
-  PersonRegular
+  PersonRegular,
+  SignOutRegular
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -229,9 +230,7 @@ export function WorkspaceNavigation({
           <NavDivider />
           <div className="account-slot">
             {currentUser ? (
-              <Button icon={<PersonRegular />} onClick={onLogout}>
-                <span className="account-email">{currentUser.display_name}</span>
-              </Button>
+              <AccountMenu currentUser={currentUser} onLogout={onLogout} />
             ) : (
               <Button icon={<PersonRegular />} appearance="primary" onClick={onOpenLogin}>
                 {t("common.login")}
@@ -415,15 +414,59 @@ function PrimaryRail({
       </div>
       <div className="rail-spacer" />
       {currentUser ? (
-        <Tooltip content={currentUser.display_name} relationship="label">
-          <Button appearance="subtle" icon={<PersonRegular />} aria-label={currentUser.display_name} onClick={onLogout} />
-        </Tooltip>
+        <AccountMenu currentUser={currentUser} onLogout={onLogout} compact />
       ) : (
         <Tooltip content={t("common.login")} relationship="label">
           <Button appearance="primary" icon={<PersonRegular />} aria-label={t("common.login")} onClick={onOpenLogin} />
         </Tooltip>
       )}
     </aside>
+  );
+}
+
+function AccountMenu({
+  currentUser,
+  onLogout,
+  compact = false
+}: {
+  currentUser: AuthUser;
+  onLogout: () => void;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const trigger = (
+    <Button
+      appearance="subtle"
+      icon={<PersonRegular />}
+      aria-label={compact ? currentUser.display_name : undefined}
+      className={compact ? undefined : "account-trigger"}
+    >
+      {!compact && <span className="account-email">{currentUser.display_name}</span>}
+    </Button>
+  );
+  return (
+    <Menu positioning={compact ? "after" : "above-start"}>
+      <MenuTrigger disableButtonEnhancement>
+        {compact ? (
+          <Tooltip content={currentUser.display_name} relationship="label">
+            {trigger}
+          </Tooltip>
+        ) : (
+          trigger
+        )}
+      </MenuTrigger>
+      <MenuPopover>
+        <div className="account-menu-profile">
+          <Text weight="semibold">{currentUser.display_name}</Text>
+          <Text size={200}>{currentUser.email}</Text>
+        </div>
+        <MenuList>
+          <MenuItem icon={<SignOutRegular />} onClick={onLogout}>
+            {t("common.logout")}
+          </MenuItem>
+        </MenuList>
+      </MenuPopover>
+    </Menu>
   );
 }
 

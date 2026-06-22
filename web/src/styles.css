@@ -220,13 +220,30 @@ select {
   margin-top: auto;
 }
 
-.account-slot .fui-Button {
+.account-slot .fui-Button,
+.account-trigger {
   justify-content: flex-start;
 }
 
 .account-email {
   display: block;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--colorNeutralStroke2);
+}
+
+.account-menu-profile .fui-Text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
