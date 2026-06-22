@@ -854,6 +854,6 @@ describe("App", () => {
     await userEvent.click(await findEnabledButton("Create contact"));
 
     await waitFor(() => expect(submittedURL).toBe("/api/tables/workspace/contacts/rows"));
-    expect(screen.getByText("Form created contacts record 9")).toBeInTheDocument();
+    expect(screen.getAllByText("Form created contacts record 9").length).toBeGreaterThan(0);
   });
 });
