@@ -181,6 +181,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: autable-${{ needs.prepare.outputs.version }}-*
           merge-multiple: true
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
