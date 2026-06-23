@@ -8,7 +8,7 @@ export type FormElement =
       onChangeActionID?: string;
     }
   | { kind: "select"; field: string; label: string; options: string[] }
-  | { kind: "relation"; field: string; label: string; table: string; view?: string }
+  | { kind: "relation"; field: string; label: string; table: string; view?: string; fields?: string[] }
   | { kind: "button"; id: string; label: string; actionID: string }
   | { kind: "submit"; id: string; label: string; actionID: string }
   | { kind: "html"; html: string };
@@ -46,6 +46,7 @@ type RelationConfig = {
   label?: string;
   table: string;
   view?: string;
+  fields?: string[];
 };
 
 type ButtonConfig = {
@@ -111,12 +112,14 @@ export function renderFormScript(script: string): FormRenderResult {
     },
     relation: (config: RelationConfig): FormElement => {
       const field = formControlField(config);
+      const fields = normalizeRelationFields(config.fields);
       return {
         kind: "relation",
         field,
         label: config.label ?? field,
         table: String(config.table),
-        view: config.view ? String(config.view) : undefined
+        view: config.view ? String(config.view) : undefined,
+        ...(fields ? { fields } : {})
       };
     },
     button: (labelOrConfig: string | ButtonConfig, action?: FormAction): FormElement => {
@@ -236,6 +239,23 @@ function normalizeScannerConfig(value: InputConfig["scanner"]): FormElement exte
     return { confirm: Boolean(value.confirm) };
   }
   return true;
+}
+
+function normalizeRelationFields(fields: RelationConfig["fields"]): string[] | undefined {
+  if (!Array.isArray(fields)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const field of fields) {
+    const fieldName = String(field).trim();
+    if (!fieldName || seen.has(fieldName)) {
+      continue;
+    }
+    seen.add(fieldName);
+    normalized.push(fieldName);
+  }
+  return normalized;
 }
 
 function formControlField(config: unknown): string {

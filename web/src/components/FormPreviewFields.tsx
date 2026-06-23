@@ -405,11 +405,12 @@ function RelationInput({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const filteredRows = useMemo(() => filterRelationRows(rows, searchQuery), [rows, searchQuery]);
+  const displayFieldNames = useMemo(() => relationDisplayFieldNames(relationTable, element.fields), [element.fields, relationTable]);
+  const filteredRows = useMemo(() => filterRelationRows(rows, searchQuery, displayFieldNames), [displayFieldNames, rows, searchQuery]);
   const gridRows = useMemo(() => filteredRows.map(rowRecordToValues), [filteredRows]);
   const gridColumns = useMemo(
-    () => buildRelationGridColumns(relationTable, value, onChange, setOpen, t),
-    [onChange, relationTable, t, value]
+    () => buildRelationGridColumns(displayFieldNames, value, onChange, setOpen, t),
+    [displayFieldNames, onChange, t, value]
   );
 
   useEffect(() => {
@@ -457,7 +458,7 @@ function RelationInput({
   }, [open]);
 
   const selectedRow = useMemo(() => rows.find((row) => String(row.record_id) === value), [rows, value]);
-  const selectedLabel = selectedRow ? relationRowLabel(selectedRow, relationTable) : value ? t("form.selectedRecord", { id: value }) : "";
+  const selectedLabel = selectedRow ? relationRowLabel(selectedRow, displayFieldNames) : value ? t("form.selectedRecord", { id: value }) : "";
 
   return (
     <div className="field-stack">
@@ -518,27 +519,25 @@ function RelationInput({
   );
 }
 
-function filterRelationRows(rows: RowRecord[], searchQuery: string): RowRecord[] {
+function filterRelationRows(rows: RowRecord[], searchQuery: string, fieldNames: string[]): RowRecord[] {
   const query = searchQuery.trim().toLocaleLowerCase();
   if (!query) {
     return rows;
   }
   return rows.filter((row) =>
-    [row.record_id, ...Object.keys(row.values), ...Object.values(row.values)].some((value) =>
+    [row.record_id, ...fieldNames, ...fieldNames.map((fieldName) => row.values[fieldName])].some((value) =>
       String(value ?? "").toLocaleLowerCase().includes(query)
     )
   );
 }
 
 function buildRelationGridColumns(
-  relationTable: TableMetadata | undefined,
+  fieldNames: string[],
   value: string,
   onChange: (value: string) => void,
   setOpen: (open: boolean) => void,
   t: ReturnType<typeof useTranslation>["t"]
 ): Column<TableGridRow>[] {
-  const metadataFieldNames = relationTable?.fields.filter((field) => !field.deleted).map((field) => field.name) ?? [];
-  const fieldNames = metadataFieldNames;
   const selectColumn: Column<TableGridRow> = {
     key: "__select__",
     name: "",
@@ -572,8 +571,16 @@ function buildRelationGridColumns(
   ];
 }
 
-function relationRowLabel(row: RowRecord, relationTable?: TableMetadata): string {
-  const fieldNames = relationTable?.fields.filter((field) => !field.deleted).map((field) => field.name) ?? [];
+function relationDisplayFieldNames(relationTable: TableMetadata | undefined, configuredFields: string[] | undefined): string[] {
+  const metadataFieldNames = relationTable?.fields.filter((field) => !field.deleted).map((field) => field.name) ?? [];
+  if (!configuredFields) {
+    return metadataFieldNames;
+  }
+  const availableFields = new Set(metadataFieldNames);
+  return configuredFields.filter((fieldName) => availableFields.has(fieldName));
+}
+
+function relationRowLabel(row: RowRecord, fieldNames: string[]): string {
   const firstValue = fieldNames
     .map((fieldName) => row.values[fieldName])
     .find((value) => value !== undefined && value !== null && String(value).trim() !== "");

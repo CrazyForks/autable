@@ -2,6 +2,8 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { listRows } from "../api";
+import type { TableMetadata } from "../api";
 import i18n from "../i18n";
 import type { BarcodeScanResult } from "../hooks/useBarcodeScanner";
 import { FormPreviewFields } from "./FormPreviewFields";
@@ -27,8 +29,13 @@ vi.mock("../hooks/useBarcodeScanner", () => ({
   }
 }));
 
+vi.mock("../api", () => ({
+  listRows: vi.fn()
+}));
+
 beforeEach(async () => {
   latestScannerOptions = undefined;
+  vi.mocked(listRows).mockReset();
   await i18n.changeLanguage("en-US");
 });
 
@@ -117,5 +124,100 @@ describe("FormPreviewFields", () => {
     expect(onFormValueChange).toHaveBeenCalledWith("asset_code", "ASSET-001");
     expect(onAction).toHaveBeenCalledWith("change_asset_code", { asset_code: "ASSET-001" });
     await waitFor(() => expect(screen.queryByText("Detected value")).not.toBeInTheDocument());
+  });
+
+  it("uses relation display fields for picker columns, labels, and search", async () => {
+    const user = userEvent.setup();
+    const onFormValueChange = vi.fn();
+    const relationTable: TableMetadata = {
+      name: "purchase_requests",
+      display_name: "Purchase requests",
+      fields: [
+        { name: "request_no", type: "string", deleted: false },
+        { name: "vendor", type: "string", deleted: false },
+        { name: "internal_note", type: "string", deleted: false }
+      ],
+      views: []
+    };
+    vi.mocked(listRows).mockResolvedValue([
+      {
+        record_id: 1,
+        values: {
+          request_no: "PR-001",
+          vendor: "Acme",
+          internal_note: "hidden match"
+        }
+      },
+      {
+        record_id: 2,
+        values: {
+          request_no: "PR-002",
+          vendor: "Globex",
+          internal_note: "private"
+        }
+      }
+    ]);
+
+    const { rerender } = render(
+      <FluentProvider theme={webLightTheme}>
+        <FormPreviewFields
+          databaseName="workspace"
+          elements={[
+            {
+              kind: "relation",
+              field: "purchase_request",
+              label: "Purchase request",
+              table: "purchase_requests",
+              view: "without_logistics",
+              fields: ["request_no", "vendor"]
+            }
+          ]}
+          formValues={{}}
+          onAction={vi.fn()}
+          onFormValueChange={onFormValueChange}
+          tables={[relationTable]}
+        />
+      </FluentProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: "Choose" }));
+    expect(await screen.findByText("PR-001")).toBeInTheDocument();
+    expect(screen.getByRole("grid", { name: "Relation records" })).toHaveAttribute("aria-colcount", "3");
+    expect(screen.queryByText("hidden match")).not.toBeInTheDocument();
+    expect(screen.queryByText("internal_note")).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search relation records" }), "Acme");
+    expect(await screen.findByText("PR-001")).toBeInTheDocument();
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search relation records" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search relation records" }), "hidden");
+    expect(await screen.findByText("No matching records")).toBeInTheDocument();
+    expect(screen.queryByText("PR-001")).not.toBeInTheDocument();
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search relation records" }));
+    await user.click(await screen.findByText("PR-002"));
+    expect(onFormValueChange).toHaveBeenCalledWith("purchase_request", "2");
+
+    rerender(
+      <FluentProvider theme={webLightTheme}>
+        <FormPreviewFields
+          databaseName="workspace"
+          elements={[
+            {
+              kind: "relation",
+              field: "purchase_request",
+              label: "Purchase request",
+              table: "purchase_requests",
+              fields: ["request_no", "vendor"]
+            }
+          ]}
+          formValues={{ purchase_request: "2" }}
+          onAction={vi.fn()}
+          onFormValueChange={vi.fn()}
+          tables={[relationTable]}
+        />
+      </FluentProvider>
+    );
+    expect(await screen.findByDisplayValue("PR-002")).toBeInTheDocument();
   });
 });

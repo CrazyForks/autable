@@ -65,10 +65,16 @@ describe("renderFormScript", () => {
     expect(missingConfigResult.error).toContain("form controls require field");
   });
 
-  it("supports relation inputs with a target table and view", () => {
+  it("supports relation inputs with a target table, view, and display fields", () => {
     const result = renderFormScript(`
       function render(api, root) {
-        root.append(api.relation({ field: "owner", label: "Owner", table: "users", view: "active" }), api.submit("Submit"));
+        root.append(api.relation({
+          field: "owner",
+          label: "Owner",
+          table: "users",
+          view: "active",
+          fields: ["name", "email", "name", ""]
+        }), api.submit("Submit"));
         return { table: "tasks" };
       }
     `);
@@ -76,7 +82,7 @@ describe("renderFormScript", () => {
     expect(result.error).toBeUndefined();
     expect(result.fields).toEqual({ owner: "owner" });
     expect(result.elements).toEqual([
-      { kind: "relation", field: "owner", label: "Owner", table: "users", view: "active" },
+      { kind: "relation", field: "owner", label: "Owner", table: "users", view: "active", fields: ["name", "email"] },
       { kind: "submit", id: "submit", label: "Submit", actionID: "submit" }
     ]);
   });

@@ -59,6 +59,7 @@ describe("editorTypes", () => {
     expect(content).toContain("type AutableFormScannerConfig = { confirm?: boolean }");
     expect(content).toContain("scanner?: boolean | AutableFormScannerConfig");
     expect(content).toContain("relation(config:");
+    expect(content).toContain("fields?: string[]");
     expect(content).toContain("function stableStringify(value: unknown): string;");
     expect(content).toContain("function render(api: AutableFormAPI, root: AutableFormRoot): AutableFormDefinition");
   });
