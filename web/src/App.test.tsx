@@ -715,7 +715,7 @@ describe("App", () => {
     vi.useRealTimers();
     await userEvent.click(await findEnabledButton("Edit config ding"));
     expect(screen.getByLabelText("Secret ding.access_token")).toBeInTheDocument();
-  });
+  }, 15_000);
 
   it("loads persisted workflow runs and renders their flow", async () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {

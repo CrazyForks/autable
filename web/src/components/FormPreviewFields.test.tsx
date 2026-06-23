@@ -185,16 +185,17 @@ describe("FormPreviewFields", () => {
     expect(screen.getByRole("grid", { name: "Relation records" })).toHaveAttribute("aria-colcount", "3");
     expect(screen.queryByText("hidden match")).not.toBeInTheDocument();
     expect(screen.queryByText("internal_note")).not.toBeInTheDocument();
+    const relationSearch = await screen.findByRole("searchbox", { name: "Search relation records" });
 
-    await user.type(screen.getByRole("searchbox", { name: "Search relation records" }), "Acme");
+    await user.type(relationSearch, "Acme");
     expect(await screen.findByText("PR-001")).toBeInTheDocument();
 
-    await user.clear(screen.getByRole("searchbox", { name: "Search relation records" }));
-    await user.type(screen.getByRole("searchbox", { name: "Search relation records" }), "hidden");
+    await user.clear(relationSearch);
+    await user.type(relationSearch, "hidden");
     expect(await screen.findByText("No matching records")).toBeInTheDocument();
     expect(screen.queryByText("PR-001")).not.toBeInTheDocument();
 
-    await user.clear(screen.getByRole("searchbox", { name: "Search relation records" }));
+    await user.clear(relationSearch);
     await user.click(await screen.findByText("PR-002"));
     expect(onFormValueChange).toHaveBeenCalledWith("purchase_request", "2");
 
