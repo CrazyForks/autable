@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mattn/go-sqlite3"
@@ -85,7 +86,11 @@ func sqliteReadOnlyDSN(path string) string {
 	if err != nil {
 		absolutePath = path
 	}
-	u := url.URL{Scheme: "file", Path: absolutePath}
+	uriPath := filepath.ToSlash(absolutePath)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
 	q := u.Query()
 	q.Set("mode", "ro")
 	q.Set("_busy_timeout", "5000")

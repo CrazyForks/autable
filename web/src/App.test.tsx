@@ -216,6 +216,10 @@ async function findEnabledButton(name: string | RegExp) {
   return button;
 }
 
+async function findDialog(name: string | RegExp) {
+  return screen.findByRole("dialog", { name }, { timeout: 5000 });
+}
+
 describe("App", () => {
   it("renders the unselected default page at root", async () => {
     renderApp("/");
@@ -599,7 +603,7 @@ describe("App", () => {
       'info.instance("review_echo").exec'
     ));
     await userEvent.click(await findEnabledButton("Workflow nodes"));
-    expect(await screen.findByRole("dialog", { name: "Workflow node catalog" })).toBeInTheDocument();
+    expect(await findDialog("Workflow node catalog")).toBeInTheDocument();
     expect(screen.getAllByText("dingtalk.robot.send").length).toBeGreaterThan(0);
     expect(screen.getAllByText("DingTalk robot").length).toBeGreaterThan(0);
     expect(screen.getByText(/DingTalk custom robot access token/)).toBeInTheDocument();
@@ -607,15 +611,17 @@ describe("App", () => {
     expect(screen.getByText("Record changed")).toBeInTheDocument();
     expect(screen.getByText(/run\(info\)\.inputs/)).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Workflow node catalog" })).not.toBeInTheDocument());
     await act(async () => {
       await i18n.changeLanguage("zh-CN");
     });
     await userEvent.click(await findEnabledButton("工作流节点"));
-    expect(await screen.findByRole("dialog", { name: "工作流节点目录" })).toBeInTheDocument();
+    expect(await findDialog("工作流节点目录")).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "dingtalk.robot.send" }));
     expect(screen.getByText("钉钉机器人")).toBeInTheDocument();
     expect(screen.getByText(/钉钉自定义机器人的 access token/)).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "工作流节点目录" })).not.toBeInTheDocument());
     await act(async () => {
       await i18n.changeLanguage("en-US");
     });
