@@ -70,24 +70,7 @@ func OpenOrCloneGitRepository(ctx context.Context, options GitOptions) (*GitRepo
 		if err := os.MkdirAll(filepath.Dir(options.Path), 0o755); err != nil {
 			return nil, err
 		}
-		repo, err := git.PlainCloneContext(ctx, options.Path, false, &git.CloneOptions{
-			URL:           cleanURL,
-			Auth:          auth,
-			RemoteName:    "origin",
-			ReferenceName: branchRef,
-			SingleBranch:  true,
-		})
-		if errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			if removeErr := os.RemoveAll(options.Path); removeErr != nil {
-				return nil, removeErr
-			}
-			repo, err = git.PlainInitWithOptions(options.Path, &git.PlainInitOptions{
-				InitOptions: git.InitOptions{DefaultBranch: branchRef},
-			})
-			if err == nil {
-				err = setOrigin(repo, cleanURL)
-			}
-		}
+		repo, err := cloneOrInitRepository(ctx, options.Path, cleanURL, branchRef, auth)
 		if err != nil {
 			return nil, maskGitError(err, options.RemoteURL)
 		}
@@ -102,6 +85,21 @@ func OpenOrCloneGitRepository(ctx context.Context, options GitOptions) (*GitRepo
 	}
 	repo, err := git.PlainOpen(options.Path)
 	if err != nil {
+		empty, emptyErr := isEmptyDir(options.Path)
+		if emptyErr != nil {
+			return nil, emptyErr
+		}
+		if empty {
+			repo, err = cloneOrInitRepository(ctx, options.Path, cleanURL, branchRef, auth)
+			if err != nil {
+				return nil, maskGitError(err, options.RemoteURL)
+			}
+			gitRepo := &GitRepository{path: options.Path, remoteURL: cleanURL, remoteBranch: options.RemoteBranch, auth: auth, repo: repo}
+			if err := gitRepo.ensureBranch(); err != nil {
+				return nil, maskGitError(err, options.RemoteURL)
+			}
+			return gitRepo, nil
+		}
 		return nil, fmt.Errorf("repository path %q is not a git worktree: %w", options.Path, err)
 	}
 	if err := setOrigin(repo, cleanURL); err != nil {
@@ -112,6 +110,36 @@ func OpenOrCloneGitRepository(ctx context.Context, options GitOptions) (*GitRepo
 		return nil, maskGitError(err, options.RemoteURL)
 	}
 	return gitRepo, nil
+}
+
+func cloneOrInitRepository(ctx context.Context, path string, remoteURL string, branchRef plumbing.ReferenceName, auth transport.AuthMethod) (*git.Repository, error) {
+	repo, err := git.PlainCloneContext(ctx, path, false, &git.CloneOptions{
+		URL:           remoteURL,
+		Auth:          auth,
+		RemoteName:    "origin",
+		ReferenceName: branchRef,
+		SingleBranch:  true,
+	})
+	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		if removeErr := os.RemoveAll(path); removeErr != nil {
+			return nil, removeErr
+		}
+		repo, err = git.PlainInitWithOptions(path, &git.PlainInitOptions{
+			InitOptions: git.InitOptions{DefaultBranch: branchRef},
+		})
+		if err == nil {
+			err = setOrigin(repo, remoteURL)
+		}
+	}
+	return repo, err
+}
+
+func isEmptyDir(path string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 0, nil
 }
 
 func (repo *GitRepository) CommitAndPush(ctx context.Context, options CommitOptions) (string, bool, error) {

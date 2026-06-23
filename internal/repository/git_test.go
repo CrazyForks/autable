@@ -38,6 +38,26 @@ func TestEnsureGitRepositoryClonesMissingPath(t *testing.T) {
 	}
 }
 
+func TestEnsureGitRepositoryClonesExistingEmptyPath(t *testing.T) {
+	ctx := context.Background()
+	remote := newBareRemote(t)
+	target := filepath.Join(t.TempDir(), "repository")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureGitRepository(ctx, GitOptions{
+		Path:         target,
+		RemoteURL:    remote,
+		RemoteBranch: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+		t.Fatalf("expected cloned git repository in existing empty directory: %v", err)
+	}
+}
+
 func TestEnsureGitRepositorySupportsEmptyRemote(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -59,6 +79,34 @@ func TestEnsureGitRepositorySupportsEmptyRemote(t *testing.T) {
 	}
 	if strings.TrimSpace(string(head)) != "ref: refs/heads/main" {
 		t.Fatalf("expected empty clone HEAD to target main, got %q", head)
+	}
+}
+
+func TestEnsureGitRepositorySupportsExistingEmptyPathWithEmptyRemote(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	remote := filepath.Join(root, "empty.git")
+	if _, err := git.PlainInit(remote, true); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "repository")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureGitRepository(ctx, GitOptions{
+		Path:         target,
+		RemoteURL:    remote,
+		RemoteBranch: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	head, err := os.ReadFile(filepath.Join(target, ".git", "HEAD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(head)) != "ref: refs/heads/main" {
+		t.Fatalf("expected empty existing path HEAD to target main, got %q", head)
 	}
 }
 

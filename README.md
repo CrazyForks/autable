@@ -78,12 +78,13 @@ Run the published Docker image:
 ```sh
 docker run --rm \
   -p 8080:8080 \
+  -v "$PWD/config.yml:/etc/autable/config.yml:ro" \
   -v autable-data:/data \
   -v autable-repository:/repository \
   ghcr.io/autable/autable:latest
 ```
 
-The container uses `/etc/autable/config.yml` by default, listens on `0.0.0.0:8080`, stores runtime data under `/data`, and stores user-authored metadata/workflows/forms under `/repository`.
+The container uses `/etc/autable/config.yml`, listens on `0.0.0.0:8080`, stores runtime data under `/data`, and stores user-authored metadata/workflows/forms under `/repository`. Mount a config file that sets `repository.remote_url` and `repository.remote_branch`; an empty `/repository` volume is initialized by cloning the remote, or by creating the local branch when the remote repository is empty.
 
 Run the frontend:
 
