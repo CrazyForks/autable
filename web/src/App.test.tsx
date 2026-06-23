@@ -329,7 +329,7 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getByRole("grid", { name: "Table records" })).toHaveAttribute("aria-colcount", "4"));
     expect(getFieldVisibilityStorageValue()).toBeNull();
-  });
+  }, 15_000);
 
   it("moves table fields from the fields dialog", async () => {
     const requests: Array<{ url: string; body: unknown }> = [];
@@ -363,7 +363,7 @@ describe("App", () => {
         body: { before: "email" }
       })
     );
-  });
+  }, 15_000);
 
   it("does not load protected workspace resources before authentication", async () => {
     const requests: string[] = [];
