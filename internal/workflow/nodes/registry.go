@@ -6,6 +6,7 @@ import (
 	"autable/internal/workflow/nodes/autable"
 	"autable/internal/workflow/nodes/dingtalk/notable/listrecords"
 	"autable/internal/workflow/nodes/dingtalk/robot"
+	batchsendoto "autable/internal/workflow/nodes/dingtalk/robot/batchsendoto"
 	"autable/internal/workflow/nodes/echo"
 	githubcontent "autable/internal/workflow/nodes/github/file/content"
 	"autable/internal/workflow/nodes/table/field"
@@ -30,6 +31,7 @@ func All(deps Dependencies) []workflow.Node {
 		schedule.Node{},
 		robot.NewNode(),
 		listrecords.NewNode(),
+		batchsendoto.NewNode(),
 		githubcontent.NewNode(),
 	}
 	nodes = append(nodes, AutableNodes(deps.Autable)...)

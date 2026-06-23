@@ -2939,6 +2939,7 @@ func TestWorkflowNodesAPI(t *testing.T) {
 	}
 	expectedTypes := []string{
 		"dingtalk.notable.records.list",
+		"dingtalk.robot.oto.batch_send",
 		"dingtalk.robot.send",
 		"echo",
 		"github.file.content.get",
@@ -2973,6 +2974,16 @@ func TestWorkflowNodesAPI(t *testing.T) {
 	}
 	if len(dingtalk.Secrets) != 1 || dingtalk.Secrets[0].Name != "access_token" {
 		t.Fatalf("expected dingtalk node secrets: %#v", dingtalk)
+	}
+	dingtalkRobotOTO := byType["dingtalk.robot.oto.batch_send"]
+	if len(dingtalkRobotOTO.Inputs) != 3 || dingtalkRobotOTO.Inputs[0].Name != "userIds" || dingtalkRobotOTO.Inputs[1].Name != "msgKey" || dingtalkRobotOTO.Inputs[2].Name != "msgParam" {
+		t.Fatalf("expected dingtalk robot OTO node inputs: %#v", dingtalkRobotOTO)
+	}
+	if len(dingtalkRobotOTO.Variables) != 1 || dingtalkRobotOTO.Variables[0].Name != "robot_code" {
+		t.Fatalf("expected dingtalk robot OTO node variables: %#v", dingtalkRobotOTO)
+	}
+	if len(dingtalkRobotOTO.Secrets) != 2 || dingtalkRobotOTO.Secrets[0].Name != "app_key" || dingtalkRobotOTO.Secrets[1].Name != "app_secret" {
+		t.Fatalf("expected dingtalk robot OTO node secrets: %#v", dingtalkRobotOTO)
 	}
 	fieldCreate := byType["table.field.create"]
 	if len(fieldCreate.Inputs) != 3 || fieldCreate.Inputs[0].Name != "database" || fieldCreate.Inputs[2].Name != "fields" {
