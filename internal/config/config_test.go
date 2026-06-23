@@ -93,3 +93,22 @@ func TestValidateOIDCProvidersOnlyWhenEnabled(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+func TestValidateRequiresBackupBucketWhenEnabled(t *testing.T) {
+	cfg := Config{
+		Data:       DataConfig{Path: "./data"},
+		Repository: RepositoryConfig{Path: "./repo", RemoteURL: "https://example.com/repo.git", RemoteBranch: "main"},
+		Backup:     BackupConfig{Enabled: true},
+		Auth: AuthConfig{
+			Password: PasswordAuthConfig{Enabled: true},
+		},
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected validation error")
+	}
+	cfg.Backup.S3.Bucket = "autable-backups"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}

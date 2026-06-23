@@ -13,6 +13,7 @@ type Config struct {
 	Server     ServerConfig     `yaml:"server"`
 	Data       DataConfig       `yaml:"data"`
 	Repository RepositoryConfig `yaml:"repository"`
+	Backup     BackupConfig     `yaml:"backup"`
 	Auth       AuthConfig       `yaml:"auth"`
 }
 
@@ -36,6 +37,24 @@ type RepositorySyncConfig struct {
 	PushTimeout string `yaml:"push_timeout"`
 	AuthorName  string `yaml:"author_name"`
 	AuthorEmail string `yaml:"author_email"`
+}
+
+type BackupConfig struct {
+	Enabled        bool           `yaml:"enabled"`
+	Interval       string         `yaml:"interval"`
+	IncludeLevelDB bool           `yaml:"include_leveldb"`
+	TmpDir         string         `yaml:"tmp_dir"`
+	S3             BackupS3Config `yaml:"s3"`
+}
+
+type BackupS3Config struct {
+	Endpoint        string `yaml:"endpoint"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	Prefix          string `yaml:"prefix"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	ForcePathStyle  bool   `yaml:"force_path_style"`
 }
 
 type AuthConfig struct {
@@ -89,6 +108,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Repository.RemoteBranch == "" {
 		return errors.New("repository.remote_branch is required")
+	}
+	if cfg.Backup.Enabled && cfg.Backup.S3.Bucket == "" {
+		return errors.New("backup.s3.bucket is required when backup.enabled is true")
 	}
 	if !cfg.Auth.Password.Enabled && !cfg.Auth.OIDC.Enabled {
 		return errors.New("at least one auth method is required")

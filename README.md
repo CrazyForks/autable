@@ -103,4 +103,22 @@ npm run build
 npm run e2e
 ```
 
-SQLite files and LevelDB directories must be backed up by users/operators. The project will keep generated data out of git while keeping user-authored metadata, workflows, forms, and config files in git.
+Autable can upload scheduled backups to S3-compatible storage. SQLite databases are copied with SQLite's online backup API, so the service does not need to stop while a backup is created. LevelDB history is optional and is exported through a consistent snapshot when `backup.include_leveldb` is enabled:
+
+```yaml
+backup:
+  enabled: true
+  interval: "24h"
+  include_leveldb: false
+  tmp_dir: "/tmp/autable-backups"
+  s3:
+    endpoint: "https://s3.example.com"
+    region: "us-east-1"
+    bucket: "autable-backups"
+    prefix: "prod/autable"
+    access_key_id: "..."
+    secret_access_key: "..."
+    force_path_style: true
+```
+
+The project keeps generated runtime data out of git while keeping user-authored metadata, workflows, and forms in the configured repository remote.

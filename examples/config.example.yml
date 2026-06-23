@@ -11,6 +11,19 @@ repository:
     push_timeout: "30s"
     author_name: "autable"
     author_email: "autable@example.local"
+backup:
+  enabled: false
+  interval: "24h"
+  include_leveldb: false
+  tmp_dir: "./data/backups-tmp"
+  s3:
+    endpoint: "https://s3.example.com"
+    region: "us-east-1"
+    bucket: "autable-backups"
+    prefix: "autable"
+    access_key_id: "replace-me"
+    secret_access_key: "replace-me"
+    force_path_style: true
 auth:
   password:
     enabled: true

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"autable/internal/api"
+	"autable/internal/backup"
 	"autable/internal/codefiles"
 	"autable/internal/config"
 	"autable/internal/history"
@@ -100,6 +101,36 @@ func run(ctx context.Context, configPath string) error {
 		Summary: "started repository sync",
 		Paths:   []string{metadataPath},
 	})
+	if cfg.Backup.Enabled {
+		s3Uploader, err := backup.NewS3Uploader(ctx, backup.S3Options{
+			Endpoint:        cfg.Backup.S3.Endpoint,
+			Region:          cfg.Backup.S3.Region,
+			Bucket:          cfg.Backup.S3.Bucket,
+			AccessKeyID:     cfg.Backup.S3.AccessKeyID,
+			SecretAccessKey: cfg.Backup.S3.SecretAccessKey,
+			ForcePathStyle:  cfg.Backup.S3.ForcePathStyle,
+		})
+		if err != nil {
+			return err
+		}
+		backupService := backup.NewService(backup.Options{
+			DataPath:       cfg.Data.Path,
+			RepositoryPath: cfg.Repository.Path,
+			Catalog:        catalog,
+			IncludeLevelDB: cfg.Backup.IncludeLevelDB,
+			TmpDir:         cfg.Backup.TmpDir,
+			ObjectPrefix:   cfg.Backup.S3.Prefix,
+			Uploader:       s3Uploader,
+		}, configDuration(cfg.Backup.Interval, 24*time.Hour), historyStore)
+		backupService.Start(ctx)
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := backupService.Stop(shutdownCtx); err != nil {
+				slog.Warn("backup service shutdown failed", "error", err)
+			}
+		}()
+	}
 	server := api.NewServerWithAuthConfig(
 		catalog,
 		system,

@@ -67,3 +67,27 @@ func (store *LevelDBStore) GetPrefix(ctx context.Context, prefix string) ([]Entr
 	}
 	return entries, nil
 }
+
+func (store *LevelDBStore) ForEachSnapshot(ctx context.Context, visit func(key []byte, value []byte) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	snapshot, err := store.db.GetSnapshot()
+	if err != nil {
+		return err
+	}
+	defer snapshot.Release()
+
+	iter := snapshot.NewIterator(nil, nil)
+	defer iter.Release()
+
+	for iter.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := visit(append([]byte(nil), iter.Key()...), append([]byte(nil), iter.Value()...)); err != nil {
+			return err
+		}
+	}
+	return iter.Error()
+}
