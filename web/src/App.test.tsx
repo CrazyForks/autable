@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -220,6 +220,16 @@ async function findDialog(name: string | RegExp) {
   return screen.findByRole("dialog", { name }, { timeout: 5000 });
 }
 
+function getFieldVisibilityStorageValue() {
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key?.startsWith("autable.fieldVisibility:")) {
+      return window.localStorage.getItem(key);
+    }
+  }
+  return null;
+}
+
 describe("App", () => {
   it("renders the unselected default page at root", async () => {
     renderApp("/");
@@ -301,6 +311,60 @@ describe("App", () => {
       const rowRequests = requests.filter((url) => url.startsWith("/api/tables/workspace/contacts/rows"));
       expect(rowRequests.at(-1)).toBe("/api/tables/workspace/contacts/rows");
     });
+  });
+
+  it("stores hidden table fields locally", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForDefaultTableReady();
+    expect(screen.getByRole("grid", { name: "Table records" })).toHaveAttribute("aria-colcount", "4");
+
+    await user.click(await findEnabledButton("Fields"));
+    const dialog = await findDialog("Fields");
+    await user.click(within(dialog).getByRole("button", { name: "Hide email" }));
+
+    await waitFor(() => expect(screen.getByRole("grid", { name: "Table records" })).toHaveAttribute("aria-colcount", "3"));
+    expect(getFieldVisibilityStorageValue()).toBe(JSON.stringify(["email"]));
+
+    await user.click(within(dialog).getByRole("button", { name: "Show email" }));
+
+    await waitFor(() => expect(screen.getByRole("grid", { name: "Table records" })).toHaveAttribute("aria-colcount", "4"));
+    expect(getFieldVisibilityStorageValue()).toBeNull();
+  });
+
+  it("moves table fields from the fields dialog", async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/databases/workspace/tables/contacts/fields/status/position" && init?.method === "PATCH") {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        return jsonResponse(catalogFixture.databases[0].tables[0]);
+      }
+      return defaultFetch(input, init);
+    });
+
+    const user = userEvent.setup();
+    renderApp();
+    await waitForDefaultTableReady();
+    await user.click(await findEnabledButton("Fields"));
+    const dialog = await findDialog("Fields");
+    const dragData = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: "",
+      getData: (format: string) => dragData.get(format) ?? "",
+      setData: (format: string, value: string) => dragData.set(format, value)
+    };
+
+    fireEvent.dragStart(within(dialog).getByRole("button", { name: "Drag status" }), { dataTransfer });
+    fireEvent.dragOver(within(dialog).getByRole("listitem", { name: "Field email" }), { dataTransfer });
+    fireEvent.drop(within(dialog).getByRole("listitem", { name: "Field email" }), { dataTransfer });
+
+    await waitFor(() =>
+      expect(requests).toContainEqual({
+        url: "/api/databases/workspace/tables/contacts/fields/status/position",
+        body: { before: "email" }
+      })
+    );
   });
 
   it("does not load protected workspace resources before authentication", async () => {

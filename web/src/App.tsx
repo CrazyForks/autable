@@ -726,6 +726,7 @@ function WorkspaceApp() {
             (table.name ? (
             <TableWorkspace
               columns={tableWorkspace.columns}
+              databaseName={database.name}
               displayedRows={tableWorkspace.displayedRows}
               newFieldFormula={tableWorkspace.newFieldFormula}
               newFieldName={tableWorkspace.newFieldName}

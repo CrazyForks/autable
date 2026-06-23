@@ -561,6 +561,74 @@ select {
   gap: 8px;
 }
 
+.field-settings-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.field-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(560px, calc(100vh - 220px));
+  overflow: auto;
+}
+
+.field-settings-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--colorNeutralStroke2);
+  border-radius: 6px;
+  background: var(--colorNeutralBackground1);
+}
+
+.field-settings-row.is-dragging {
+  opacity: 0.58;
+}
+
+.field-settings-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--colorNeutralForeground3);
+  background: transparent;
+  cursor: grab;
+}
+
+.field-settings-drag-handle:hover {
+  background: var(--colorNeutralBackground1Hover);
+  color: var(--colorNeutralForeground1);
+}
+
+.field-settings-drag-handle:disabled {
+  color: var(--colorNeutralForegroundDisabled);
+  cursor: default;
+}
+
+.field-settings-drag-handle:active {
+  cursor: grabbing;
+}
+
+.field-settings-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.field-settings-actions {
+  display: grid;
+  grid-template-columns: 32px;
+}
+
 .view-filter-popover {
   width: min(860px, calc(100vw - 48px));
   max-height: min(720px, calc(100vh - 96px));

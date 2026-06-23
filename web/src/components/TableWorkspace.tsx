@@ -1,5 +1,11 @@
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   Field as FluentField,
   Input,
   Menu,
@@ -21,12 +27,16 @@ import {
 } from "@fluentui/react-components";
 import {
   AddRegular,
+  ColumnRegular,
   DeleteRegular,
   DismissRegular,
   EditRegular,
+  EyeOffRegular,
+  EyeRegular,
   FilterRegular,
   HistoryRegular,
   MoreHorizontalRegular,
+  ReOrderDotsVerticalRegular,
   SaveRegular,
   TriangleDownFilled,
   TriangleDownRegular,
@@ -43,6 +53,7 @@ import { RecordDataGrid } from "./RecordDataGrid";
 
 type TableWorkspaceProps = {
   columns: Column<TableGridRow>[];
+  databaseName: string;
   displayedRows: TableGridRow[];
   openViewPanelRequest: number;
   onAddRow: () => void;
@@ -91,6 +102,7 @@ type TableWorkspaceProps = {
 
 export function TableWorkspace({
   columns,
+  databaseName,
   displayedRows,
   openViewPanelRequest,
   onAddRow,
@@ -147,6 +159,11 @@ export function TableWorkspace({
   const [recordPanelOpen, setRecordPanelOpen] = useState(false);
   const [recordPanelTab, setRecordPanelTab] = useState<"details" | "history">("details");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [fieldSettingsOpen, setFieldSettingsOpen] = useState(false);
+  const [fieldVisibilityState, setFieldVisibilityState] = useState<{ key: string; hiddenFieldNames: string[] }>({
+    key: "",
+    hiddenFieldNames: []
+  });
   const [recordMenu, setRecordMenu] = useState<{ x: number; y: number; recordID: number } | null>(null);
   const [fieldCreator, setFieldCreator] = useState<{ x: number; y: number } | null>(null);
   const [formulaEditor, setFormulaEditor] = useState<{ x: number; y: number; fieldName: string; formula: string } | null>(null);
@@ -182,9 +199,51 @@ export function TableWorkspace({
         : undefined,
     [formulaEditor]
   );
+  const activeFieldNameKey = useMemo(() => activeFields.map((field) => field.name).join("\u0000"), [activeFields]);
+  const fieldVisibilityStorageKey = useMemo(
+    () => createFieldVisibilityStorageKey(databaseName, table.name, selectedTableView),
+    [databaseName, table.name, selectedTableView]
+  );
+  const hiddenFieldNames = fieldVisibilityState.key === fieldVisibilityStorageKey
+    ? fieldVisibilityState.hiddenFieldNames
+    : [];
+  const hiddenFieldNameSet = useMemo(() => new Set(hiddenFieldNames), [hiddenFieldNames]);
+
+  useEffect(() => {
+    const activeFieldNames = activeFieldNameKey ? activeFieldNameKey.split("\u0000") : [];
+    setFieldVisibilityState({
+      key: fieldVisibilityStorageKey,
+      hiddenFieldNames: readHiddenFieldNames(fieldVisibilityStorageKey, activeFieldNames)
+    });
+  }, [activeFieldNameKey, fieldVisibilityStorageKey]);
+
+  useEffect(() => {
+    if (fieldVisibilityState.key !== fieldVisibilityStorageKey) {
+      return;
+    }
+    const activeFieldNames = activeFieldNameKey ? activeFieldNameKey.split("\u0000") : [];
+    writeHiddenFieldNames(fieldVisibilityStorageKey, fieldVisibilityState.hiddenFieldNames, activeFieldNames);
+  }, [activeFieldNameKey, fieldVisibilityState, fieldVisibilityStorageKey]);
+
+  function toggleFieldVisibility(fieldName: string) {
+    const activeFieldNames = activeFieldNameKey ? activeFieldNameKey.split("\u0000") : [];
+    setFieldVisibilityState((current) => {
+      const currentHidden = current.key === fieldVisibilityStorageKey
+        ? current.hiddenFieldNames
+        : readHiddenFieldNames(fieldVisibilityStorageKey, activeFieldNames);
+      const nextHidden = currentHidden.includes(fieldName)
+        ? currentHidden.filter((name) => name !== fieldName)
+        : [...currentHidden, fieldName];
+      return {
+        key: fieldVisibilityStorageKey,
+        hiddenFieldNames: nextHidden.filter((name) => activeFieldNames.includes(name))
+      };
+    });
+  }
+
   const gridColumns = useMemo(
     () => {
-      const fieldColumns = columns.map((column) => {
+      const fieldColumns = columns.filter((column) => !hiddenFieldNameSet.has(String(column.key))).map((column) => {
         const field = activeFields.find((item) => item.name === column.key);
         if (!field) {
           return column;
@@ -251,6 +310,7 @@ export function TableWorkspace({
       canWriteDatabase,
       canWriteFields,
       columns,
+      hiddenFieldNameSet,
       onDeleteField,
       onNewFieldFormulaChange,
       onNewFieldNameChange,
@@ -322,6 +382,9 @@ export function TableWorkspace({
               />
             </PopoverSurface>
           </Popover>
+          <ToolbarButton icon={<ColumnRegular />} onClick={() => setFieldSettingsOpen(true)}>
+            {t("table.fields")}
+          </ToolbarButton>
           <ToolbarButton icon={<EditRegular />} onClick={() => openRecordPanel()} disabled={!selectedRecordID || !hasWritableFields}>
             {t("table.editRow")}
           </ToolbarButton>
@@ -363,6 +426,25 @@ export function TableWorkspace({
             }
           }}
         />
+        <Dialog open={fieldSettingsOpen} onOpenChange={(_, data) => setFieldSettingsOpen(data.open)}>
+          <DialogSurface className="field-settings-dialog">
+            <DialogBody>
+              <DialogTitle>{t("table.fieldSettings")}</DialogTitle>
+              <DialogContent>
+                <FieldSettingsList
+                  canWriteFields={canWriteFields}
+                  fields={activeFields}
+                  hiddenFieldNames={hiddenFieldNames}
+                  onMoveFieldPosition={onMoveFieldPosition}
+                  onToggleFieldVisibility={toggleFieldVisibility}
+                />
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setFieldSettingsOpen(false)}>{t("common.close")}</Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
         <Menu
           open={Boolean(recordMenu)}
           onOpenChange={(_, data) => {
@@ -577,6 +659,115 @@ export function TableWorkspace({
 
 function canWriteField(field: Field): boolean {
   return field.type !== "formula" && (field.permission_level ?? 2) >= 2;
+}
+
+function createFieldVisibilityStorageKey(databaseName: string, tableName: string, viewName: string): string {
+  return [
+    "autable.fieldVisibility",
+    encodeURIComponent(databaseName || "unknown"),
+    encodeURIComponent(tableName || "unknown"),
+    encodeURIComponent(viewName || "all")
+  ].join(":");
+}
+
+function readHiddenFieldNames(storageKey: string, activeFieldNames: string[]): string[] {
+  const activeFieldNameSet = new Set(activeFieldNames);
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]");
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((name): name is string => typeof name === "string" && activeFieldNameSet.has(name));
+  } catch {
+    return [];
+  }
+}
+
+function writeHiddenFieldNames(storageKey: string, hiddenFieldNames: string[], activeFieldNames: string[]) {
+  const activeFieldNameSet = new Set(activeFieldNames);
+  const nextHiddenFieldNames = hiddenFieldNames.filter((name) => activeFieldNameSet.has(name));
+  if (nextHiddenFieldNames.length === 0) {
+    window.localStorage.removeItem(storageKey);
+    return;
+  }
+  window.localStorage.setItem(storageKey, JSON.stringify(nextHiddenFieldNames));
+}
+
+function FieldSettingsList({
+  canWriteFields,
+  fields,
+  hiddenFieldNames,
+  onMoveFieldPosition,
+  onToggleFieldVisibility
+}: {
+  canWriteFields: boolean;
+  fields: Field[];
+  hiddenFieldNames: string[];
+  onMoveFieldPosition: (sourceFieldName: string, targetFieldName: string) => void | Promise<void>;
+  onToggleFieldVisibility: (fieldName: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [draggedFieldName, setDraggedFieldName] = useState("");
+  const hiddenFieldNameSet = new Set(hiddenFieldNames);
+  return (
+    <div className="field-settings-list" role="list">
+      {fields.map((field) => {
+        const hidden = hiddenFieldNameSet.has(field.name);
+        return (
+          <div
+            className={`field-settings-row${draggedFieldName === field.name ? " is-dragging" : ""}`}
+            key={field.name}
+            role="listitem"
+            aria-label={t("table.fieldSettingsRow", { name: field.name })}
+            onDragOver={(event) => {
+              if (canWriteFields && draggedFieldName && draggedFieldName !== field.name) {
+                event.preventDefault();
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const sourceFieldName = event.dataTransfer.getData("text/plain") || draggedFieldName;
+              setDraggedFieldName("");
+              if (canWriteFields && sourceFieldName && sourceFieldName !== field.name) {
+                void onMoveFieldPosition(sourceFieldName, field.name);
+              }
+            }}
+          >
+            <button
+              type="button"
+              className="field-settings-drag-handle"
+              aria-label={t("table.dragField", { name: field.name })}
+              draggable={canWriteFields}
+              disabled={!canWriteFields}
+              onDragStart={(event) => {
+                setDraggedFieldName(field.name);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", field.name);
+              }}
+              onDragEnd={() => setDraggedFieldName("")}
+            >
+              <ReOrderDotsVerticalRegular />
+            </button>
+            <div className="field-settings-main">
+              <Text weight="semibold" truncate>
+                {field.name}
+              </Text>
+              <Text size={200}>{field.type}</Text>
+            </div>
+            <div className="field-settings-actions">
+              <Button
+                appearance="subtle"
+                icon={hidden ? <EyeOffRegular /> : <EyeRegular />}
+                aria-label={hidden ? t("table.showField", { name: field.name }) : t("table.hideField", { name: field.name })}
+                aria-pressed={!hidden}
+                onClick={() => onToggleFieldVisibility(field.name)}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function RelationDrawer({
