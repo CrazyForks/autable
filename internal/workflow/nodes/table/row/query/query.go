@@ -1,4 +1,4 @@
-package listrow
+package query
 
 import (
 	"context"
@@ -17,9 +17,9 @@ func NewNode(service autable.Service) Node {
 
 func (node Node) Info() workflow.NodeInfo {
 	return workflow.NodeInfo{
-		Type:          "table.row.list",
-		DisplayName:   "List rows",
-		Description:   "Lists table rows through the server table API using the workflow creator permissions.",
+		Type:          "table.row.query",
+		DisplayName:   "Query rows",
+		Description:   "Queries table rows with view, filter, sort, and limit options through the server table API using the workflow creator permissions.",
 		Documentation: Documentation(),
 		Inputs: []workflow.Port{
 			{Name: "database", Type: "string"},

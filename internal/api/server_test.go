@@ -1765,6 +1765,53 @@ func TestWorkflowRowUpsertRequiresMatchValue(t *testing.T) {
 	}
 }
 
+func TestWorkflowRowQueryUsesPublicRowQueryOptions(t *testing.T) {
+	ctx := context.Background()
+	server, system := newTestServer(t)
+	saveTestGrants(t, system,
+		permission.Grant{SubjectID: "owner", Scope: permission.ScopeFieldSet, Resource: "db.contacts", Level: permission.Write},
+	)
+	saveTestRecordCreateGrant(t, system, "owner", "db.contacts")
+
+	autable := server.workflowAutableService()
+	for _, values := range []map[string]any{
+		{"name": "Ada", "email": "ada@example.com", "status": "active"},
+		{"name": "Grace", "email": "grace@example.com", "status": "inactive"},
+		{"name": "Alan", "email": "alan@example.com", "status": "active"},
+	} {
+		if _, err := autable.CreateRow(ctx, map[string]any{
+			"table":  "contacts",
+			"values": values,
+		}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	output, err := autable.ListRows(ctx, map[string]any{
+		"table": "contacts",
+		"query": map[string]any{
+			"field": "status",
+			"op":    "=",
+			"value": "active",
+		},
+		"sorts": []any{
+			map[string]any{"field": "name", "direction": "desc"},
+		},
+		"limit": 1,
+	}, workflow.RuntimeInfo{DatabaseName: "db", CreatorID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := output["rows"].([]map[string]any)
+	if len(rows) != 1 {
+		t.Fatalf("expected one queried row, got %#v", output)
+	}
+	values := rows[0]["values"].(map[string]any)
+	if values["name"] != "Alan" || values["status"] != "active" {
+		t.Fatalf("unexpected queried row: %#v", rows[0])
+	}
+}
+
 func TestDatabaseOwnerCanManageRoles(t *testing.T) {
 	ctx := context.Background()
 	catalog := metadata.Catalog{Databases: []metadata.Database{{
@@ -2948,6 +2995,7 @@ func TestWorkflowNodesAPI(t *testing.T) {
 		"table.row.create",
 		"table.row.delete",
 		"table.row.list",
+		"table.row.query",
 		"table.row.upsert",
 		"table.row.update",
 		"time.schedule",

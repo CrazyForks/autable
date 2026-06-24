@@ -88,8 +88,11 @@ func (service workflowAutableService) runRow(ctx context.Context, kind string, i
 		row, err := server.deleteTableRowAs(ctx, info.CreatorID, dbName, tableName, recordID)
 		return workflowRowOutput(row, err)
 	default:
-		viewName, _ := input["view"].(string)
-		rows, err := server.listTableRowsAs(ctx, info.CreatorID, dbName, tableName, table.RowListOptions{ViewName: viewName})
+		options, err := workflowRowListOptionsInput(input)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := server.listTableRowsAs(ctx, info.CreatorID, dbName, tableName, options)
 		if err != nil {
 			return nil, err
 		}
@@ -99,6 +102,107 @@ func (service workflowAutableService) runRow(ctx context.Context, kind string, i
 		}
 		return map[string]any{"rows": output}, nil
 	}
+}
+
+func workflowRowListOptionsInput(input map[string]any) (table.RowListOptions, error) {
+	options := table.RowListOptions{}
+	if viewName, ok := input["view"].(string); ok {
+		options.ViewName = viewName
+	}
+	if rawQuery, ok := input["query"]; ok && rawQuery != nil {
+		query, err := workflowViewQueryInput(rawQuery)
+		if err != nil {
+			return table.RowListOptions{}, err
+		}
+		options.Query = query
+	}
+	if rawSorts, ok := input["sorts"]; ok && rawSorts != nil {
+		sorts, err := workflowSortsInput(rawSorts)
+		if err != nil {
+			return table.RowListOptions{}, err
+		}
+		options.Sorts = sorts
+	}
+	if rawLimit, ok := input["limit"]; ok && rawLimit != nil {
+		limit, err := workflowIntInput(rawLimit)
+		if err != nil {
+			return table.RowListOptions{}, fmt.Errorf("limit: %w", err)
+		}
+		options.Limit = limit
+	}
+	return options, nil
+}
+
+func workflowViewQueryInput(value any) (*metadata.ViewQuery, error) {
+	if simple, ok := simpleWorkflowViewQuery(value); ok {
+		return simple, nil
+	}
+	var query metadata.ViewQuery
+	if err := decodeWorkflowInput(value, &query); err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	return &query, nil
+}
+
+func simpleWorkflowViewQuery(value any) (*metadata.ViewQuery, bool) {
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	field, _ := raw["field"].(string)
+	if strings.TrimSpace(field) == "" {
+		return nil, false
+	}
+	operator, _ := raw["operator"].(string)
+	if operator == "" {
+		operator, _ = raw["op"].(string)
+	}
+	if operator == "" {
+		operator = "="
+	}
+	return &metadata.ViewQuery{
+		Combinator: "and",
+		Rules: []metadata.ViewQueryRule{{
+			Field:    field,
+			Operator: operator,
+			Value:    raw["value"],
+		}},
+	}, true
+}
+
+func workflowSortsInput(value any) ([]metadata.ViewSort, error) {
+	var sorts []metadata.ViewSort
+	if err := decodeWorkflowInput(value, &sorts); err != nil {
+		return nil, fmt.Errorf("sorts: %w", err)
+	}
+	return sorts, nil
+}
+
+func workflowIntInput(value any) (int, error) {
+	switch typed := value.(type) {
+	case int:
+		return typed, nil
+	case int64:
+		return int(typed), nil
+	case float64:
+		if float64(int(typed)) != typed {
+			return 0, fmt.Errorf("expected integer, got %v", value)
+		}
+		return int(typed), nil
+	case json.Number:
+		parsed, err := typed.Int64()
+		return int(parsed), err
+	default:
+		return 0, fmt.Errorf("expected integer, got %T", value)
+	}
+}
+
+func decodeWorkflowInput(value any, target any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, target)
 }
 
 func workflowTableTarget(input map[string]any, info workflow.RuntimeInfo) (string, string, error) {

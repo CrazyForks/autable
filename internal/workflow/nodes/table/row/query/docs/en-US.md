@@ -1,12 +1,14 @@
-## List rows
+## Query rows
 
-Lists table rows through the server table API. The workflow creator permissions are used for access checks.
+Queries table rows through the server table API. The workflow creator permissions are used for access checks.
+
+This node uses the same query shape as the public `POST /api/tables/{database}/{table}/rows/query` API.
 
 ### Inputs
 
 - `database` (`string`): Optional database name. Defaults to the workflow database.
 - `table` (`string`): Target table name.
-- `view` (`string`): Optional view name. View filters and sorts are applied by the table service.
+- `view` (`string`): Optional view name. View filters and sorts are applied before runtime options.
 - `query` (`object`): Optional query object. Use a full `ViewQuery`, or the shorthand `{ field, op/operator, value }`.
 - `sorts` (`object[]`): Optional sort definitions, for example `{ field: "name", direction: "asc" }`.
 - `limit` (`int`): Optional maximum number of rows.
@@ -23,7 +25,7 @@ Lists table rows through the server table API. The workflow creator permissions 
  * @returns {Record<string, string | AutableWorkflowInstanceDeclaration>}
  */
 function instances(info) {
-  return { list_contacts: "table.row.list" };
+  return { query_contacts: "table.row.query" };
 }
 
 /**
@@ -31,11 +33,10 @@ function instances(info) {
  * @returns {Record<string, unknown>}
  */
 function run(info) {
-  const result = info.instance("list_contacts").exec({
+  const result = info.instance("query_contacts").exec({
     table: "contacts",
-    view: "all",
-    query: { field: "status", operator: "=", value: "active" },
-    limit: 20
+    query: { field: "email", operator: "=", value: "ada@example.com" },
+    limit: 1
   });
   return { count: result.rows.length, rows: result.rows };
 }

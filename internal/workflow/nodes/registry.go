@@ -14,6 +14,7 @@ import (
 	rowcreate "autable/internal/workflow/nodes/table/row/create"
 	rowdelete "autable/internal/workflow/nodes/table/row/delete"
 	rowlist "autable/internal/workflow/nodes/table/row/list"
+	rowquery "autable/internal/workflow/nodes/table/row/query"
 	rowupdate "autable/internal/workflow/nodes/table/row/update"
 	rowupsert "autable/internal/workflow/nodes/table/row/upsert"
 	"autable/internal/workflow/nodes/time/schedule"
@@ -48,6 +49,7 @@ func AutableNodes(service autable.Service) []workflow.Node {
 		rowupsert.NewNode(service),
 		rowdelete.NewNode(service),
 		rowlist.NewNode(service),
+		rowquery.NewNode(service),
 		field.NewCreateNode(service),
 	}
 }
