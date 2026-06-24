@@ -31,9 +31,12 @@ type Server struct {
 	catalogMu        sync.RWMutex
 	catalog          metadata.Catalog
 	metadataPath     string
+	repositoryPath   string
 	openDatabase     func(context.Context, string) error
 	codeFiles        codeFileStore
 	repositorySync   repositorySyncer
+	ai               aiClient
+	aiEnabled        bool
 	system           *systemdb.DB
 	tables           *table.Service
 	history          history.Store
@@ -120,6 +123,7 @@ type authConfigResponse struct {
 	PasswordEnabled bool                   `json:"password_enabled"`
 	OIDCEnabled     bool                   `json:"oidc_enabled"`
 	OIDCProviders   []oidcProviderResponse `json:"oidc_providers"`
+	AIEnabled       bool                   `json:"ai_enabled"`
 }
 
 type oidcEmailClaims struct {
@@ -260,6 +264,10 @@ func (server *Server) EnableMetadataWrites(path string) {
 	server.metadataPath = path
 }
 
+func (server *Server) SetRepositoryPath(path string) {
+	server.repositoryPath = path
+}
+
 func (server *Server) SetDatabaseOpener(openDatabase func(context.Context, string) error) {
 	server.openDatabase = openDatabase
 }
@@ -270,6 +278,11 @@ func (server *Server) SetCodeFileStore(store codeFileStore) {
 
 func (server *Server) SetRepositorySync(syncer repositorySyncer) {
 	server.repositorySync = syncer
+}
+
+func (server *Server) SetAIClient(client aiClient) {
+	server.ai = client
+	server.aiEnabled = client != nil
 }
 
 func (server *Server) SetPublicURL(publicURL string) {
@@ -320,6 +333,10 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /api/auth/oidc/", server.handleOIDC)
 	server.mux.HandleFunc("GET /api/auth/me", server.handleMe)
 	server.mux.HandleFunc("POST /api/auth/logout", server.handleLogout)
+	server.mux.HandleFunc("GET /api/ai/auth/status", server.handleAIAuthStatus)
+	server.mux.HandleFunc("POST /api/ai/auth/start", server.handleAIAuthStart)
+	server.mux.HandleFunc("GET /api/ai/options", server.handleAIOptions)
+	server.mux.HandleFunc("POST /api/ai/suggest-script", server.handleAISuggestScript)
 	server.mux.HandleFunc("GET /api/users", server.handleUsers)
 	server.mux.HandleFunc("GET /api/metadata", server.handleMetadata)
 	server.mux.HandleFunc("POST /api/permissions/grants", server.handleSaveGrant)
@@ -349,6 +366,7 @@ func (server *Server) handleAuthConfig(w http.ResponseWriter, _ *http.Request) {
 		PasswordEnabled: server.auth.Password.Enabled,
 		OIDCEnabled:     server.auth.OIDC.Enabled,
 		OIDCProviders:   server.publicOIDCProviders(),
+		AIEnabled:       server.aiEnabled,
 	})
 }
 

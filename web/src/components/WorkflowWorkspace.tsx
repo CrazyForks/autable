@@ -34,9 +34,11 @@ import type {
 } from "../api";
 import { workflowEditorExtraLibs } from "../editorTypes";
 import type { WorkflowTriggerDeclaration } from "../workflowInstances";
+import { AIScriptAssistant } from "./AIScriptAssistant";
 import { JavaScriptEditor } from "./JavaScriptEditor";
 
 type WorkflowWorkspaceProps = {
+  aiEnabled: boolean;
   activeTab: WorkflowTab;
   databaseName: string;
   language: string;
@@ -73,6 +75,7 @@ type WorkflowRunListItem = {
 };
 
 export function WorkflowWorkspace({
+  aiEnabled,
   activeTab,
   databaseName,
   language,
@@ -111,6 +114,16 @@ export function WorkflowWorkspace({
           <Text size={200}>{t("workflow.workflowLabel", { database: databaseName })}</Text>
         </div>
         <div className="workflow-header-actions">
+          {aiEnabled && (
+            <AIScriptAssistant
+              canWrite={canWriteWorkflow}
+              kind="workflow"
+              language={language}
+              resourceID={workflow?.id}
+              script={workflow?.script ?? ""}
+              onApply={onUpdateScript}
+            />
+          )}
           <NodeCatalogDialog language={language} workflowNodes={workflowNodes} />
           <Switch
             checked={workflow?.enabled ?? true}

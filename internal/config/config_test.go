@@ -27,6 +27,9 @@ auth:
       - name: main
         issuer_url: https://issuer.example
         client_id: autable
+ai:
+  enabled: true
+  worker_url: http://ai-worker:3090
 `)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
@@ -50,6 +53,9 @@ auth:
 	}
 	if got := cfg.Server.PublicURL; got != "https://app.example" {
 		t.Fatalf("unexpected server public url: %q", got)
+	}
+	if !cfg.AI.Enabled || cfg.AI.WorkerURL != "http://ai-worker:3090" {
+		t.Fatalf("unexpected AI config: %#v", cfg.AI)
 	}
 }
 

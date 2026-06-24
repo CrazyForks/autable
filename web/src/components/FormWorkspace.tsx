@@ -5,10 +5,12 @@ import { useTranslation } from "react-i18next";
 import type { FormDefinition, TableMetadata } from "../api";
 import { formEditorExtraLibs } from "../editorTypes";
 import type { FormRenderResult } from "../formRuntime";
+import { AIScriptAssistant } from "./AIScriptAssistant";
 import { FormRunner } from "./FormRunner";
 import { JavaScriptEditor } from "./JavaScriptEditor";
 
 type FormWorkspaceProps = {
+  aiEnabled: boolean;
   databaseName: string;
   form?: FormDefinition;
   formResult?: unknown;
@@ -25,6 +27,7 @@ type FormWorkspaceProps = {
 };
 
 export function FormWorkspace({
+  aiEnabled,
   databaseName,
   form,
   formResult,
@@ -53,6 +56,15 @@ export function FormWorkspace({
             <Text size={200}>{databaseName} {t("common.form").toLowerCase()}</Text>
           </div>
           <div className="form-actions">
+            {aiEnabled && (
+              <AIScriptAssistant
+                canWrite={canWriteForm}
+                kind="form"
+                resourceID={form?.id}
+                script={form?.script ?? ""}
+                onApply={onUpdateScript}
+              />
+            )}
             {publishedLink ? (
               <Button icon={<DismissRegular />} onClick={onUnpublish} disabled={!canWriteForm || !form?.id}>
                 {t("form.unpublish")}

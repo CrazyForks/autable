@@ -17,11 +17,17 @@ type Config struct {
 	Repository RepositoryConfig `yaml:"repository"`
 	Backup     BackupConfig     `yaml:"backup"`
 	Auth       AuthConfig       `yaml:"auth"`
+	AI         AIConfig         `yaml:"ai"`
 }
 
 type ServerConfig struct {
 	Address   string `yaml:"address"`
 	PublicURL string `yaml:"public_url"`
+}
+
+type AIConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	WorkerURL string `yaml:"worker_url"`
 }
 
 type DataConfig struct {
